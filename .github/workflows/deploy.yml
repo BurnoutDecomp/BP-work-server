@@ -1,0 +1,33 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main
+
+# Avoid overlapping deploys; only the latest push matters.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: adriwin.fr
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            cd /opt/bp-work-server
+            git fetch origin main
+            git reset --hard origin/main
+            # Reinstall in case dependencies or the package metadata changed.
+            .venv/bin/pip install -e . --quiet
+            # The service runs as bpwork; keep the tree owned by it.
+            chown -R bpwork:bpwork /opt/bp-work-server
+            systemctl restart bp-work-server.service
+            systemctl --no-pager status bp-work-server.service | head -n 5
