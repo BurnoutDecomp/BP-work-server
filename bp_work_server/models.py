@@ -110,6 +110,19 @@ class ImportResponse(BaseModel):
     status_rows: int
 
 
+class SyncRequest(BaseModel):
+    branch: str | None = None
+    commit: str | None = None
+    reset: bool = False
+
+
+class SyncResponse(ImportResponse):
+    repo_url: str
+    workflow_root: str
+    branch: str
+    commit: str
+
+
 class ErrorResponse(BaseModel):
     error: str
     detail: str | None = None

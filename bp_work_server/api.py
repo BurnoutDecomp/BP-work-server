@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import secrets
 from contextlib import asynccontextmanager
 from importlib.resources import files
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -25,12 +26,23 @@ from bp_work_server.models import (
     ReviewRequest,
     SnapshotResponse,
     StatusUpdateRequest,
+    SyncRequest,
+    SyncResponse,
 )
 from bp_work_server.store import WorkStore
+from bp_work_server.sync import sync_workflow_repo
 
 
 def default_db_path() -> Path:
     return Path(os.environ.get("BP_WORK_DB", "data/bp-work.sqlite3"))
+
+
+def require_admin_token(x_bp_admin_token: str | None = Header(default=None)) -> None:
+    expected = os.environ.get("BP_WORK_ADMIN_TOKEN")
+    if not expected:
+        return
+    if not x_bp_admin_token or not secrets.compare_digest(x_bp_admin_token, expected):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid admin token")
 
 
 def create_app(store: WorkStore | None = None) -> FastAPI:
@@ -66,10 +78,24 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
     def import_workflow(
         workflow_root: str = Query(..., description="Path to BP-Decomp_Workflow"),
         reset: bool = Query(False),
+        _admin: None = Depends(require_admin_token),
         store: WorkStore = Depends(get_store),
     ) -> dict[str, int]:
         try:
             return store.import_workflow(workflow_root, reset=reset)
+        except FileNotFoundError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    @app.post("/admin/sync", response_model=SyncResponse)
+    def sync_workflow(
+        req: SyncRequest,
+        _admin: None = Depends(require_admin_token),
+        store: WorkStore = Depends(get_store),
+    ) -> dict:
+        try:
+            return sync_workflow_repo(store, branch=req.branch, reset=req.reset)
+        except RuntimeError as exc:
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc)) from exc
         except FileNotFoundError as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 

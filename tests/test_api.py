@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from urllib.parse import quote
 
+import bp_work_server.api as api
 from bp_work_server.api import create_app
 from bp_work_server.store import WorkStore, iso
 
@@ -78,3 +79,47 @@ def test_path_encoded_tu_status_endpoints(tmp_path):
     assert compiled.status_code == 204
     assert review.status_code == 204
     assert state["counts"]["done"] == 1
+
+
+def test_admin_import_requires_token_when_configured(tmp_path, monkeypatch):
+    monkeypatch.setenv("BP_WORK_ADMIN_TOKEN", "secret-token")
+    client = make_client(tmp_path)
+
+    missing = client.post("/admin/import?workflow_root=missing")
+    wrong = client.post(
+        "/admin/import?workflow_root=missing",
+        headers={"X-BP-Admin-Token": "wrong"},
+    )
+
+    assert missing.status_code == 401
+    assert wrong.status_code == 401
+
+
+def test_admin_sync_calls_fixed_server_side_sync(tmp_path, monkeypatch):
+    monkeypatch.setenv("BP_WORK_ADMIN_TOKEN", "secret-token")
+    client = make_client(tmp_path)
+
+    def fake_sync(store, branch=None, reset=False):
+        assert branch == "main"
+        assert reset is False
+        return {
+            "tus": 2,
+            "funcs": 2,
+            "deps": 0,
+            "goals": 0,
+            "status_rows": 0,
+            "repo_url": "https://example.test/repo.git",
+            "workflow_root": str(tmp_path / "workflow"),
+            "branch": branch,
+            "commit": "abc123",
+        }
+
+    monkeypatch.setattr(api, "sync_workflow_repo", fake_sync)
+    response = client.post(
+        "/admin/sync",
+        headers={"X-BP-Admin-Token": "secret-token"},
+        json={"branch": "main", "commit": "abc123", "reset": False},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["commit"] == "abc123"
