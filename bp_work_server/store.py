@@ -169,6 +169,8 @@ class WorkStore:
         self._copy_legacy_workers()
 
     def _copy_legacy_workers(self) -> None:
+        if self.users_db_path.resolve() == self.db_path.resolve():
+            return
         with self.connect() as con:
             exists = con.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='worker'"
@@ -183,25 +185,26 @@ class WorkStore:
                 FROM worker
                 """
             ).fetchall()
-        if not rows:
-            return
-        with self.users_connect() as con:
-            for row in rows:
-                con.execute(
-                    """
-                    INSERT INTO worker(token, username, active, is_admin, created_at, last_seen)
-                    VALUES(?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(token) DO NOTHING
-                    """,
-                    (
-                        row["token"],
-                        row["username"],
-                        int(row["active"]),
-                        int(row["is_admin"]),
-                        row["created_at"],
-                        row["last_seen"],
-                    ),
-                )
+        if rows:
+            with self.users_connect() as con:
+                for row in rows:
+                    con.execute(
+                        """
+                        INSERT INTO worker(token, username, active, is_admin, created_at, last_seen)
+                        VALUES(?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(token) DO NOTHING
+                        """,
+                        (
+                            row["token"],
+                            row["username"],
+                            int(row["active"]),
+                            int(row["is_admin"]),
+                            row["created_at"],
+                            row["last_seen"],
+                        ),
+                    )
+        with self.connect() as con:
+            con.execute("DROP TABLE IF EXISTS worker")
 
     def import_workflow(self, workflow_root: str | Path, reset: bool = False) -> dict[str, int]:
         progress = Path(workflow_root) / "progress"

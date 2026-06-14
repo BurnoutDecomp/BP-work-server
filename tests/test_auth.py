@@ -126,3 +126,7 @@ def test_workers_migrate_from_legacy_work_db_to_users_db(tmp_path):
 
     assert migrated.resolve_admin(admin["token"]) == "Adriwin"
     assert users_db_path.exists()
+    with migrated.connect() as con:
+        assert not con.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='worker'"
+        ).fetchone()
