@@ -638,7 +638,7 @@ class WorkStore:
                            MAX(lease_expires_at) AS lease_expires_at,
                            MAX(updated_at) AS last_update
                     FROM tu
-                    WHERE owner IS NOT NULL
+                    WHERE owner IS NOT NULL AND status IN ('in_progress', 'compiled')
                     GROUP BY owner
                     ORDER BY total DESC, owner
                     """

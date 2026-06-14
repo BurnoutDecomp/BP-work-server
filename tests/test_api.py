@@ -65,6 +65,25 @@ def test_claim_updates_dashboard_agents(tmp_path):
     assert state["active_work"][0]["id"] == "GameSource/B.cpp"
 
 
+def test_finished_owner_is_not_an_active_agent(tmp_path):
+    """A done/blocked TU may retain a stale owner (the durable status.json mirror
+    records it). Such an agent holds no live work and must not appear as an active
+    agent or inflate the agent count on the dashboard."""
+    client, store = make_client(tmp_path)
+    with store.connect() as con:
+        con.execute(
+            "UPDATE tu SET status='done', owner='ghost' WHERE id='GameSource/A.cpp'"
+        )
+
+    # 'live' has real in-progress work; 'ghost' only owns a finished TU.
+    client.post("/claims", json={"tu": "GameSource/B.cpp", "agent": "live"})
+    state = client.get("/dashboard/state").json()
+
+    names = [a["name"] for a in state["agents"]]
+    assert names == ["live"]
+    assert all(a["in_progress"] + a["compiled"] > 0 for a in state["agents"])
+
+
 def test_path_encoded_tu_status_endpoints(tmp_path):
     client, _ = make_client(tmp_path)
     tu = "GameSource/B.cpp"
