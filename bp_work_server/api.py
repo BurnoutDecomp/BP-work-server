@@ -203,6 +203,56 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
     def dashboard_state(store: WorkStore = Depends(get_store)) -> dict:
         return store.dashboard_state()
 
+    @app.get("/api/facets")
+    def facets(store: WorkStore = Depends(get_store)) -> dict:
+        return store.facets()
+
+    @app.get("/api/tus")
+    def search_tus(
+        q: str | None = Query(None),
+        status: list[str] | None = Query(None),
+        source: str | None = Query(None),
+        goal: str | None = Query(None),
+        owner: str | None = Query(None),
+        sort: str = Query("id", pattern="^(id|funcs|updated|status|queue)$"),
+        order: str = Query("asc", pattern="^(asc|desc)$"),
+        limit: int = Query(50, ge=1, le=500),
+        offset: int = Query(0, ge=0),
+        store: WorkStore = Depends(get_store),
+    ) -> dict:
+        return store.search_tus(
+            q=q,
+            statuses=status,
+            source=source,
+            goal=goal,
+            owner=owner,
+            sort=sort,
+            order=order,
+            limit=limit,
+            offset=offset,
+        )
+
+    @app.get("/api/tu")
+    def tu_detail(
+        id: str = Query(..., min_length=1),
+        store: WorkStore = Depends(get_store),
+    ) -> dict:
+        try:
+            return store.tu_detail(id)
+        except KeyError as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+
+    @app.get("/api/funcs")
+    def search_funcs(
+        q: str | None = Query(None),
+        status: list[str] | None = Query(None),
+        tu: str | None = Query(None),
+        limit: int = Query(50, ge=1, le=500),
+        offset: int = Query(0, ge=0),
+        store: WorkStore = Depends(get_store),
+    ) -> dict:
+        return store.search_funcs(q=q, statuses=status, tu=tu, limit=limit, offset=offset)
+
     @app.get("/github/overview")
     async def github_overview() -> dict:
         """Cached GitHub repo info, recent commits, and file tree for the dev branch."""

@@ -21,6 +21,10 @@ This repo contains an MVP server:
 - Append-only event log.
 - Server-sent events stream for real-time dashboard refresh.
 - GitHub repo overview (info, recent commits, file tree) on the dashboard.
+- Explorer panel to search/filter/sort every TU and function, with a detail
+  drawer showing the data handed to agents (deps, dependents, funcs, goals).
+- File-tree entries and TU destinations link straight to the file on GitHub.
+- Burnout Paradise themed dashboard (drop a `logo.png` into the static folder).
 - Small stdlib HTTP client for `work.py` integration.
 
 PostgreSQL is the right production database once more people are using it, but
@@ -101,6 +105,27 @@ $env:BP_GITHUB_OWNER = "Adriwin06"     # optional overrides
 $env:BP_GITHUB_REPO  = "b5-decomp"
 $env:BP_GITHUB_REF   = "dev"
 ```
+
+## Explorer API
+
+The dashboard's Explorer is backed by read-only JSON endpoints:
+
+```text
+GET /api/facets           # filter options: sources, statuses, goals
+GET /api/tus              # search/filter/sort TUs (q, status, source, goal, owner, sort, order, limit, offset)
+GET /api/tu?id=<tu>       # full detail for one TU (funcs, deps, dependents, goals)
+GET /api/funcs            # search functions (q, status, tu, limit, offset)
+```
+
+`sort` accepts `id`, `funcs`, `updated`, `status`, or `queue` (dependency-ranked,
+matching `next`).
+
+## Branding
+
+The header shows `/static/logo.png` if present and falls back to a `B5` mark
+otherwise. Drop a Burnout Paradise logo at
+`bp_work_server/static/logo.png` to brand the dashboard; the rest of the theme
+adapts around it.
 
 ## Tests
 

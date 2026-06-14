@@ -499,6 +499,209 @@ class WorkStore:
                 "server_time": iso(),
             }
 
+    def facets(self) -> dict[str, Any]:
+        """Filter options for the explorer UI: sources, statuses, goals."""
+        with self.connect() as con:
+            sources = [
+                row["source"]
+                for row in con.execute(
+                    "SELECT DISTINCT source FROM tu WHERE source IS NOT NULL ORDER BY source"
+                )
+            ]
+            func_statuses = [
+                row["status"]
+                for row in con.execute(
+                    "SELECT DISTINCT status FROM func ORDER BY status"
+                )
+            ]
+            goals = [
+                row["name"]
+                for row in con.execute("SELECT name FROM goal ORDER BY category, name")
+            ]
+            return {
+                "tu_statuses": sorted(TU_STATUSES),
+                "sources": sources,
+                "func_statuses": func_statuses,
+                "goals": goals,
+            }
+
+    def search_tus(
+        self,
+        *,
+        q: str | None = None,
+        statuses: list[str] | None = None,
+        source: str | None = None,
+        goal: str | None = None,
+        owner: str | None = None,
+        sort: str = "id",
+        order: str = "asc",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Filter, sort, and paginate translation units for the explorer.
+
+        The full TU set is small (a few thousand rows) so we filter in SQL,
+        then rank in Python -- this keeps the dependency-aware ``queue`` sort
+        identical to ``next_tus`` without duplicating SQL.
+        """
+        with self.connect() as con:
+            self._expire_leases(con)
+
+            clauses: list[str] = []
+            params: list[Any] = []
+            joins = ""
+            if goal:
+                joins = "JOIN goal_tu gt ON gt.tu_id = t.id AND gt.goal_name = ?"
+                params.append(goal)
+            if q:
+                clauses.append("(t.id LIKE ? OR t.source LIKE ? OR t.dest_path LIKE ?)")
+                like = f"%{q}%"
+                params.extend([like, like, like])
+            if statuses:
+                placeholders = ",".join("?" * len(statuses))
+                clauses.append(f"t.status IN ({placeholders})")
+                params.extend(statuses)
+            if source:
+                clauses.append("t.source = ?")
+                params.append(source)
+            if owner:
+                clauses.append("t.owner = ?")
+                params.append(owner)
+            where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+            rows = con.execute(
+                f"SELECT t.* FROM tu t {joins}{where}", params
+            ).fetchall()
+
+            need_deps = sort == "queue"
+            unresolved: dict[str, int] = {}
+            if need_deps:
+                dep_map: dict[str, set[str]] = defaultdict(set)
+                for dep in con.execute("SELECT tu_id, dep_id FROM tu_dep"):
+                    dep_map[dep["tu_id"]].add(dep["dep_id"])
+                status_by_tu = {
+                    r["id"]: r["status"] for r in con.execute("SELECT id, status FROM tu")
+                }
+                for row in rows:
+                    unresolved[row["id"]] = sum(
+                        1
+                        for dep_id in dep_map.get(row["id"], ())
+                        if status_by_tu.get(dep_id) != "done"
+                    )
+
+            items = [self._dashboard_tu(row) for row in rows]
+            for item in items:
+                item["unresolved_deps"] = unresolved.get(item["id"])
+
+            reverse = order == "desc"
+            if sort == "funcs":
+                items.sort(key=lambda it: (it["n_funcs"], it["id"]), reverse=reverse)
+            elif sort == "updated":
+                items.sort(key=lambda it: (it["updated_at"] or "", it["id"]), reverse=reverse)
+            elif sort == "status":
+                items.sort(key=lambda it: (it["status"], it["id"]), reverse=reverse)
+            elif sort == "queue":
+                items.sort(
+                    key=lambda it: (
+                        it["unresolved_deps"] if it["unresolved_deps"] is not None else 1 << 30,
+                        it["source"] != "decfigs",
+                        it["n_funcs"],
+                        it["id"],
+                    )
+                )
+            else:  # id
+                items.sort(key=lambda it: it["id"], reverse=reverse)
+
+            total = len(items)
+            page = items[offset : offset + limit]
+            return {"total": total, "limit": limit, "offset": offset, "items": page}
+
+    def tu_detail(self, tu_id: str) -> dict[str, Any]:
+        """Everything the server knows about one TU -- the data given to agents."""
+        with self.connect() as con:
+            self._expire_leases(con)
+            row = self._require_tu(con, tu_id)
+            detail = self._dashboard_tu(row)
+            detail["funcs"] = [
+                {"name": r["name"], "status": r["status"]}
+                for r in con.execute(
+                    "SELECT name, status FROM func WHERE tu_id=? ORDER BY name", (tu_id,)
+                )
+            ]
+            detail["deps"] = [
+                {
+                    "id": r["dep_id"],
+                    "weight": r["weight"],
+                    "status": r["status"],
+                    "source": r["source"],
+                }
+                for r in con.execute(
+                    """
+                    SELECT d.dep_id, d.weight, t.status, t.source
+                    FROM tu_dep d
+                    LEFT JOIN tu t ON t.id = d.dep_id
+                    WHERE d.tu_id = ?
+                    ORDER BY d.weight DESC, d.dep_id
+                    """,
+                    (tu_id,),
+                )
+            ]
+            detail["dependents"] = [
+                {"id": r["tu_id"], "weight": r["weight"], "status": r["status"]}
+                for r in con.execute(
+                    """
+                    SELECT d.tu_id, d.weight, t.status
+                    FROM tu_dep d
+                    LEFT JOIN tu t ON t.id = d.tu_id
+                    WHERE d.dep_id = ?
+                    ORDER BY d.weight DESC, d.tu_id
+                    """,
+                    (tu_id,),
+                )
+            ]
+            detail["goals"] = [
+                r["goal_name"]
+                for r in con.execute(
+                    "SELECT goal_name FROM goal_tu WHERE tu_id=? ORDER BY goal_name", (tu_id,)
+                )
+            ]
+            return detail
+
+    def search_funcs(
+        self,
+        *,
+        q: str | None = None,
+        statuses: list[str] | None = None,
+        tu: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Filter and paginate functions across all TUs."""
+        with self.connect() as con:
+            clauses: list[str] = []
+            params: list[Any] = []
+            if q:
+                clauses.append("name LIKE ?")
+                params.append(f"%{q}%")
+            if statuses:
+                placeholders = ",".join("?" * len(statuses))
+                clauses.append(f"status IN ({placeholders})")
+                params.extend(statuses)
+            if tu:
+                clauses.append("tu_id = ?")
+                params.append(tu)
+            where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+            total = con.execute(
+                f"SELECT COUNT(*) FROM func{where}", params
+            ).fetchone()[0]
+            rows = con.execute(
+                f"SELECT name, tu_id, status FROM func{where} ORDER BY name LIMIT ? OFFSET ?",
+                [*params, limit, offset],
+            ).fetchall()
+            items = [
+                {"name": r["name"], "tu_id": r["tu_id"], "status": r["status"]} for r in rows
+            ]
+            return {"total": total, "limit": limit, "offset": offset, "items": items}
+
     def _next_tus_from_connection(
         self, con: sqlite3.Connection, n: int = 1, goal: str | None = None
     ) -> tuple[str | None, list[NextTu]]:

@@ -10,15 +10,23 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/app.css?v=2" />
+    <link rel="stylesheet" href="/static/app.css?v=3" />
   </head>
   <body>
     <div class="app">
       <header class="topbar">
         <div class="brand">
-          <span class="brand-mark">B5</span>
+          <span class="brand-mark">
+            <img
+              id="brandLogo"
+              src="/static/logo.png"
+              alt="Burnout Paradise"
+              onerror="this.style.display='none';this.parentElement.classList.add('fallback');"
+            />
+            <span class="brand-fallback">B5</span>
+          </span>
           <div>
-            <h1>BP Decomp Progress</h1>
+            <h1>BP Decomp <span class="accent">Progress</span></h1>
             <p id="subtitle">Connecting to work server…</p>
           </div>
         </div>
@@ -79,6 +87,53 @@
               <div class="chip blocked"><span id="blockedCount">0</span><label>Blocked</label></div>
             </div>
           </article>
+        </section>
+
+        <!-- Explorer: search/browse every TU and function -->
+        <section class="card explorer" aria-label="Explorer">
+          <div class="panel-head">
+            <div class="explorer-tabs" id="explorerTabs">
+              <button class="tab active" data-tab="tus">Translation Units</button>
+              <button class="tab" data-tab="funcs">Functions</button>
+            </div>
+            <span id="explorerCount" class="badge">0 results</span>
+          </div>
+
+          <div class="explorer-controls">
+            <input
+              type="search"
+              id="explorerSearch"
+              class="search-input"
+              placeholder="Search by name, source, or path…"
+              autocomplete="off"
+            />
+            <select id="filterStatus" class="filter"><option value="">All statuses</option></select>
+            <select id="filterSource" class="filter tus-only"><option value="">All sources</option></select>
+            <select id="filterGoal" class="filter tus-only"><option value="">All goals</option></select>
+            <select id="sortBy" class="filter tus-only">
+              <option value="queue">Sort: Queue rank</option>
+              <option value="id" selected>Sort: Name</option>
+              <option value="funcs">Sort: Functions</option>
+              <option value="updated">Sort: Updated</option>
+              <option value="status">Sort: Status</option>
+            </select>
+            <button id="sortOrder" class="filter order-btn" title="Toggle order">↑</button>
+          </div>
+
+          <div class="table-wrap">
+            <table class="explorer-table">
+              <thead id="explorerHead"></thead>
+              <tbody id="explorerBody"></tbody>
+            </table>
+          </div>
+
+          <div class="explorer-foot">
+            <span id="explorerRange" class="muted-text">—</span>
+            <div class="pager">
+              <button id="pagePrev" class="filter">Prev</button>
+              <button id="pageNext" class="filter">Next</button>
+            </div>
+          </div>
         </section>
 
         <!-- GitHub repository panel -->
@@ -183,6 +238,17 @@
       </main>
     </div>
 
-    <script src="/static/app.js?v=2" defer></script>
+    <!-- TU detail drawer: the data the server hands to agents -->
+    <div id="detailOverlay" class="overlay hidden">
+      <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+        <div class="drawer-head">
+          <h2 id="detailTitle">Translation Unit</h2>
+          <button id="detailClose" class="drawer-close" aria-label="Close">✕</button>
+        </div>
+        <div id="detailBody" class="drawer-body"></div>
+      </aside>
+    </div>
+
+    <script src="/static/app.js?v=3" defer></script>
   </body>
 </html>

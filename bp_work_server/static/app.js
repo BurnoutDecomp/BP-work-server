@@ -4,7 +4,35 @@ const state = {
   githubTimer: null,
   eventSource: null,
   treeCollapsed: {}, // path -> bool, remembers folder state across refreshes
+  repo: { owner: "Adriwin06", name: "b5-decomp", ref: "dev" },
+  explorer: {
+    tab: "tus",
+    q: "",
+    status: "",
+    source: "",
+    goal: "",
+    sort: "id",
+    order: "asc",
+    limit: 50,
+    offset: 0,
+    total: 0,
+    searchTimer: null,
+  },
 };
+
+/* Build a github.com/blob URL for a path inside the mirrored repo. */
+function ghBlobUrl(path) {
+  if (!path) return null;
+  const { owner, name, ref } = state.repo;
+  return `https://github.com/${owner}/${name}/blob/${ref}/${path}`;
+}
+
+/* dest_path looks like "b5-decomp/src/...": strip the repo prefix for blob links. */
+function destToRepoPath(dest) {
+  if (!dest) return null;
+  const prefix = `${state.repo.name}/`;
+  return dest.startsWith(prefix) ? dest.slice(prefix.length) : dest;
+}
 
 const el = (id) => document.getElementById(id);
 
@@ -284,6 +312,7 @@ async function refreshGithub() {
 function renderGithub(data) {
   const repo = data.repo || {};
   const info = data.info || {};
+  if (repo.owner) state.repo = { owner: repo.owner, name: repo.name, ref: repo.ref };
   text("repoBranch", repo.ref || "dev");
 
   const link = el("repoLink");
@@ -462,7 +491,19 @@ function renderTreeNode(node, depth, container) {
     const twist = span("twist", isDir ? (collapsed ? "▶" : "▼") : "");
     row.appendChild(twist);
     row.appendChild(span("icon", isDir ? "📁" : "📄"));
-    row.appendChild(span("name", child.name));
+    if (isDir) {
+      row.appendChild(span("name", child.name));
+    } else {
+      // File rows link straight to the file on GitHub.
+      const link = document.createElement("a");
+      link.className = "name file-link";
+      link.textContent = child.name;
+      link.href = ghBlobUrl(child.path);
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.title = `Open ${child.path} on GitHub`;
+      row.appendChild(link);
+    }
     if (!isDir && child.size != null) row.appendChild(span("size", fmtBytes(child.size)));
     container.appendChild(row);
 
@@ -495,6 +536,360 @@ function renderTree(tree) {
   renderTreeNode(built, 0, root);
 }
 
+/* ---------------- Explorer (search / browse) ---------------- */
+
+const STATUS_LABELS = {
+  todo: "todo",
+  in_progress: "in progress",
+  compiled: "compiled",
+  done: "done",
+  blocked: "blocked",
+};
+
+function statusPill(status) {
+  return span(`pill ${status}`, (STATUS_LABELS[status] || status || "—").replace("_", " "));
+}
+
+async function loadFacets() {
+  try {
+    const res = await fetch("/api/facets", { cache: "no-store" });
+    if (!res.ok) return;
+    const f = await res.json();
+    fillSelect("filterSource", f.sources, "All sources");
+    fillSelect("filterGoal", f.goals, "All goals");
+    // status options swap per tab; remember both sets
+    state.explorer.tuStatuses = f.tu_statuses || [];
+    state.explorer.funcStatuses = f.func_statuses || [];
+    syncStatusOptions();
+  } catch (_) {
+    /* facets are best-effort */
+  }
+}
+
+function fillSelect(id, values, allLabel) {
+  const sel = el(id);
+  if (!sel) return;
+  const current = sel.value;
+  clearNode(sel);
+  const all = document.createElement("option");
+  all.value = "";
+  all.textContent = allLabel;
+  sel.appendChild(all);
+  for (const v of values || []) {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = v;
+    sel.appendChild(opt);
+  }
+  sel.value = current;
+}
+
+function syncStatusOptions() {
+  const list =
+    state.explorer.tab === "funcs" ? state.explorer.funcStatuses : state.explorer.tuStatuses;
+  fillSelect("filterStatus", list, "All statuses");
+}
+
+function explorerParams() {
+  const ex = state.explorer;
+  const p = new URLSearchParams();
+  if (ex.q) p.set("q", ex.q);
+  if (ex.status) p.set("status", ex.status);
+  p.set("limit", ex.limit);
+  p.set("offset", ex.offset);
+  if (ex.tab === "tus") {
+    if (ex.source) p.set("source", ex.source);
+    if (ex.goal) p.set("goal", ex.goal);
+    p.set("sort", ex.sort);
+    p.set("order", ex.order);
+  }
+  return p;
+}
+
+async function loadExplorer() {
+  const ex = state.explorer;
+  const path = ex.tab === "funcs" ? "/api/funcs" : "/api/tus";
+  try {
+    const res = await fetch(`${path}?${explorerParams()}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    ex.total = data.total || 0;
+    if (ex.tab === "funcs") renderFuncRows(data.items || []);
+    else renderTuRows(data.items || []);
+    renderExplorerFoot();
+  } catch (error) {
+    el("explorerBody").innerHTML = "";
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 6;
+    cell.className = "empty";
+    cell.textContent = `Explorer unavailable: ${error.message}`;
+    row.appendChild(cell);
+    el("explorerBody").appendChild(row);
+  }
+}
+
+function renderExplorerFoot() {
+  const ex = state.explorer;
+  text("explorerCount", `${fmtInt(ex.total)} results`);
+  const from = ex.total === 0 ? 0 : ex.offset + 1;
+  const to = Math.min(ex.offset + ex.limit, ex.total);
+  text("explorerRange", `${fmtInt(from)}–${fmtInt(to)} of ${fmtInt(ex.total)}`);
+  el("pagePrev").disabled = ex.offset <= 0;
+  el("pageNext").disabled = ex.offset + ex.limit >= ex.total;
+}
+
+function setHead(cols) {
+  const head = el("explorerHead");
+  clearNode(head);
+  const tr = document.createElement("tr");
+  for (const c of cols) {
+    const th = document.createElement("th");
+    th.textContent = c;
+    tr.appendChild(th);
+  }
+  head.appendChild(tr);
+}
+
+function renderTuRows(items) {
+  setHead(["Translation Unit", "Status", "Funcs", "Source", "Deps", "Owner"]);
+  const body = el("explorerBody");
+  clearNode(body);
+  if (!items.length) return emptyRow(body, 6, "No translation units match.");
+  for (const item of items) {
+    const row = document.createElement("tr");
+    row.className = "clickable";
+    const name = document.createElement("td");
+    name.appendChild(div("tu-name", item.id));
+    if (item.dest_path) name.appendChild(div("tu-meta", item.dest_path));
+    const fn = document.createElement("td");
+    fn.textContent = fmtInt(item.n_funcs);
+    const src = document.createElement("td");
+    src.textContent = item.source || "—";
+    const deps = document.createElement("td");
+    deps.textContent = item.unresolved_deps == null ? "—" : fmtInt(item.unresolved_deps);
+    const owner = document.createElement("td");
+    owner.textContent = item.owner || "—";
+    const status = document.createElement("td");
+    status.appendChild(statusPill(item.status));
+    row.append(name, status, fn, src, deps, owner);
+    row.addEventListener("click", () => openDetail(item.id));
+    body.appendChild(row);
+  }
+}
+
+function renderFuncRows(items) {
+  setHead(["Function", "Status", "Translation Unit"]);
+  const body = el("explorerBody");
+  clearNode(body);
+  if (!items.length) return emptyRow(body, 3, "No functions match.");
+  for (const item of items) {
+    const row = document.createElement("tr");
+    row.className = "clickable";
+    const name = document.createElement("td");
+    name.appendChild(div("fn-name", item.name));
+    const status = document.createElement("td");
+    status.appendChild(statusPill(item.status));
+    const tu = document.createElement("td");
+    tu.appendChild(div("tu-meta", item.tu_id));
+    row.append(name, status, tu);
+    row.addEventListener("click", () => openDetail(item.tu_id));
+    body.appendChild(row);
+  }
+}
+
+function emptyRow(body, span, message) {
+  const row = document.createElement("tr");
+  const cell = document.createElement("td");
+  cell.colSpan = span;
+  cell.className = "empty";
+  cell.textContent = message;
+  row.appendChild(cell);
+  body.appendChild(row);
+}
+
+function resetAndLoad() {
+  state.explorer.offset = 0;
+  loadExplorer();
+}
+
+function initExplorer() {
+  const ex = state.explorer;
+
+  el("explorerTabs").addEventListener("click", (e) => {
+    const btn = e.target.closest(".tab");
+    if (!btn) return;
+    ex.tab = btn.dataset.tab;
+    for (const t of el("explorerTabs").querySelectorAll(".tab")) {
+      t.classList.toggle("active", t === btn);
+    }
+    document
+      .querySelectorAll(".tus-only")
+      .forEach((node) => node.classList.toggle("hidden", ex.tab !== "tus"));
+    ex.status = "";
+    syncStatusOptions();
+    resetAndLoad();
+  });
+
+  el("explorerSearch").addEventListener("input", (e) => {
+    ex.q = e.target.value.trim();
+    clearTimeout(ex.searchTimer);
+    ex.searchTimer = setTimeout(resetAndLoad, 250);
+  });
+
+  el("filterStatus").addEventListener("change", (e) => {
+    ex.status = e.target.value;
+    resetAndLoad();
+  });
+  el("filterSource").addEventListener("change", (e) => {
+    ex.source = e.target.value;
+    resetAndLoad();
+  });
+  el("filterGoal").addEventListener("change", (e) => {
+    ex.goal = e.target.value;
+    resetAndLoad();
+  });
+  el("sortBy").addEventListener("change", (e) => {
+    ex.sort = e.target.value;
+    resetAndLoad();
+  });
+  el("sortOrder").addEventListener("click", () => {
+    ex.order = ex.order === "asc" ? "desc" : "asc";
+    el("sortOrder").textContent = ex.order === "asc" ? "↑" : "↓";
+    resetAndLoad();
+  });
+
+  el("pagePrev").addEventListener("click", () => {
+    ex.offset = Math.max(0, ex.offset - ex.limit);
+    loadExplorer();
+  });
+  el("pageNext").addEventListener("click", () => {
+    if (ex.offset + ex.limit < ex.total) {
+      ex.offset += ex.limit;
+      loadExplorer();
+    }
+  });
+
+  el("detailClose").addEventListener("click", closeDetail);
+  el("detailOverlay").addEventListener("click", (e) => {
+    if (e.target === el("detailOverlay")) closeDetail();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeDetail();
+  });
+
+  loadFacets();
+  loadExplorer();
+}
+
+/* ---------------- TU detail drawer ---------------- */
+
+async function openDetail(tuId) {
+  const overlay = el("detailOverlay");
+  overlay.classList.remove("hidden");
+  text("detailTitle", tuId);
+  el("detailBody").innerHTML = '<p class="muted-text">Loading…</p>';
+  try {
+    const res = await fetch(`/api/tu?id=${encodeURIComponent(tuId)}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    renderDetail(await res.json());
+  } catch (error) {
+    el("detailBody").innerHTML = "";
+    el("detailBody").appendChild(div("muted-text", `Failed to load: ${error.message}`));
+  }
+}
+
+function closeDetail() {
+  el("detailOverlay").classList.add("hidden");
+}
+
+function detailSection(title) {
+  const wrap = div("detail-section");
+  wrap.appendChild(div("detail-section-title", title));
+  return wrap;
+}
+
+function kv(label, value) {
+  const row = div("kv");
+  row.appendChild(span("kv-label", label));
+  const val = span("kv-value");
+  if (value instanceof Node) val.appendChild(value);
+  else val.textContent = value == null || value === "" ? "—" : String(value);
+  row.appendChild(val);
+  return row;
+}
+
+function renderDetail(d) {
+  const body = el("detailBody");
+  body.innerHTML = "";
+
+  // Status banner
+  const banner = div("detail-banner");
+  banner.appendChild(statusPill(d.status));
+  if (d.goals && d.goals.length) {
+    for (const g of d.goals) banner.appendChild(span("tag goal-tag", g));
+  }
+  body.appendChild(banner);
+
+  // Facts the agent receives
+  const facts = detailSection("Overview");
+  facts.appendChild(kv("Source", d.source));
+  facts.appendChild(kv("Functions", fmtInt(d.n_funcs)));
+  facts.appendChild(kv("Decfigs", fmtInt(d.n_decfigs)));
+  facts.appendChild(kv("Owner", d.owner));
+  facts.appendChild(kv("Updated", d.updated_at ? `${fmtTime(d.updated_at)} (${relTime(d.updated_at)})` : null));
+  if (d.commit) facts.appendChild(kv("Commit", d.commit));
+  const repoPath = destToRepoPath(d.dest_path);
+  if (repoPath) {
+    const a = document.createElement("a");
+    a.href = ghBlobUrl(repoPath);
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = d.dest_path;
+    facts.appendChild(kv("Destination", a));
+  } else {
+    facts.appendChild(kv("Destination", d.dest_path));
+  }
+  if (d.notes) facts.appendChild(kv("Notes", d.notes));
+  body.appendChild(facts);
+
+  // Dependencies
+  const deps = detailSection(`Dependencies (${(d.deps || []).length})`);
+  if (!d.deps || !d.deps.length) deps.appendChild(div("muted-text", "No recorded dependencies."));
+  else d.deps.forEach((dep) => deps.appendChild(depRow(dep, dep.status)));
+  body.appendChild(deps);
+
+  // Dependents
+  const dependents = detailSection(`Dependents (${(d.dependents || []).length})`);
+  if (!d.dependents || !d.dependents.length)
+    dependents.appendChild(div("muted-text", "Nothing depends on this TU."));
+  else d.dependents.forEach((dep) => dependents.appendChild(depRow(dep, dep.status)));
+  body.appendChild(dependents);
+
+  // Functions
+  const funcs = detailSection(`Functions (${(d.funcs || []).length})`);
+  if (!d.funcs || !d.funcs.length) funcs.appendChild(div("muted-text", "No functions recorded."));
+  else
+    d.funcs.forEach((fn) => {
+      const row = div("dep-row");
+      row.appendChild(span("dep-name", fn.name));
+      row.appendChild(statusPill(fn.status));
+      funcs.appendChild(row);
+    });
+  body.appendChild(funcs);
+}
+
+function depRow(dep, status) {
+  const row = div("dep-row clickable");
+  row.appendChild(span("dep-name", dep.id));
+  if (dep.weight) row.appendChild(span("dep-weight", `×${dep.weight}`));
+  if (status) row.appendChild(statusPill(status));
+  // Only navigable if it's a real TU (has a known status).
+  if (status) row.addEventListener("click", () => openDetail(dep.id));
+  else row.classList.remove("clickable");
+  return row;
+}
+
 /* ---------------- Live stream ---------------- */
 
 function connectStream() {
@@ -515,5 +910,6 @@ function connectStream() {
 refresh();
 connectStream();
 refreshGithub();
+initExplorer();
 // GitHub data changes slowly and is cached server-side; poll gently.
 state.githubTimer = window.setInterval(refreshGithub, 90000);

@@ -81,6 +81,31 @@ def test_path_encoded_tu_status_endpoints(tmp_path):
     assert state["counts"]["done"] == 1
 
 
+def test_explorer_search_filter_and_detail(tmp_path):
+    client = make_client(tmp_path)
+
+    facets = client.get("/api/facets").json()
+    assert "decfigs" in facets["sources"]
+    assert "todo" in facets["tu_statuses"]
+
+    # text + status filter
+    search = client.get("/api/tus", params={"q": "A.cpp", "status": ["todo"]}).json()
+    assert search["total"] == 1
+    assert search["items"][0]["id"] == "GameSource/A.cpp"
+
+    # function search
+    funcs = client.get("/api/funcs", params={"q": "Run"}).json()
+    assert funcs["total"] == 2
+
+    # TU detail exposes the data handed to agents
+    detail = client.get("/api/tu", params={"id": "GameSource/A.cpp"}).json()
+    assert detail["n_funcs"] == 2
+    assert [f["name"] for f in detail["funcs"]] == ["A::Run"]
+
+    missing = client.get("/api/tu", params={"id": "GameSource/missing.cpp"})
+    assert missing.status_code == 404
+
+
 def test_admin_import_requires_token_when_configured(tmp_path, monkeypatch):
     monkeypatch.setenv("BP_WORK_ADMIN_TOKEN", "secret-token")
     client = make_client(tmp_path)
