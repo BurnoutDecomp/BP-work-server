@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BP Decomp Progress</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/app.css?v=2" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">B5</span>
+          <div>
+            <h1>BP Decomp Progress</h1>
+            <p id="subtitle">Connecting to work server…</p>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <span id="serverTime" class="server-time">—</span>
+          <div class="connection" id="connection">
+            <span class="pulse"></span>
+            <span id="connectionText">Connecting</span>
+          </div>
+        </div>
+      </header>
+
+      <main>
+        <!-- Headline metrics -->
+        <section class="metrics" aria-label="Progress summary">
+          <article class="card metric ring-card">
+            <div class="ring" id="tuRing" style="--p: 0">
+              <svg viewBox="0 0 120 120" aria-hidden="true">
+                <circle class="ring-track" cx="60" cy="60" r="52" />
+                <circle class="ring-fill tu" cx="60" cy="60" r="52" />
+              </svg>
+              <div class="ring-label">
+                <strong id="tuPercent">0%</strong>
+                <span>Units</span>
+              </div>
+            </div>
+            <div class="metric-body">
+              <span class="label">Translation Units</span>
+              <small id="tuCount">0 / 0 done</small>
+            </div>
+          </article>
+
+          <article class="card metric ring-card">
+            <div class="ring" id="fnRing" style="--p: 0">
+              <svg viewBox="0 0 120 120" aria-hidden="true">
+                <circle class="ring-track" cx="60" cy="60" r="52" />
+                <circle class="ring-fill fn" cx="60" cy="60" r="52" />
+              </svg>
+              <div class="ring-label">
+                <strong id="fnPercent">0%</strong>
+                <span>Funcs</span>
+              </div>
+            </div>
+            <div class="metric-body">
+              <span class="label">Functions</span>
+              <small id="fnCount">0 / 0 covered</small>
+            </div>
+          </article>
+
+          <article class="card metric goal-card">
+            <span class="label">Active Goal</span>
+            <strong id="activeGoal">Whole program</strong>
+            <div class="status-grid">
+              <div class="chip todo"><span id="todoCount">0</span><label>Todo</label></div>
+              <div class="chip progress"><span id="progressCount">0</span><label>In progress</label></div>
+              <div class="chip compiled"><span id="compiledCount">0</span><label>Compiled</label></div>
+              <div class="chip done"><span id="doneCount">0</span><label>Done</label></div>
+              <div class="chip blocked"><span id="blockedCount">0</span><label>Blocked</label></div>
+            </div>
+          </article>
+        </section>
+
+        <!-- GitHub repository panel -->
+        <section class="card gh-panel" aria-label="GitHub repository">
+          <div class="panel-head">
+            <h2>
+              <svg class="gh-mark" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.33c-2.23.49-2.7-1.07-2.7-1.07-.36-.93-.89-1.18-.89-1.18-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.83-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.52.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+                />
+              </svg>
+              <a id="repoLink" href="#" target="_blank" rel="noopener">repository</a>
+              <span class="branch-tag" id="repoBranch">dev</span>
+            </h2>
+            <span id="ghRate" class="gh-rate"></span>
+          </div>
+          <p id="repoDesc" class="gh-desc">Loading repository…</p>
+
+          <div class="gh-stats" id="ghStats"></div>
+
+          <div class="gh-body">
+            <div class="gh-commits">
+              <h3>Latest commit</h3>
+              <div id="latestCommit" class="latest-commit empty">Loading…</div>
+              <h3 class="recent-head">Recent commits</h3>
+              <ol id="commitList" class="commit-list empty"></ol>
+            </div>
+
+            <div class="gh-tree">
+              <div class="tree-head">
+                <h3>File tree</h3>
+                <span id="treeMeta" class="tree-meta"></span>
+              </div>
+              <div id="fileTree" class="file-tree empty">Loading…</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Work coordination grid -->
+        <section class="grid">
+          <section class="card panel agents">
+            <div class="panel-head">
+              <h2>Agents</h2>
+              <span id="agentCount" class="badge">0 active</span>
+            </div>
+            <div id="agents" class="agent-list empty">No active claims.</div>
+          </section>
+
+          <section class="card panel active-work">
+            <div class="panel-head">
+              <h2>Active Work</h2>
+              <span id="activeWorkCount" class="badge">0 TUs</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>TU</th>
+                    <th>Status</th>
+                    <th>Agent</th>
+                    <th>Lease</th>
+                  </tr>
+                </thead>
+                <tbody id="activeWork"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="card panel next-work">
+            <div class="panel-head">
+              <h2>Next Queue</h2>
+              <span id="nextCount" class="badge">0 ready</span>
+            </div>
+            <div id="nextQueue" class="queue empty">No available TUs.</div>
+          </section>
+
+          <section class="card panel events">
+            <div class="panel-head">
+              <h2>Live Events</h2>
+              <span id="eventCount" class="badge">0 events</span>
+            </div>
+            <ol id="events" class="event-list empty"></ol>
+          </section>
+
+          <section class="card panel goals">
+            <div class="panel-head">
+              <h2>Goals</h2>
+              <span id="goalCount" class="badge">0 goals</span>
+            </div>
+            <div id="goals" class="goal-list empty">No goals imported.</div>
+          </section>
+
+          <section class="card panel blocked">
+            <div class="panel-head">
+              <h2>Blocked</h2>
+              <span id="blockedListCount" class="badge">0 TUs</span>
+            </div>
+            <div id="blockedList" class="blocked-list empty">No blocked work.</div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js?v=2" defer></script>
+  </body>
+</html>

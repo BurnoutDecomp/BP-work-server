@@ -1,0 +1,35 @@
+[project]
+name = "bp-work-server"
+version = "0.1.0"
+description = "Coordination server for Burnout Paradise decompilation work claims."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.111",
+  "httpx>=0.27",
+  "pydantic>=2.7",
+  "uvicorn[standard]>=0.30",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2",
+  "httpx>=0.27",
+  "ruff>=0.5",
+]
+
+[project.scripts]
+bp-work-server = "bp_work_server.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["bp_work_server*"]
+
+[tool.setuptools.package-data]
+bp_work_server = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
