@@ -12,7 +12,12 @@ def main() -> None:
     parser.add_argument(
         "--db",
         default=os.environ.get("BP_WORK_DB", "data/bp-work.sqlite3"),
-        help="SQLite database path for the MVP server.",
+        help="SQLite database path for work/progress data.",
+    )
+    parser.add_argument(
+        "--users-db",
+        default=os.environ.get("BP_WORK_USERS_DB"),
+        help="SQLite database path for worker/admin user ids. Defaults to <db-stem>-users.sqlite3.",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -39,7 +44,7 @@ def main() -> None:
     w_rev.add_argument("token")
 
     args = parser.parse_args()
-    store = WorkStore(Path(args.db))
+    store = WorkStore(Path(args.db), Path(args.users_db) if args.users_db else None)
 
     if args.cmd == "init-db":
         store.migrate()
@@ -85,6 +90,8 @@ def main() -> None:
         from bp_work_server.api import create_app
 
         os.environ["BP_WORK_DB"] = str(args.db)
+        if args.users_db:
+            os.environ["BP_WORK_USERS_DB"] = str(args.users_db)
         app = create_app(store)
         uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)
         return

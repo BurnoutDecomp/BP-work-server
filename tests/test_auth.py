@@ -89,3 +89,40 @@ def test_enforcement_can_be_disabled(tmp_path, monkeypatch):
     ok = client.post("/claims", json={"tu": "GameSource/A.cpp", "agent": "solo"})
     assert ok.status_code == 201
     assert ok.json()["owner"] == "solo"
+
+
+def test_workers_migrate_from_legacy_work_db_to_users_db(tmp_path):
+    db_path = tmp_path / "work.sqlite3"
+    users_db_path = tmp_path / "workers.sqlite3"
+    legacy = WorkStore(db_path)
+    legacy.migrate()
+    admin = legacy.create_worker("Adriwin", is_admin=True)
+
+    # Simulate the old single-DB layout that exists on the deployed server today.
+    users_db_path.unlink(missing_ok=True)
+    with legacy.connect() as con:
+        con.executescript(
+            """
+            CREATE TABLE worker(
+              token TEXT PRIMARY KEY,
+              username TEXT NOT NULL,
+              active INTEGER NOT NULL DEFAULT 1,
+              is_admin INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT,
+              last_seen TEXT
+            );
+            """
+        )
+        con.execute(
+            """
+            INSERT INTO worker(token, username, active, is_admin, created_at, last_seen)
+            VALUES(?, 'Adriwin', 1, 1, ?, NULL)
+            """,
+            (admin["token"], iso()),
+        )
+
+    migrated = WorkStore(db_path, users_db_path)
+    migrated.migrate()
+
+    assert migrated.resolve_admin(admin["token"]) == "Adriwin"
+    assert users_db_path.exists()

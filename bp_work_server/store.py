@@ -75,6 +75,17 @@ CREATE TABLE IF NOT EXISTS event(
   detail_json TEXT NOT NULL DEFAULT '{}'
 );
 
+CREATE INDEX IF NOT EXISTS ix_tu_status ON tu(status);
+CREATE INDEX IF NOT EXISTS ix_tu_owner ON tu(owner);
+CREATE INDEX IF NOT EXISTS ix_func_tu ON func(tu_id);
+CREATE INDEX IF NOT EXISTS ix_dep_tu ON tu_dep(tu_id);
+CREATE INDEX IF NOT EXISTS ix_event_ts ON event(ts);
+"""
+
+
+USERS_SCHEMA = """
+PRAGMA foreign_keys = ON;
+
 CREATE TABLE IF NOT EXISTS worker(
   token TEXT PRIMARY KEY,
   username TEXT NOT NULL,
@@ -84,11 +95,8 @@ CREATE TABLE IF NOT EXISTS worker(
   last_seen TEXT
 );
 
-CREATE INDEX IF NOT EXISTS ix_tu_status ON tu(status);
-CREATE INDEX IF NOT EXISTS ix_tu_owner ON tu(owner);
-CREATE INDEX IF NOT EXISTS ix_func_tu ON func(tu_id);
-CREATE INDEX IF NOT EXISTS ix_dep_tu ON tu_dep(tu_id);
-CREATE INDEX IF NOT EXISTS ix_event_ts ON event(ts);
+CREATE INDEX IF NOT EXISTS ix_worker_username ON worker(username);
+CREATE INDEX IF NOT EXISTS ix_worker_active ON worker(active);
 """
 
 
@@ -107,8 +115,12 @@ def parse_dt(value: str | None) -> datetime | None:
 
 
 class WorkStore:
-    def __init__(self, db_path: str | Path):
+    def __init__(self, db_path: str | Path, users_db_path: str | Path | None = None):
         self.db_path = Path(db_path)
+        self.users_db_path = Path(users_db_path) if users_db_path else self._default_users_path()
+
+    def _default_users_path(self) -> Path:
+        return self.db_path.with_name(f"{self.db_path.stem}-users{self.db_path.suffix}")
 
     @contextmanager
     def connect(self) -> Iterable[sqlite3.Connection]:
@@ -126,13 +138,70 @@ class WorkStore:
         finally:
             con.close()
 
+    @contextmanager
+    def users_connect(self) -> Iterable[sqlite3.Connection]:
+        self.users_db_path.parent.mkdir(parents=True, exist_ok=True)
+        con = sqlite3.connect(self.users_db_path)
+        con.row_factory = sqlite3.Row
+        con.execute("PRAGMA foreign_keys = ON")
+        con.execute("PRAGMA journal_mode = WAL")
+        try:
+            yield con
+            con.commit()
+        except Exception:
+            con.rollback()
+            raise
+        finally:
+            con.close()
+
     def migrate(self) -> None:
         with self.connect() as con:
             con.executescript(SCHEMA)
-            # additive migration for DBs created before the admin role existed
+        self._migrate_users()
+
+    def _migrate_users(self) -> None:
+        with self.users_connect() as con:
+            con.executescript(USERS_SCHEMA)
+            # additive migration for user DBs created before the admin role existed
             cols = {r["name"] for r in con.execute("PRAGMA table_info(worker)")}
             if "is_admin" not in cols:
                 con.execute("ALTER TABLE worker ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+        self._copy_legacy_workers()
+
+    def _copy_legacy_workers(self) -> None:
+        with self.connect() as con:
+            exists = con.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='worker'"
+            ).fetchone()
+            if not exists:
+                return
+            cols = {r["name"] for r in con.execute("PRAGMA table_info(worker)")}
+            is_admin_expr = "is_admin" if "is_admin" in cols else "0 AS is_admin"
+            rows = con.execute(
+                f"""
+                SELECT token, username, active, {is_admin_expr}, created_at, last_seen
+                FROM worker
+                """
+            ).fetchall()
+        if not rows:
+            return
+        with self.users_connect() as con:
+            for row in rows:
+                con.execute(
+                    """
+                    INSERT INTO worker(token, username, active, is_admin, created_at, last_seen)
+                    VALUES(?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(token) DO NOTHING
+                    """,
+                    (
+                        row["token"],
+                        row["username"],
+                        int(row["active"]),
+                        int(row["is_admin"]),
+                        row["created_at"],
+                        row["last_seen"],
+                    ),
+                )
 
     def import_workflow(self, workflow_root: str | Path, reset: bool = False) -> dict[str, int]:
         progress = Path(workflow_root) / "progress"
@@ -413,12 +482,13 @@ class WorkStore:
         the /admin/* endpoints (minting/revoking ids, import/sync/reset). Admin is a role
         on a worker, not a separate shared secret."""
         token = secrets.token_urlsafe(24)
-        with self.connect() as con:
+        with self.users_connect() as con:
             con.execute(
                 "INSERT INTO worker(token, username, active, is_admin, created_at) "
                 "VALUES(?, ?, 1, ?, ?)",
                 (token, username, 1 if is_admin else 0, iso()),
             )
+        with self.connect() as con:
             self._log(con, username, "worker_create", None, {"is_admin": bool(is_admin)})
         return {"token": token, "username": username, "is_admin": bool(is_admin)}
 
@@ -427,7 +497,7 @@ class WorkStore:
         The token itself is never stored in events or on TU rows -- only the username."""
         if not token:
             return None
-        with self.connect() as con:
+        with self.users_connect() as con:
             row = con.execute(
                 "SELECT username FROM worker WHERE token=? AND active=1", (token,)
             ).fetchone()
@@ -440,7 +510,7 @@ class WorkStore:
         """Return the username for an active *admin* token, or None."""
         if not token:
             return None
-        with self.connect() as con:
+        with self.users_connect() as con:
             row = con.execute(
                 "SELECT username FROM worker WHERE token=? AND active=1 AND is_admin=1",
                 (token,),
@@ -448,7 +518,7 @@ class WorkStore:
             return row["username"] if row else None
 
     def list_workers(self) -> list[dict[str, Any]]:
-        with self.connect() as con:
+        with self.users_connect() as con:
             return [
                 {
                     "token": r["token"],
@@ -462,11 +532,13 @@ class WorkStore:
             ]
 
     def revoke_worker(self, token: str) -> bool:
-        with self.connect() as con:
+        with self.users_connect() as con:
             cur = con.execute("UPDATE worker SET active=0 WHERE token=?", (token,))
-            if cur.rowcount:
+            revoked = cur.rowcount > 0
+        if revoked:
+            with self.connect() as con:
                 self._log(con, None, "worker_revoke", None, {})
-            return cur.rowcount > 0
+        return revoked
 
     def snapshot(self, include_tus: bool = True) -> tuple[str | None, StatusCounts, list[TuRecord]]:
         with self.connect() as con:

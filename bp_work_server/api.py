@@ -41,6 +41,11 @@ def default_db_path() -> Path:
     return Path(os.environ.get("BP_WORK_DB", "data/bp-work.sqlite3"))
 
 
+def default_users_db_path() -> Path:
+    default = default_db_path().with_name(f"{default_db_path().stem}-users{default_db_path().suffix}")
+    return Path(os.environ.get("BP_WORK_USERS_DB", default))
+
+
 def auth_required() -> bool:
     """Every work mutation needs a valid X-Work-Token (a server-issued worker id). This
     is what lets the server URL be public: the token is the gate, not the URL. ON by
@@ -63,7 +68,7 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
         description="Coordination API for Burnout Paradise decompilation work claims.",
         lifespan=lifespan,
     )
-    app.state.store = store or WorkStore(default_db_path())
+    app.state.store = store or WorkStore(default_db_path(), default_users_db_path())
     app.state.store.migrate()
     app.state.github = GitHubClient()
     static_dir = files("bp_work_server").joinpath("static")
