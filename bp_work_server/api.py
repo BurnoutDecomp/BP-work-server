@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import threading
+import time
 from contextlib import asynccontextmanager
 from importlib.resources import files
 from pathlib import Path
@@ -71,11 +73,34 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
     app.state.store = store or WorkStore(default_db_path(), default_users_db_path())
     app.state.store.migrate()
     app.state.github = GitHubClient()
+    app.state.dashboard_cache = {"expires_at": 0.0, "data": None}
+    app.state.dashboard_cache_lock = threading.Lock()
     static_dir = files("bp_work_server").joinpath("static")
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     def get_store() -> WorkStore:
         return app.state.store
+
+    def invalidate_dashboard_cache() -> None:
+        with app.state.dashboard_cache_lock:
+            app.state.dashboard_cache["expires_at"] = 0.0
+            app.state.dashboard_cache["data"] = None
+
+    def cached_dashboard_state(store: WorkStore) -> dict:
+        now = time.monotonic()
+        cache = app.state.dashboard_cache
+        data = cache.get("data")
+        if data is not None and now < cache["expires_at"]:
+            return data
+        with app.state.dashboard_cache_lock:
+            now = time.monotonic()
+            data = cache.get("data")
+            if data is not None and now < cache["expires_at"]:
+                return data
+            data = store.dashboard_state()
+            cache["data"] = data
+            cache["expires_at"] = now + 1.0
+            return data
 
     def worker_identity(
         x_work_token: str | None = Header(default=None),
@@ -128,6 +153,7 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
         store: WorkStore = Depends(get_store),
     ) -> WorkerResponse:
         result = store.create_worker(req.username, is_admin=req.is_admin)
+        invalidate_dashboard_cache()
         return WorkerResponse(**result)
 
     @app.get("/admin/workers", response_model=WorkerListResponse)
@@ -145,6 +171,7 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
     ) -> Response:
         if not store.revoke_worker(token):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "unknown worker token")
+        invalidate_dashboard_cache()
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.post("/admin/import", response_model=ImportResponse)
@@ -155,7 +182,9 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
         store: WorkStore = Depends(get_store),
     ) -> dict[str, int]:
         try:
-            return store.import_workflow(workflow_root, reset=reset)
+            result = store.import_workflow(workflow_root, reset=reset)
+            invalidate_dashboard_cache()
+            return result
         except FileNotFoundError as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
@@ -166,7 +195,9 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
         store: WorkStore = Depends(get_store),
     ) -> dict:
         try:
-            return sync_workflow_repo(store, branch=req.branch, reset=req.reset)
+            result = sync_workflow_repo(store, branch=req.branch, reset=req.reset)
+            invalidate_dashboard_cache()
+            return result
         except RuntimeError as exc:
             raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc)) from exc
         except FileNotFoundError as exc:
@@ -200,6 +231,7 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
             result = store.claim(req.tu, identity or req.agent, req.lease_seconds, force=req.force)
         except KeyError as exc:
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+        invalidate_dashboard_cache()
         if not result.claimed:
             response.status_code = status.HTTP_409_CONFLICT
         return result
@@ -213,6 +245,7 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
         active_goal, claimed = store.claim_next(
             identity or req.agent, n=req.n, lease_seconds=req.lease_seconds, goal=req.goal
         )
+        invalidate_dashboard_cache()
         return ClaimNextResponse(active_goal=active_goal, count=len(claimed), claimed=claimed)
 
     @app.post("/claims/{tu_id:path}/heartbeat", response_model=ClaimResponse)
@@ -227,6 +260,7 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
             result = store.heartbeat(tu_id, identity or req.agent, req.lease_seconds)
         except KeyError as exc:
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+        invalidate_dashboard_cache()
         if not result.claimed:
             response.status_code = status.HTTP_409_CONFLICT
         return result
@@ -244,6 +278,7 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
         except PermissionError as exc:
             raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+        invalidate_dashboard_cache()
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.post("/tu/{tu_id:path}/compiled", status_code=status.HTTP_204_NO_CONTENT)
@@ -259,6 +294,7 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
         except (PermissionError, ValueError) as exc:
             raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+        invalidate_dashboard_cache()
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.post("/tu/{tu_id:path}/review", status_code=status.HTTP_204_NO_CONTENT)
@@ -274,6 +310,7 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+        invalidate_dashboard_cache()
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.post("/tu/{tu_id:path}/block", status_code=status.HTTP_204_NO_CONTENT)
@@ -287,6 +324,7 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
             store.block(tu_id, identity or req.agent, req.reason)
         except KeyError as exc:
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+        invalidate_dashboard_cache()
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.post("/tu/{tu_id:path}/unblock", status_code=status.HTTP_204_NO_CONTENT)
@@ -300,6 +338,7 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
             store.unblock(tu_id, identity or req.agent)
         except KeyError as exc:
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+        invalidate_dashboard_cache()
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.get("/events", response_model=EventsResponse)
@@ -312,7 +351,7 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
 
     @app.get("/dashboard/state")
     def dashboard_state(store: WorkStore = Depends(get_store)) -> dict:
-        return store.dashboard_state()
+        return cached_dashboard_state(store)
 
     @app.get("/api/facets")
     def facets(store: WorkStore = Depends(get_store)) -> dict:
@@ -378,13 +417,13 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
             last_id = after
             yield "event: connected\ndata: {}\n\n"
             while True:
-                events = store.events(after=last_id, limit=100)
+                events = await asyncio.to_thread(store.events, after=last_id, limit=100)
                 for event in events:
                     last_id = max(last_id, event["id"])
                     payload = json.dumps(event, default=str)
                     yield f"id: {event['id']}\nevent: work-event\ndata: {payload}\n\n"
-                yield "event: tick\ndata: {}\n\n"
-                await asyncio.sleep(2)
+                yield ": keepalive\n\n"
+                await asyncio.sleep(10)
 
         return StreamingResponse(
             stream(),

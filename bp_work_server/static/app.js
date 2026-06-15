@@ -3,6 +3,8 @@ const state = {
   refreshTimer: null,
   githubTimer: null,
   eventSource: null,
+  dashboardInFlight: false,
+  githubInFlight: false,
   treeCollapsed: {}, // path -> bool, remembers folder state across refreshes
   repo: { owner: "Adriwin06", name: "b5-decomp", ref: "dev" },
   explorer: {
@@ -17,6 +19,7 @@ const state = {
     offset: 0,
     total: 0,
     searchTimer: null,
+    requestId: 0,
   },
 };
 
@@ -101,6 +104,21 @@ function clearNode(node) {
   while (node.firstChild) node.removeChild(node.firstChild);
 }
 
+async function fetchJson(url, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { cache: "no-store", signal: controller.signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("request timed out");
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 function div(className, content) {
   const node = document.createElement("div");
   node.className = className;
@@ -118,15 +136,16 @@ function span(className, content) {
 /* ---------------- Work dashboard ---------------- */
 
 async function refresh() {
+  if (state.dashboardInFlight) return;
+  state.dashboardInFlight = true;
   try {
-    const response = await fetch("/dashboard/state", { cache: "no-store" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    render(data);
+    render(await fetchJson("/dashboard/state", 15000));
     setConnection("online", "Live");
   } catch (error) {
     setConnection("offline", "Disconnected");
     text("subtitle", `Dashboard update failed: ${error.message}`);
+  } finally {
+    state.dashboardInFlight = false;
   }
 }
 
@@ -300,12 +319,14 @@ function renderBlocked(items) {
 /* ---------------- GitHub panel ---------------- */
 
 async function refreshGithub() {
+  if (state.githubInFlight) return;
+  state.githubInFlight = true;
   try {
-    const response = await fetch("/github/overview", { cache: "no-store" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    renderGithub(await response.json());
+    renderGithub(await fetchJson("/github/overview", 20000));
   } catch (error) {
     text("repoDesc", `GitHub data unavailable: ${error.message}`);
+  } finally {
+    state.githubInFlight = false;
   }
 }
 
@@ -552,9 +573,7 @@ function statusPill(status) {
 
 async function loadFacets() {
   try {
-    const res = await fetch("/api/facets", { cache: "no-store" });
-    if (!res.ok) return;
-    const f = await res.json();
+    const f = await fetchJson("/api/facets", 15000);
     fillSelect("filterSource", f.sources, "All sources");
     fillSelect("filterGoal", f.goals, "All goals");
     // status options swap per tab; remember both sets
@@ -609,15 +628,16 @@ function explorerParams() {
 async function loadExplorer() {
   const ex = state.explorer;
   const path = ex.tab === "funcs" ? "/api/funcs" : "/api/tus";
+  const requestId = ++ex.requestId;
   try {
-    const res = await fetch(`${path}?${explorerParams()}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await fetchJson(`${path}?${explorerParams()}`, 15000);
+    if (requestId !== ex.requestId) return;
     ex.total = data.total || 0;
     if (ex.tab === "funcs") renderFuncRows(data.items || []);
     else renderTuRows(data.items || []);
     renderExplorerFoot();
   } catch (error) {
+    if (requestId !== ex.requestId) return;
     el("explorerBody").innerHTML = "";
     const row = document.createElement("tr");
     const cell = document.createElement("td");
@@ -790,9 +810,7 @@ async function openDetail(tuId) {
   text("detailTitle", tuId);
   el("detailBody").innerHTML = '<p class="muted-text">Loading…</p>';
   try {
-    const res = await fetch(`/api/tu?id=${encodeURIComponent(tuId)}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    renderDetail(await res.json());
+    renderDetail(await fetchJson(`/api/tu?id=${encodeURIComponent(tuId)}`, 15000));
   } catch (error) {
     el("detailBody").innerHTML = "";
     el("detailBody").appendChild(div("muted-text", `Failed to load: ${error.message}`));
@@ -894,17 +912,24 @@ function depRow(dep, status) {
 
 function connectStream() {
   if (!window.EventSource) {
-    state.refreshTimer = window.setInterval(refresh, 5000);
+    state.refreshTimer = window.setInterval(refresh, 15000);
     return;
   }
   const source = new EventSource(`/events/stream?after=${state.lastEventId}`);
   state.eventSource = source;
-  source.addEventListener("connected", () => setConnection("online", "Live"));
-  source.addEventListener("work-event", () => refresh());
-  source.addEventListener("tick", () => refresh());
+  source.addEventListener("connected", () => {
+    setConnection("online", "Live");
+    refresh();
+  });
+  source.addEventListener("work-event", (event) => {
+    state.lastEventId = Math.max(state.lastEventId, Number(event.lastEventId) || 0);
+    refresh();
+  });
+  source.addEventListener("tick", () => setConnection("online", "Live"));
   source.onerror = () => {
     setConnection("offline", "Reconnecting");
   };
+  state.refreshTimer = window.setInterval(refresh, 30000);
 }
 
 refresh();
@@ -913,3 +938,6 @@ refreshGithub();
 initExplorer();
 // GitHub data changes slowly and is cached server-side; poll gently.
 state.githubTimer = window.setInterval(refreshGithub, 90000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) refresh();
+});

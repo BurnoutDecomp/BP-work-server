@@ -14,6 +14,7 @@ from bp_work_server.models import ClaimResponse, NextTu, StatusCounts, TuRecord
 
 
 TU_STATUSES = {"todo", "in_progress", "compiled", "done", "blocked"}
+DB_BUSY_TIMEOUT_MS = 30_000
 
 
 SCHEMA = """
@@ -123,12 +124,15 @@ class WorkStore:
         return self.db_path.with_name(f"{self.db_path.stem}-users{self.db_path.suffix}")
 
     @contextmanager
-    def connect(self) -> Iterable[sqlite3.Connection]:
+    def connect(self, *, ensure_wal: bool = False) -> Iterable[sqlite3.Connection]:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        con = sqlite3.connect(self.db_path)
+        con = sqlite3.connect(self.db_path, timeout=DB_BUSY_TIMEOUT_MS / 1000)
         con.row_factory = sqlite3.Row
+        con.execute(f"PRAGMA busy_timeout = {DB_BUSY_TIMEOUT_MS}")
         con.execute("PRAGMA foreign_keys = ON")
-        con.execute("PRAGMA journal_mode = WAL")
+        con.execute("PRAGMA synchronous = NORMAL")
+        if ensure_wal:
+            con.execute("PRAGMA journal_mode = WAL")
         try:
             yield con
             con.commit()
@@ -139,12 +143,15 @@ class WorkStore:
             con.close()
 
     @contextmanager
-    def users_connect(self) -> Iterable[sqlite3.Connection]:
+    def users_connect(self, *, ensure_wal: bool = False) -> Iterable[sqlite3.Connection]:
         self.users_db_path.parent.mkdir(parents=True, exist_ok=True)
-        con = sqlite3.connect(self.users_db_path)
+        con = sqlite3.connect(self.users_db_path, timeout=DB_BUSY_TIMEOUT_MS / 1000)
         con.row_factory = sqlite3.Row
+        con.execute(f"PRAGMA busy_timeout = {DB_BUSY_TIMEOUT_MS}")
         con.execute("PRAGMA foreign_keys = ON")
-        con.execute("PRAGMA journal_mode = WAL")
+        con.execute("PRAGMA synchronous = NORMAL")
+        if ensure_wal:
+            con.execute("PRAGMA journal_mode = WAL")
         try:
             yield con
             con.commit()
@@ -155,12 +162,12 @@ class WorkStore:
             con.close()
 
     def migrate(self) -> None:
-        with self.connect() as con:
+        with self.connect(ensure_wal=True) as con:
             con.executescript(SCHEMA)
         self._migrate_users()
 
     def _migrate_users(self) -> None:
-        with self.users_connect() as con:
+        with self.users_connect(ensure_wal=True) as con:
             con.executescript(USERS_SCHEMA)
             # additive migration for user DBs created before the admin role existed
             cols = {r["name"] for r in con.execute("PRAGMA table_info(worker)")}
@@ -218,7 +225,7 @@ class WorkStore:
         deps = json.loads(deps_path.read_text(encoding="utf-8")) if deps_path.exists() else []
         goals = json.loads(goals_path.read_text(encoding="utf-8")) if goals_path.exists() else {}
 
-        with self.connect() as con:
+        with self.connect(ensure_wal=True) as con:
             con.executescript(SCHEMA)
             if reset:
                 con.executescript(
@@ -732,9 +739,8 @@ class WorkStore:
     ) -> dict[str, Any]:
         """Filter, sort, and paginate translation units for the explorer.
 
-        The full TU set is small (a few thousand rows) so we filter in SQL,
-        then rank in Python -- this keeps the dependency-aware ``queue`` sort
-        identical to ``next_tus`` without duplicating SQL.
+        Most sorts page directly in SQL. The dependency-aware ``queue`` sort
+        still ranks in Python so it stays identical to ``next_tus``.
         """
         with self.connect() as con:
             self._expire_leases(con)
@@ -760,25 +766,49 @@ class WorkStore:
                 clauses.append("t.owner = ?")
                 params.append(owner)
             where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+
+            need_deps = sort == "queue"
+            if not need_deps:
+                direction = "DESC" if order == "desc" else "ASC"
+                order_by = {
+                    "funcs": f"t.n_funcs {direction}, t.id {direction}",
+                    "updated": f"COALESCE(t.updated_at, '') {direction}, t.id {direction}",
+                    "status": f"t.status {direction}, t.id {direction}",
+                    "id": f"t.id {direction}",
+                }.get(sort, f"t.id {direction}")
+                total = con.execute(
+                    f"SELECT COUNT(*) FROM tu t {joins}{where}", params
+                ).fetchone()[0]
+                rows = con.execute(
+                    f"""
+                    SELECT t.*
+                    FROM tu t {joins}{where}
+                    ORDER BY {order_by}
+                    LIMIT ? OFFSET ?
+                    """,
+                    [*params, limit, offset],
+                ).fetchall()
+                items = [self._dashboard_tu(row) for row in rows]
+                for item in items:
+                    item["unresolved_deps"] = None
+                return {"total": total, "limit": limit, "offset": offset, "items": items}
+
             rows = con.execute(
                 f"SELECT t.* FROM tu t {joins}{where}", params
             ).fetchall()
-
-            need_deps = sort == "queue"
             unresolved: dict[str, int] = {}
-            if need_deps:
-                dep_map: dict[str, set[str]] = defaultdict(set)
-                for dep in con.execute("SELECT tu_id, dep_id FROM tu_dep"):
-                    dep_map[dep["tu_id"]].add(dep["dep_id"])
-                status_by_tu = {
-                    r["id"]: r["status"] for r in con.execute("SELECT id, status FROM tu")
-                }
-                for row in rows:
-                    unresolved[row["id"]] = sum(
-                        1
-                        for dep_id in dep_map.get(row["id"], ())
-                        if status_by_tu.get(dep_id) != "done"
-                    )
+            dep_map: dict[str, set[str]] = defaultdict(set)
+            for dep in con.execute("SELECT tu_id, dep_id FROM tu_dep"):
+                dep_map[dep["tu_id"]].add(dep["dep_id"])
+            status_by_tu = {
+                r["id"]: r["status"] for r in con.execute("SELECT id, status FROM tu")
+            }
+            for row in rows:
+                unresolved[row["id"]] = sum(
+                    1
+                    for dep_id in dep_map.get(row["id"], ())
+                    if status_by_tu.get(dep_id) != "done"
+                )
 
             items = [self._dashboard_tu(row) for row in rows]
             for item in items:
