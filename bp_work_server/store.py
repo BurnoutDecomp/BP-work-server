@@ -555,6 +555,38 @@ class WorkStore:
                 self._log(con, None, "worker_revoke", None, {})
         return revoked
 
+    def export_status(self) -> dict[str, dict[str, dict[str, Any]]]:
+        """Reproduce the durable ``progress/status.json`` shape from the live DB.
+
+        This is the inverse of ``WorkStore.import_workflow``: it emits exactly the
+        states the workflow CLI's server-mode ``sync_status`` would commit to git --
+        only the DURABLE TU statuses (``done``/``blocked``, the ones tied to committed
+        code) plus their notes, and every non-``todo`` func status. The transient live
+        layer (``in_progress``/``compiled``, ``owner``, leases) is deliberately omitted:
+        it belongs to the server, never to git. Lets a CI job regenerate the committed
+        status.json from the server so workers never push it by hand.
+
+        Format mirrors ``sync_status``: nested ``{"tu": {...}, "func": {...}}`` so a
+        consumer can ``json.dump(..., indent=1, sort_keys=True)`` it byte-for-byte.
+        """
+        with self.connect() as con:
+            self._expire_leases(con)
+            tu: dict[str, dict[str, Any]] = {}
+            for row in con.execute(
+                "SELECT id, status, notes FROM tu "
+                "WHERE status IN ('done','blocked') ORDER BY id"
+            ):
+                entry: dict[str, Any] = {"status": row["status"]}
+                if row["notes"]:
+                    entry["notes"] = row["notes"]
+                tu[row["id"]] = entry
+            fn: dict[str, dict[str, Any]] = {}
+            for row in con.execute(
+                "SELECT name, status FROM func WHERE status!='todo' ORDER BY name"
+            ):
+                fn[row["name"]] = {"status": row["status"]}
+            return {"tu": tu, "func": fn}
+
     def snapshot(self, include_tus: bool = True) -> tuple[str | None, StatusCounts, list[TuRecord]]:
         with self.connect() as con:
             self._expire_leases(con)

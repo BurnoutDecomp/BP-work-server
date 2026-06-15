@@ -203,6 +203,15 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
         except FileNotFoundError as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
+    @app.get("/export/status")
+    def export_status(store: WorkStore = Depends(get_store)) -> dict:
+        """The committed ``progress/status.json`` regenerated from the live DB.
+
+        Open read (the durable done/blocked it returns is already in ``/snapshot``):
+        a CI job fetches this and commits it to the workflow repo, so decomp workers
+        never have to push status.json by hand. See docs/protocol.md."""
+        return store.export_status()
+
     @app.get("/snapshot", response_model=SnapshotResponse)
     def snapshot(
         include_tus: bool = Query(True),

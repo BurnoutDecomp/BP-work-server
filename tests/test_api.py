@@ -134,6 +134,38 @@ def test_explorer_search_filter_and_detail(tmp_path):
     assert missing.status_code == 404
 
 
+def test_export_status_mirrors_durable_states(tmp_path):
+    """GET /export/status reproduces the committed status.json shape from the live DB:
+    only durable done/blocked TUs (+notes) and non-todo func statuses -- never the
+    transient in_progress/compiled live layer or owners."""
+    client, store = make_client(tmp_path)
+    with store.connect() as con:
+        # A.cpp -> done, B.cpp -> blocked with a reason, plus a live in_progress TU
+        # that must NOT leak into the export.
+        con.execute(
+            "INSERT INTO tu(id, source, status, n_funcs, n_decfigs, updated_at) "
+            "VALUES('GameSource/C.cpp', 'decfigs', 'in_progress', 1, 1, ?)",
+            (iso(),),
+        )
+        con.execute("UPDATE tu SET status='done' WHERE id='GameSource/A.cpp'")
+        con.execute("UPDATE func SET status='reviewed' WHERE tu_id='GameSource/A.cpp'")
+        con.execute(
+            "UPDATE tu SET status='blocked', notes='Vendor code' WHERE id='GameSource/B.cpp'"
+        )
+
+    export = client.get("/export/status")
+    assert export.status_code == 200
+    body = export.json()
+
+    assert body["tu"] == {
+        "GameSource/A.cpp": {"status": "done"},
+        "GameSource/B.cpp": {"status": "blocked", "notes": "Vendor code"},
+    }
+    assert "GameSource/C.cpp" not in body["tu"]  # transient live state stays off git
+    assert body["func"]["A::Run"] == {"status": "reviewed"}
+    assert "B::Run" not in body["func"]  # still todo
+
+
 def test_admin_endpoints_require_admin_role(tmp_path):
     client, store = make_client(tmp_path)
     user = store.create_worker("regular")

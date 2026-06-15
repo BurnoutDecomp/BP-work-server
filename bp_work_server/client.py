@@ -111,6 +111,11 @@ class WorkServerClient:
     def snapshot(self, include_tus: bool = True) -> dict[str, Any]:
         return self._request("GET", "/snapshot?" + urlencode({"include_tus": str(include_tus).lower()}))
 
+    def export_status(self) -> dict[str, Any]:
+        """The committed status.json regenerated from the live DB (durable done/blocked
+        + func statuses). Used by CI to refresh git without a worker pushing by hand."""
+        return self._request("GET", "/export/status")
+
     def _request(
         self,
         method: str,

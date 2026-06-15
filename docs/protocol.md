@@ -219,6 +219,36 @@ Request:
 
 Returns a blocked TU to `todo`.
 
+### `GET /export/status`
+
+Regenerates the committed `progress/status.json` from the live DB and returns it as
+JSON. It is the inverse of `/admin/import`: it emits only the **durable** states the
+workflow CLI would commit to git — `done`/`blocked` TUs (with `notes`) plus every
+non-`todo` func status — and never the transient live layer (`in_progress`/`compiled`,
+owners, leases).
+
+Open read (the durable subset it returns is already visible in `/snapshot`). A CI job
+in `BP-Decomp_Workflow` fetches this, writes it to `progress/status.json`, bumps the
+`b5-decomp` submodule pointer, and commits — so decomp workers push only to `b5-decomp`
+and never need write access to the workflow repo. Because `blocked` TUs leave no
+distinguishing file, the server is the **only** authority that can fully reconstruct
+status.json; a files-only reconcile can recover `done` but not `blocked`.
+
+```json
+{
+  "tu": {
+    "GameSource/Foo/Bar.cpp": {"status": "done"},
+    "GameSource/Vendor/Baz.cpp": {"status": "blocked", "notes": "Vendor code; in PC lib"}
+  },
+  "func": {
+    "Foo::Bar::Run": {"status": "reviewed"}
+  }
+}
+```
+
+Consumers should write it with `json.dump(..., indent=1, sort_keys=True)` to match the
+byte layout the workflow's `sync_status` produces.
+
 ### `GET /snapshot?include_tus=true`
 
 Returns status counts and, optionally, the TU table.
