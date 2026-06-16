@@ -93,15 +93,55 @@ def test_dashboard_agents_include_event_activity(tmp_path):
 
 def test_dashboard_lists_registered_agents_without_claims(tmp_path):
     client, store = make_client(tmp_path)
-    store.create_worker("Adriwin", is_admin=True)
+    store.create_worker("Adriwin", is_admin=True, github_username="Adriwin06")
+    store.create_worker("Derneuere", github_username="Derneuere")
     store.create_worker("JeBobs")
 
     state = client.get("/dashboard/state").json()
 
     names = [agent["name"] for agent in state["agents"]]
-    assert names == ["Adriwin", "JeBobs"]
+    assert names == ["Adriwin", "Derneuere", "JeBobs"]
     assert all(agent["has_active_work"] is False for agent in state["agents"])
     assert state["agents"][0]["is_admin"] is True
+    assert state["agents"][0]["github_username"] == "Adriwin06"
+    assert state["agents"][1]["github_username"] is None
+    assert state["agents"][2]["github_username"] is None
+    assert state["actor_profiles"] == {
+        "Adriwin": "Adriwin06",
+        "Derneuere": "Derneuere",
+        "JeBobs": "JeBobs",
+    }
+
+
+def test_dashboard_expires_lease_less_in_progress_work(tmp_path):
+    client, store = make_client(tmp_path)
+    with store.connect() as con:
+        con.execute(
+            """
+            UPDATE tu
+            SET status='in_progress', owner='agent', lease_expires_at=NULL
+            WHERE id='GameSource/A.cpp'
+            """
+        )
+        con.execute(
+            """
+            UPDATE tu
+            SET status='compiled', owner='agent', lease_expires_at=NULL
+            WHERE id='GameSource/B.cpp'
+            """
+        )
+
+    state = client.get("/dashboard/state").json()
+    snapshot = client.get("/snapshot").json()
+
+    assert state["active_work"] == []
+    assert all(agent["name"] != "agent" for agent in state["agents"])
+    by_id = {row["id"]: row for row in snapshot["tus"]}
+    assert by_id["GameSource/A.cpp"]["status"] == "todo"
+    assert by_id["GameSource/A.cpp"]["owner"] is None
+    assert by_id["GameSource/B.cpp"]["status"] == "compiled"
+    detail = client.get("/api/tu", params={"id": "GameSource/B.cpp"}).json()
+    assert detail["owner"] is None
 
 
 def test_finished_owner_is_not_an_active_agent(tmp_path):

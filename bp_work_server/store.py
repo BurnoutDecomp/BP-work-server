@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS worker(
   username TEXT NOT NULL,
   active INTEGER NOT NULL DEFAULT 1,
   is_admin INTEGER NOT NULL DEFAULT 0,
+  github_username TEXT,
   created_at TEXT,
   last_seen TEXT
 );
@@ -178,6 +179,8 @@ class WorkStore:
             cols = {r["name"] for r in con.execute("PRAGMA table_info(worker)")}
             if "is_admin" not in cols:
                 con.execute("ALTER TABLE worker ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+            if "github_username" not in cols:
+                con.execute("ALTER TABLE worker ADD COLUMN github_username TEXT")
         self._copy_legacy_workers()
 
     def _copy_legacy_workers(self) -> None:
@@ -191,9 +194,10 @@ class WorkStore:
                 return
             cols = {r["name"] for r in con.execute("PRAGMA table_info(worker)")}
             is_admin_expr = "is_admin" if "is_admin" in cols else "0 AS is_admin"
+            github_expr = "github_username" if "github_username" in cols else "NULL AS github_username"
             rows = con.execute(
                 f"""
-                SELECT token, username, active, {is_admin_expr}, created_at, last_seen
+                SELECT token, username, active, {is_admin_expr}, {github_expr}, created_at, last_seen
                 FROM worker
                 """
             ).fetchall()
@@ -202,8 +206,10 @@ class WorkStore:
                 for row in rows:
                     con.execute(
                         """
-                        INSERT INTO worker(token, username, active, is_admin, created_at, last_seen)
-                        VALUES(?, ?, ?, ?, ?, ?)
+                        INSERT INTO worker(
+                          token, username, active, is_admin, github_username, created_at, last_seen
+                        )
+                        VALUES(?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(token) DO NOTHING
                         """,
                         (
@@ -211,6 +217,7 @@ class WorkStore:
                             row["username"],
                             int(row["active"]),
                             int(row["is_admin"]),
+                            row["github_username"],
                             row["created_at"],
                             row["last_seen"],
                         ),
@@ -492,20 +499,30 @@ class WorkStore:
             self._log(con, agent, "unblock", tu_id, {})
 
     # --- workers (server-issued identities) -------------------------------
-    def create_worker(self, username: str, is_admin: bool = False) -> dict[str, Any]:
+    def create_worker(
+        self, username: str, is_admin: bool = False, github_username: str | None = None
+    ) -> dict[str, Any]:
         """Mint a new secret token bound to a human username. `is_admin` grants access to
         the /admin/* endpoints (minting/revoking ids, import/sync/reset). Admin is a role
         on a worker, not a separate shared secret."""
         token = secrets.token_urlsafe(24)
+        github_username = self._normalize_github_username(username, github_username)
         with self.users_connect() as con:
             con.execute(
-                "INSERT INTO worker(token, username, active, is_admin, created_at) "
-                "VALUES(?, ?, 1, ?, ?)",
-                (token, username, 1 if is_admin else 0, iso()),
+                """
+                INSERT INTO worker(token, username, active, is_admin, github_username, created_at)
+                VALUES(?, ?, 1, ?, ?, ?)
+                """,
+                (token, username, 1 if is_admin else 0, github_username, iso()),
             )
         with self.connect() as con:
             self._log(con, username, "worker_create", None, {"is_admin": bool(is_admin)})
-        return {"token": token, "username": username, "is_admin": bool(is_admin)}
+        return {
+            "token": token,
+            "username": username,
+            "is_admin": bool(is_admin),
+            "github_username": github_username,
+        }
 
     def resolve_worker(self, token: str) -> str | None:
         """Return the username for an active token, or None. Updates last_seen.
@@ -540,6 +557,7 @@ class WorkStore:
                     "username": r["username"],
                     "active": bool(r["active"]),
                     "is_admin": bool(r["is_admin"]),
+                    "github_username": r["github_username"],
                     "created_at": r["created_at"],
                     "last_seen": r["last_seen"],
                 }
@@ -552,6 +570,7 @@ class WorkStore:
                 row["username"]: {
                     "active": bool(row["active"]),
                     "is_admin": bool(row["is_admin"]),
+                    "github_username": row["github_username"],
                     "tokens": row["tokens"],
                     "created_at": row["created_at"],
                     "last_seen": row["last_seen"],
@@ -561,6 +580,7 @@ class WorkStore:
                     SELECT username,
                            MAX(active) AS active,
                            MAX(is_admin) AS is_admin,
+                           MAX(github_username) AS github_username,
                            COUNT(*) AS tokens,
                            MIN(created_at) AS created_at,
                            MAX(last_seen) AS last_seen
@@ -579,6 +599,17 @@ class WorkStore:
             with self.connect() as con:
                 self._log(con, None, "worker_revoke", None, {})
         return revoked
+
+    def set_worker_github_username(
+        self, username: str, github_username: str | None
+    ) -> int:
+        github_username = self._normalize_github_username(username, github_username)
+        with self.users_connect() as con:
+            cur = con.execute(
+                "UPDATE worker SET github_username=? WHERE username=?",
+                (github_username, username),
+            )
+            return cur.rowcount
 
     def export_status(self) -> dict[str, dict[str, dict[str, Any]]]:
         """Reproduce the durable ``progress/status.json`` shape from the live DB.
@@ -671,7 +702,8 @@ class WorkStore:
                     """
                     SELECT *
                     FROM tu
-                    WHERE status IN ('in_progress', 'compiled')
+                    WHERE status='in_progress'
+                      AND lease_expires_at IS NOT NULL
                     ORDER BY updated_at DESC, id
                     LIMIT 100
                     """
@@ -729,12 +761,14 @@ class WorkStore:
                     """
                     SELECT owner,
                            SUM(CASE WHEN status='in_progress' THEN 1 ELSE 0 END) AS in_progress,
-                           SUM(CASE WHEN status='compiled' THEN 1 ELSE 0 END) AS compiled,
+                           0 AS compiled,
                            COUNT(*) AS total,
                            MAX(lease_expires_at) AS lease_expires_at,
                            MAX(updated_at) AS last_update
                     FROM tu
-                    WHERE owner IS NOT NULL AND status IN ('in_progress', 'compiled')
+                    WHERE owner IS NOT NULL
+                      AND status='in_progress'
+                      AND lease_expires_at IS NOT NULL
                     GROUP BY owner
                     ORDER BY total DESC, owner
                     """
@@ -758,6 +792,7 @@ class WorkStore:
                         "registered": bool(registered),
                         "worker_active": bool(registered.get("active", True)),
                         "is_admin": bool(registered.get("is_admin", False)),
+                        "github_username": registered.get("github_username"),
                         "worker_tokens": registered.get("tokens", 0),
                         "created_at": registered.get("created_at"),
                         "last_seen": registered.get("last_seen"),
@@ -810,6 +845,10 @@ class WorkStore:
                     "func_percent": self._percent(done_funcs, total_funcs),
                 },
                 "agents": agents,
+                "actor_profiles": {
+                    name: data.get("github_username") or name
+                    for name, data in registered_agents.items()
+                },
                 "active_work": active_work,
                 "blocked": blocked,
                 "recent_events": recent_events,
@@ -1192,6 +1231,25 @@ class WorkStore:
 
     def _expire_leases(self, con: sqlite3.Connection, now: datetime | None = None) -> int:
         threshold = iso(now)
+        missing_rows = con.execute(
+            """
+            SELECT id, owner FROM tu
+            WHERE status='in_progress'
+              AND lease_expires_at IS NULL
+            """
+        ).fetchall()
+        for row in missing_rows:
+            con.execute(
+                """
+                UPDATE tu
+                SET status='todo', owner=NULL, claimed_at=NULL, lease_expires_at=NULL,
+                    notes='lease missing', updated_at=?
+                WHERE id=?
+                """,
+                (threshold, row["id"]),
+            )
+            self._log(con, row["owner"], "lease_missing", row["id"], {})
+
         rows = con.execute(
             """
             SELECT id, owner FROM tu
@@ -1212,7 +1270,7 @@ class WorkStore:
                 (threshold, row["id"]),
             )
             self._log(con, row["owner"], "lease_expired", row["id"], {})
-        return len(rows)
+        return len(missing_rows) + len(rows)
 
     def _goal_scope(self, con: sqlite3.Connection, goal: str | None) -> set[str] | None:
         if not goal:
@@ -1287,6 +1345,7 @@ class WorkStore:
         ]
 
     def _dashboard_tu(self, row: sqlite3.Row) -> dict[str, Any]:
+        has_live_claim = row["status"] == "in_progress" and bool(row["lease_expires_at"])
         return {
             "id": row["id"],
             "source": row["source"],
@@ -1294,7 +1353,7 @@ class WorkStore:
             "n_funcs": row["n_funcs"],
             "n_decfigs": row["n_decfigs"],
             "dest_path": row["dest_path"],
-            "owner": row["owner"],
+            "owner": row["owner"] if has_live_claim else None,
             "notes": row["notes"],
             "updated_at": row["updated_at"],
             "lease_expires_at": row["lease_expires_at"],
@@ -1414,3 +1473,9 @@ class WorkStore:
             else:
                 parts.append(seg)
         return "/".join(parts)
+
+    def _normalize_github_username(self, username: str, github_username: str | None) -> str | None:
+        cleaned = (github_username or "").strip()
+        if not cleaned or cleaned.lower() == username.strip().lower():
+            return None
+        return cleaned

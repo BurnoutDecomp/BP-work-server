@@ -152,7 +152,9 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
         _admin: str = Depends(require_admin_worker),
         store: WorkStore = Depends(get_store),
     ) -> WorkerResponse:
-        result = store.create_worker(req.username, is_admin=req.is_admin)
+        result = store.create_worker(
+            req.username, is_admin=req.is_admin, github_username=req.github_username
+        )
         invalidate_dashboard_cache()
         return WorkerResponse(**result)
 

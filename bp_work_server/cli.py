@@ -39,7 +39,20 @@ def main() -> None:
     w_add = worker_sub.add_parser("add", help="Mint a worker id for a username.")
     w_add.add_argument("username")
     w_add.add_argument("--admin", action="store_true", help="Grant the admin role.")
+    w_add.add_argument(
+        "--github-username",
+        help="GitHub username override when it differs from the worker username.",
+    )
     worker_sub.add_parser("list", help="List worker ids.")
+    w_gh = worker_sub.add_parser(
+        "github", help="Set or clear a GitHub username override for an existing user."
+    )
+    w_gh.add_argument("username")
+    w_gh.add_argument(
+        "github_username",
+        nargs="?",
+        help="GitHub username override. Omit it, or pass the same value as username, to clear.",
+    )
     w_rev = worker_sub.add_parser("revoke", help="Revoke a worker id.")
     w_rev.add_argument("token")
 
@@ -63,9 +76,13 @@ def main() -> None:
     if args.cmd == "worker":
         store.migrate()
         if args.worker_cmd == "add":
-            result = store.create_worker(args.username, is_admin=args.admin)
+            result = store.create_worker(
+                args.username, is_admin=args.admin, github_username=args.github_username
+            )
             role = "admin" if result["is_admin"] else "user"
             print(f"created {role} worker for {result['username']!r}")
+            if result["github_username"]:
+                print(f"  github={result['github_username']}")
             print(f"  WORK_AGENT={result['token']}")
             print("\nGive this id to the user privately; they set it as WORK_AGENT.")
             return
@@ -77,8 +94,19 @@ def main() -> None:
             for w in workers:
                 state = "active " if w["active"] else "revoked"
                 role = "admin" if w["is_admin"] else "user "
-                print(f"  [{state}|{role}] {w['username']:24s} {w['token']}  "
-                      f"last_seen={w['last_seen']}")
+                github = f" github={w['github_username']}" if w.get("github_username") else ""
+                print(
+                    f"  [{state}|{role}] {w['username']:24s} {w['token']}  "
+                    f"last_seen={w['last_seen']}{github}"
+                )
+            return
+        if args.worker_cmd == "github":
+            rows = store.set_worker_github_username(args.username, args.github_username)
+            if rows:
+                value = args.github_username or ""
+                print(f"updated {rows} worker id(s) for {args.username!r}; github={value!r}")
+            else:
+                print(f"unknown user: {args.username!r}")
             return
         if args.worker_cmd == "revoke":
             print("revoked" if store.revoke_worker(args.token) else "unknown token")

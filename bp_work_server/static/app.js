@@ -6,6 +6,7 @@ const state = {
   dashboardInFlight: false,
   githubInFlight: false,
   treeCollapsed: {}, // path -> bool, remembers folder state across refreshes
+  actorProfiles: {},
   repo: { owner: "Adriwin06", name: "b5-decomp", ref: "dev" },
   explorer: {
     tab: "tus",
@@ -21,15 +22,6 @@ const state = {
     searchTimer: null,
     requestId: 0,
   },
-};
-
-const USER_PROFILES = {
-  Adriwin: "Adriwin06",
-  Adriwin06: "Adriwin06",
-  JeBobs: "JeBobs",
-  Derneuere: "JeBobs",
-  "Nathan V": "JeBobs",
-  "Nathan V.": "JeBobs",
 };
 
 /* Build a github.com/blob URL for a path inside the mirrored repo. */
@@ -142,9 +134,9 @@ function span(className, content) {
   return node;
 }
 
-function actorNode(name) {
+function actorNode(name, githubUsername) {
   if (!name) return span("muted-text", "none");
-  const profile = USER_PROFILES[name] || USER_PROFILES[String(name).trim()];
+  const profile = githubUsername || state.actorProfiles[name] || state.actorProfiles[String(name).trim()];
   if (!profile) return span("actor-name", name);
   const link = document.createElement("a");
   link.className = "actor-link";
@@ -193,6 +185,7 @@ async function refresh() {
 }
 
 function render(data) {
+  state.actorProfiles = data.actor_profiles || {};
   const totals = data.totals || {};
   const counts = data.counts || {};
   text("subtitle", `${fmtInt(totals.tus)} translation units · ${fmtInt(totals.funcs)} functions`);
@@ -233,7 +226,9 @@ function renderAgents(agents) {
     const row = div("agent-row");
     row.classList.toggle("agent-idle", !agent.has_active_work && Number(agent.total || 0) === 0);
     const name = div("agent-name");
-    name.appendChild(actorNode(agent.name || "unknown"));
+    name.appendChild(
+      actorNode(agent.name || "unknown", agent.github_username || (agent.registered ? agent.name : null)),
+    );
     if (agent.has_active_work || Number(agent.total || 0) > 0) {
       name.appendChild(span("agent-badge active", "active"));
     }
@@ -814,7 +809,7 @@ function renderTuRows(items) {
         ? "Dependency tracking is unavailable for this row."
         : `${fmtInt(item.total_deps)} recorded dependencies`;
     const owner = document.createElement("td");
-    if (item.owner && ["in_progress", "compiled"].includes(item.status)) {
+    if (item.owner && item.status === "in_progress" && item.lease_expires_at) {
       owner.appendChild(actorNode(item.owner));
       owner.appendChild(div("tu-meta", "active claim"));
     } else if (item.completed_by) {
