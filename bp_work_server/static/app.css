@@ -1196,6 +1196,14 @@ td:nth-child(4) {
   margin: 0 0 22px;
 }
 
+/* Keep the header full-bleed but inset the body content from the card edges. */
+.explorer > .explorer-controls,
+.explorer > .table-wrap,
+.explorer > .explorer-foot {
+  margin-left: 22px;
+  margin-right: 22px;
+}
+
 .explorer-tabs {
   display: inline-flex;
   gap: 6px;
@@ -1438,6 +1446,7 @@ td:nth-child(4) {
   align-items: center;
   justify-content: space-between;
   margin-top: 14px;
+  margin-bottom: 18px;
 }
 
 /* Override the generic 4-col widths for the wider explorer table. */
