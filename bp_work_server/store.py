@@ -49,7 +49,9 @@ CREATE TABLE IF NOT EXISTS tu(
 CREATE TABLE IF NOT EXISTS func(
   name TEXT PRIMARY KEY,
   tu_id TEXT NOT NULL REFERENCES tu(id) ON DELETE CASCADE,
-  status TEXT NOT NULL DEFAULT 'todo'
+  status TEXT NOT NULL DEFAULT 'todo',
+  completed_by TEXT,
+  completed_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS tu_dep(
@@ -170,6 +172,11 @@ class WorkStore:
     def migrate(self) -> None:
         with self.connect(ensure_wal=True) as con:
             con.executescript(SCHEMA)
+            cols = {r["name"] for r in con.execute("PRAGMA table_info(func)")}
+            if "completed_by" not in cols:
+                con.execute("ALTER TABLE func ADD COLUMN completed_by TEXT")
+            if "completed_at" not in cols:
+                con.execute("ALTER TABLE func ADD COLUMN completed_at TEXT")
         self._migrate_users()
 
     def _migrate_users(self) -> None:
@@ -437,7 +444,11 @@ class WorkStore:
                 """,
                 (notes, commit, iso(), tu_id),
             )
-            con.execute("UPDATE func SET status='compiles' WHERE tu_id=?", (tu_id,))
+            now = iso()
+            con.execute(
+                "UPDATE func SET status='compiles', completed_by=?, completed_at=? WHERE tu_id=?",
+                (agent, now, tu_id),
+            )
             self._log(con, agent, "compiled", tu_id, {"notes": notes, "commit": commit})
 
     def review(
@@ -469,7 +480,11 @@ class WorkStore:
                 """,
                 (status, owner, notes, commit, iso(), tu_id),
             )
-            con.execute("UPDATE func SET status=? WHERE tu_id=?", (func_status, tu_id))
+            now = iso()
+            con.execute(
+                "UPDATE func SET status=?, completed_by=?, completed_at=? WHERE tu_id=?",
+                (func_status, agent, now, tu_id),
+            )
             self._log(con, agent, f"review_{verdict}", tu_id, {"notes": notes, "commit": commit})
 
     def block(self, tu_id: str, agent: str, reason: str) -> None:
@@ -738,6 +753,17 @@ class WorkStore:
                     """
                 )
             }
+            completed_funcs_by_agent = {
+                row["completed_by"]: row["completed"]
+                for row in con.execute(
+                    """
+                    SELECT completed_by, COUNT(*) AS completed
+                    FROM func
+                    WHERE completed_by IS NOT NULL AND status!='todo'
+                    GROUP BY completed_by
+                    """
+                )
+            }
             last_activity_by_agent = {
                 row["agent"]: row["last_activity"]
                 for row in con.execute(
@@ -775,7 +801,12 @@ class WorkStore:
                 )
             }
             registered_agents = self._registered_agents()
-            agent_names = set(registered_agents) | set(active_agents)
+            agent_names = (
+                set(registered_agents)
+                | set(active_agents)
+                | set(completed_by_agent)
+                | set(completed_funcs_by_agent)
+            )
             agents = []
             for name in sorted(
                 agent_names,
@@ -801,6 +832,8 @@ class WorkStore:
                         "total": active.get("total", 0),
                         "has_active_work": bool(active.get("total", 0)),
                         "completed": completed_by_agent.get(name, 0),
+                        "completed_tus": completed_by_agent.get(name, 0),
+                        "completed_funcs": completed_funcs_by_agent.get(name, 0),
                         "lease_expires_at": active.get("lease_expires_at"),
                         "last_update": active.get("last_update"),
                         "last_activity": last_activity_by_agent.get(
@@ -1006,9 +1039,15 @@ class WorkStore:
             row = self._require_tu(con, tu_id)
             detail = self._dashboard_tu(row)
             detail["funcs"] = [
-                {"name": r["name"], "status": r["status"]}
+                {
+                    "name": r["name"],
+                    "status": r["status"],
+                    "completed_by": r["completed_by"],
+                    "completed_at": r["completed_at"],
+                }
                 for r in con.execute(
-                    "SELECT name, status FROM func WHERE tu_id=? ORDER BY name", (tu_id,)
+                    "SELECT name, status, completed_by, completed_at FROM func WHERE tu_id=? ORDER BY name",
+                    (tu_id,),
                 )
             ]
             detail["deps"] = [
@@ -1079,11 +1118,23 @@ class WorkStore:
                 f"SELECT COUNT(*) FROM func{where}", params
             ).fetchone()[0]
             rows = con.execute(
-                f"SELECT name, tu_id, status FROM func{where} ORDER BY name LIMIT ? OFFSET ?",
+                f"""
+                SELECT name, tu_id, status, completed_by, completed_at
+                FROM func{where}
+                ORDER BY name
+                LIMIT ? OFFSET ?
+                """,
                 [*params, limit, offset],
             ).fetchall()
             items = [
-                {"name": r["name"], "tu_id": r["tu_id"], "status": r["status"]} for r in rows
+                {
+                    "name": r["name"],
+                    "tu_id": r["tu_id"],
+                    "status": r["status"],
+                    "completed_by": r["completed_by"],
+                    "completed_at": r["completed_at"],
+                }
+                for r in rows
             ]
             return {"total": total, "limit": limit, "offset": offset, "items": items}
 

@@ -87,6 +87,8 @@ def test_dashboard_agents_include_event_activity(tmp_path):
     state = client.get("/dashboard/state").json()
 
     assert state["agents"][0]["completed"] == 1
+    assert state["agents"][0]["completed_tus"] == 1
+    assert state["agents"][0]["completed_funcs"] == 1
     assert state["agents"][0]["last_activity"]
     assert state["active_work"][0]["last_actor"] == "agent-a"
 
@@ -186,6 +188,12 @@ def test_path_encoded_tu_status_endpoints(tmp_path):
     assert compiled.status_code == 204
     assert review.status_code == 204
     assert state["counts"]["done"] == 1
+    assert state["agents"][0]["completed_tus"] == 1
+    assert state["agents"][0]["completed_funcs"] == 1
+    detail = client.get("/api/tu", params={"id": tu}).json()
+    assert detail["funcs"][0]["completed_by"] == "agent-a"
+    funcs = client.get("/api/funcs", params={"q": "B::Run"}).json()
+    assert funcs["items"][0]["completed_by"] == "agent-a"
 
 
 def test_explorer_search_filter_and_detail(tmp_path):

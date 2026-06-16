@@ -1193,7 +1193,7 @@ td:nth-child(4) {
 
 /* ---------- Explorer ---------- */
 .explorer {
-  margin: 0 28px 22px;
+  margin: 0 0 22px;
 }
 
 .explorer-tabs {
@@ -1751,6 +1751,6 @@ td:nth-child(4) {
 
 @media (max-width: 700px) {
   .explorer {
-    margin: 0 16px 18px;
+    margin: 0 0 18px;
   }
 }

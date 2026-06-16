@@ -242,9 +242,11 @@ function renderAgents(agents) {
     row.appendChild(
       div(
         "agent-meta",
-        `${fmtInt(agent.total)} active | ${fmtInt(agent.completed)} completed | lease ${shortTime(
-          agent.lease_expires_at,
-        )} | last ${relTime(agent.last_activity || agent.last_update || agent.last_seen) || "never"}`,
+        `${fmtInt(agent.total)} active | ${fmtInt(agent.completed_tus ?? agent.completed)} TUs / ${fmtInt(
+          agent.completed_funcs,
+        )} funcs completed | lease ${shortTime(agent.lease_expires_at)} | last ${
+          relTime(agent.last_activity || agent.last_update || agent.last_seen) || "never"
+        }`,
       ),
     );
     if (agent.current_work && agent.current_work.length) {
@@ -831,10 +833,10 @@ function renderTuRows(items) {
 }
 
 function renderFuncRows(items) {
-  setHead(["Function", "Status", "Translation Unit"]);
+  setHead(["Function", "Status", "Translation Unit", "Actor"]);
   const body = el("explorerBody");
   clearNode(body);
-  if (!items.length) return emptyRow(body, 3, "No functions match.");
+  if (!items.length) return emptyRow(body, 4, "No functions match.");
   for (const item of items) {
     const row = document.createElement("tr");
     row.className = "clickable";
@@ -844,7 +846,15 @@ function renderFuncRows(items) {
     status.appendChild(statusPill(item.status));
     const tu = document.createElement("td");
     tu.appendChild(tuButton(item.tu_id, "tu-meta"));
-    row.append(name, status, tu);
+    const actor = document.createElement("td");
+    if (item.completed_by) {
+      actor.appendChild(actorNode(item.completed_by));
+      if (item.completed_at) actor.appendChild(div("tu-meta", relTime(item.completed_at) || fmtTime(item.completed_at)));
+    } else {
+      actor.textContent = "unattributed";
+      actor.title = "No actor has been linked to this function yet.";
+    }
+    row.append(name, status, tu, actor);
     row.addEventListener("click", () => openDetail(item.tu_id));
     body.appendChild(row);
   }
@@ -1030,6 +1040,7 @@ function renderDetail(d) {
       const row = div("dep-row");
       row.appendChild(span("dep-name", fn.name));
       row.appendChild(statusPill(fn.status));
+      if (fn.completed_by) row.appendChild(actorNode(fn.completed_by));
       funcs.appendChild(row);
     });
   body.appendChild(funcs);
