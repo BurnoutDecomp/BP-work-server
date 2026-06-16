@@ -396,11 +396,16 @@ function renderQueue() {
 
 /* ---------------- Live Events (client-side filter / search / pager) ---------------- */
 
-// Legacy backfilled rows ("pre-server attribution") share one timestamp and would
-// otherwise crowd the top; they are sorted to the bottom of the list.
-function isLegacyEvent(event) {
-  const source = (event.detail && event.detail.source) || "";
-  return String(source).toLowerCase().includes("pre-server");
+// Epoch millis used to order the list, newest first. Backfilled rows sort by
+// their real (file-commit) date once resolved; until then — or when the file
+// cannot be dated — they sink to the bottom rather than floating up on the
+// shared, meaningless import timestamp. Real events sort by their server ts.
+function eventSortTime(event) {
+  const commit = eventCommitDate(event);
+  if (commit) return new Date(commit).getTime();
+  if (isBackfilledEvent(event)) return -Infinity;
+  const t = event.ts ? new Date(event.ts).getTime() : NaN;
+  return Number.isNaN(t) ? -Infinity : t;
 }
 
 function setEventsData(events) {
@@ -408,10 +413,9 @@ function setEventsData(events) {
   for (const event of events || []) {
     state.lastEventId = Math.max(state.lastEventId, event.id || 0);
   }
-  // Real events newest-first; legacy pre-server attribution always last.
-  view.all = [...(events || [])].sort(
-    (a, b) => isLegacyEvent(a) - isLegacyEvent(b) || (b.id || 0) - (a.id || 0),
-  );
+  // Stored as received; renderEvents orders by effective date (it re-runs once
+  // the backfilled rows' real dates resolve).
+  view.all = [...(events || [])];
   fillSelect(
     "eventsFilterAction",
     [...new Set(view.all.map((e) => e.action).filter(Boolean))].sort(),
@@ -469,7 +473,10 @@ function filteredEvents() {
 function renderEvents() {
   const view = state.eventsView;
   text("eventCount", `${fmtCompact(view.all.length)} events`);
-  const events = filteredEvents();
+  // Newest first by effective date, tie-broken by id so equal-dated rows stay stable.
+  const events = filteredEvents().sort(
+    (a, b) => eventSortTime(b) - eventSortTime(a) || (b.id || 0) - (a.id || 0),
+  );
   const { slice, from, to, page, totalPages } = paginate(events, view);
   view.page = page;
 
