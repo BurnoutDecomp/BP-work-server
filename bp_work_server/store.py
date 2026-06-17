@@ -1523,7 +1523,9 @@ class WorkStore:
               AND action NOT IN ({hidden_placeholders})
               AND NOT (
                 tu_id IS NOT NULL
-                AND json_extract(detail_json, '$.source') IN ({backfilled_placeholders})
+                AND COALESCE(
+                  json_extract(detail_json, '$.source') IN ({backfilled_placeholders}), 0
+                )
                 AND EXISTS (
                   SELECT 1
                   FROM event reliable

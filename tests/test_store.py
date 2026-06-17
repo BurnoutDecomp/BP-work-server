@@ -79,6 +79,26 @@ def test_backfilled_event_targets_skip_tus_with_reliable_events(tmp_path):
     )
 
 
+def test_dashboard_keeps_source_less_workflow_events(tmp_path):
+    store = make_store(tmp_path)
+    with store.connect() as con:
+        con.execute(
+            "INSERT INTO event(ts, tu_id, agent, action, detail_json) VALUES(?,?,?,?,?)",
+            (iso(), "GameSource/A.cpp", "Derneuere", "claim",
+             json.dumps({"force": False, "lease_seconds": 7200})),
+        )
+        con.execute(
+            "INSERT INTO event(ts, tu_id, agent, action, detail_json) VALUES(?,?,?,?,?)",
+            (iso(), "GameSource/A.cpp", "Derneuere", "compiled",
+             json.dumps({"commit": None, "notes": None})),
+        )
+
+    actions = [event["action"] for event in store.dashboard_state()["recent_events"]]
+
+    assert "claim" in actions
+    assert "compiled" in actions
+
+
 def test_actor_maps_canonicalize_github_and_case_aliases(tmp_path):
     store = make_store(tmp_path)
     store.create_worker("Adriwin", github_username="adriwin06")
