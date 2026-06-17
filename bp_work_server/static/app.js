@@ -33,6 +33,7 @@ const state = {
   rawEvents: [],
   eventHistory: {},
   eventHistoryFetched: false,
+  detailNav: { current: null, stack: [] },
 };
 
 /* Build a github.com/blob URL for a path inside the mirrored repo. */
@@ -1204,6 +1205,7 @@ function initExplorer() {
     if (e.key === "Enter") goToPage(e.target.value);
   });
 
+  el("detailBack").addEventListener("click", goBackDetail);
   el("detailClose").addEventListener("click", closeDetail);
   el("detailOverlay").addEventListener("click", (e) => {
     if (e.target === el("detailOverlay")) closeDetail();
@@ -1218,9 +1220,68 @@ function initExplorer() {
 
 /* ---------------- TU detail drawer ---------------- */
 
-async function openDetail(tuId) {
-  const overlay = el("detailOverlay");
-  overlay.classList.remove("hidden");
+function detailIsOpen() {
+  return !el("detailOverlay").classList.contains("hidden");
+}
+
+function detailEntryKey(entry) {
+  if (!entry) return "";
+  if (entry.type === "func") return `${entry.type}:${entry.tuId}:${entry.name}`;
+  return `${entry.type}:${entry.id}`;
+}
+
+function detailEntryLabel(entry) {
+  if (!entry) return "";
+  if (entry.type === "goal") return `Goal: ${entry.id}`;
+  if (entry.type === "func") return entry.name;
+  return entry.id;
+}
+
+function setCurrentDetail(entry, options = {}) {
+  const wasOpen = detailIsOpen();
+  if (!wasOpen) state.detailNav.stack = [];
+  if (wasOpen && options.push !== false && state.detailNav.current) {
+    const currentKey = detailEntryKey(state.detailNav.current);
+    const nextKey = detailEntryKey(entry);
+    if (currentKey && currentKey !== nextKey) state.detailNav.stack.push(state.detailNav.current);
+  }
+  state.detailNav.current = entry;
+  updateDetailBack();
+}
+
+function updateDetailBack() {
+  const btn = el("detailBack");
+  if (!btn) return;
+  const canGoBack = state.detailNav.stack.length > 0;
+  btn.classList.toggle("hidden", !canGoBack);
+  btn.disabled = !canGoBack;
+  const previous = state.detailNav.stack[state.detailNav.stack.length - 1];
+  btn.title = previous ? `Back to ${detailEntryLabel(previous)}` : "";
+}
+
+function goBackDetail() {
+  const previous = state.detailNav.stack.pop();
+  if (!previous) return updateDetailBack();
+  if (previous.type === "goal") openGoalDetail(previous.id, { push: false });
+  else if (previous.type === "func") openFunctionDetail(previous.tu, previous.fn, { push: false });
+  else openDetail(previous.id, { push: false });
+}
+
+function showDetailOverlay() {
+  el("detailOverlay").classList.remove("hidden");
+  document.documentElement.classList.add("detail-open");
+  document.body.classList.add("detail-open");
+}
+
+function hideDetailOverlay() {
+  el("detailOverlay").classList.add("hidden");
+  document.documentElement.classList.remove("detail-open");
+  document.body.classList.remove("detail-open");
+}
+
+async function openDetail(tuId, options = {}) {
+  setCurrentDetail({ type: "tu", id: tuId }, options);
+  showDetailOverlay();
   text("detailTitle", tuId);
   el("detailBody").innerHTML = '<p class="muted-text">Loading…</p>';
   try {
@@ -1231,9 +1292,9 @@ async function openDetail(tuId) {
   }
 }
 
-async function openGoalDetail(goalName) {
-  const overlay = el("detailOverlay");
-  overlay.classList.remove("hidden");
+async function openGoalDetail(goalName, options = {}) {
+  setCurrentDetail({ type: "goal", id: goalName }, options);
+  showDetailOverlay();
   text("detailTitle", `Goal: ${goalName}`);
   el("detailBody").innerHTML = '<p class="muted-text">Loading...</p>';
   try {
@@ -1244,8 +1305,18 @@ async function openGoalDetail(goalName) {
   }
 }
 
+function openFunctionDetail(tu, fn, options = {}) {
+  setCurrentDetail({ type: "func", name: fn.name, tuId: tu.id, tu, fn }, options);
+  showDetailOverlay();
+  text("detailTitle", `Function: ${fn.name}`);
+  renderFunctionDetail(tu, fn);
+}
+
 function closeDetail() {
-  el("detailOverlay").classList.add("hidden");
+  hideDetailOverlay();
+  state.detailNav.current = null;
+  state.detailNav.stack = [];
+  updateDetailBack();
 }
 
 function detailSection(title) {
@@ -1262,6 +1333,33 @@ function kv(label, value) {
   else val.textContent = value == null || value === "" ? "—" : String(value);
   row.appendChild(val);
   return row;
+}
+
+function renderFunctionDetail(tu, fn) {
+  const body = el("detailBody");
+  body.innerHTML = "";
+
+  const banner = div("detail-banner");
+  banner.appendChild(statusPill(fn.status));
+  banner.appendChild(span("tag goal-tag", "function"));
+  body.appendChild(banner);
+
+  const facts = detailSection("Overview");
+  facts.appendChild(kv("Translation Unit", tuButton(tu.id)));
+  facts.appendChild(kv("Status", fn.status));
+  if (fn.completed_by) facts.appendChild(kv("Completed by", actorNode(fn.completed_by, fn.completed_by_login)));
+  if (fn.completed_at) facts.appendChild(kv("Completed", `${fmtTime(fn.completed_at)} (${relTime(fn.completed_at)})`));
+  if (tu.source) facts.appendChild(kv("Source", tu.source));
+  if (tu.dest_path) facts.appendChild(kv("Destination", tu.dest_path));
+  body.appendChild(facts);
+
+  const related = detailSection("Containing TU");
+  const row = div("dep-row clickable");
+  row.appendChild(span("dep-name", tu.id));
+  row.appendChild(statusPill(tu.status));
+  row.addEventListener("click", () => openDetail(tu.id));
+  related.appendChild(row);
+  body.appendChild(related);
 }
 
 function renderDetail(d) {
@@ -1319,10 +1417,14 @@ function renderDetail(d) {
   if (!d.funcs || !d.funcs.length) funcs.appendChild(div("muted-text", "No functions recorded."));
   else
     d.funcs.forEach((fn) => {
-      const row = div("dep-row");
+      const row = div("dep-row clickable");
       row.appendChild(span("dep-name", fn.name));
       row.appendChild(statusPill(fn.status));
       if (fn.completed_by) row.appendChild(actorNode(fn.completed_by));
+      row.addEventListener("click", (event) => {
+        if (event.target.closest("a, button")) return;
+        openFunctionDetail(d, fn);
+      });
       funcs.appendChild(row);
     });
   body.appendChild(funcs);

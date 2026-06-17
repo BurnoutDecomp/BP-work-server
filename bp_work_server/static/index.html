@@ -39,7 +39,7 @@
       href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/app.css?v=9" />
+    <link rel="stylesheet" href="/static/app.css?v=11" />
   </head>
   <body>
     <div class="bp-bg" aria-hidden="true">
@@ -320,13 +320,16 @@
     <div id="detailOverlay" class="overlay hidden">
       <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
         <div class="drawer-head">
-          <h2 id="detailTitle">Translation Unit</h2>
+          <div class="drawer-titlebar">
+            <button id="detailBack" class="drawer-back hidden" type="button" aria-label="Go back">Back</button>
+            <h2 id="detailTitle">Translation Unit</h2>
+          </div>
           <button id="detailClose" class="drawer-close" aria-label="Close">✕</button>
         </div>
         <div id="detailBody" class="drawer-body"></div>
       </aside>
     </div>
 
-    <script src="/static/app.js?v=7" defer></script>
+    <script src="/static/app.js?v=9" defer></script>
   </body>
 </html>

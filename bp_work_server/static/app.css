@@ -60,6 +60,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+html.detail-open,
+body.detail-open {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 /* ---------- Background scenery layers ---------- */
 .bp-bg {
   position: fixed;
@@ -1596,6 +1602,7 @@ td:nth-child(4) {
   z-index: 50;
   display: flex;
   justify-content: flex-end;
+  overflow: hidden;
   background: rgba(4, 3, 2, 0.7);
   backdrop-filter: blur(3px);
 }
@@ -1645,9 +1652,18 @@ td:nth-child(4) {
   border-bottom: 1px solid var(--line);
 }
 
+.drawer-titlebar {
+  display: flex;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+  gap: 10px;
+}
+
 .drawer-head h2 {
   font-size: 15px;
   font-weight: 700;
+  min-width: 0;
   word-break: break-all;
   font-family: var(--font-mono);
   color: var(--gold);
@@ -1657,6 +1673,31 @@ td:nth-child(4) {
 
 .drawer-head h2::before {
   display: none;
+}
+
+.drawer-back {
+  flex: none;
+  height: 28px;
+  padding: 3px 10px 4px;
+  border: 1px solid rgba(227, 165, 44, 0.45);
+  background: rgba(227, 165, 44, 0.12);
+  color: var(--gold);
+  font-family: var(--font-head);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+  clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
+  transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.12s;
+}
+
+.drawer-back:hover,
+.drawer-back:focus-visible {
+  border-color: var(--gold);
+  background: rgba(227, 165, 44, 0.22);
+  color: #fff;
+  outline: none;
+  transform: translateX(-2px);
 }
 
 .drawer-close {
@@ -1680,6 +1721,7 @@ td:nth-child(4) {
 .drawer-body {
   flex: 1;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 18px 22px 32px;
 }
 
