@@ -222,6 +222,64 @@ def test_function_search_uses_file_attribution_like_detail_drawer(tmp_path):
     assert detail["funcs"][0]["completed_by"] == "JeBobs"
 
 
+def test_tu_search_uses_file_attribution_like_detail_drawer(tmp_path):
+    client, store = make_client(tmp_path)
+    store.create_worker("Derneuere")
+    with store.connect() as con:
+        con.execute("UPDATE tu SET status='done' WHERE id='GameSource/A.cpp'")
+        con.execute(
+            "INSERT INTO event(ts, tu_id, agent, action, detail_json) VALUES(?,?,?,?,?)",
+            (
+                "2026-06-16T22:02:24+00:00",
+                "GameSource/A.cpp",
+                "JeBobs",
+                "review_pass",
+                '{"source": "workflow commit delta"}',
+            ),
+        )
+
+    class FakeGitHub:
+        async def author_login_map(self):
+            return {}
+
+    class FakeDecomp:
+        def repo_path(self, dest_path):
+            return dest_path.removeprefix("b5-decomp/")
+
+        def history(self, dest_path):
+            assert dest_path == "b5-decomp/src/GameSource/A.cpp"
+            return [
+                {
+                    "date": "2026-06-16T15:28:23+00:00",
+                    "name": "Derneuere",
+                    "email": "derneuere@example.test",
+                }
+            ]
+
+    client.app.state.github = FakeGitHub()
+    client.app.state.decomp = FakeDecomp()
+
+    tus = client.get("/api/tus", params={"q": "GameSource/A.cpp"}).json()["items"]
+    detail = client.get("/api/tu", params={"id": "GameSource/A.cpp"}).json()
+
+    assert tus[0]["completed_by"] == "Derneuere"
+    assert tus[0]["updated_at"] == "2026-06-16T15:28:23+00:00"
+    assert detail["completed_by"] == "Derneuere"
+    assert detail["updated_at"] == "2026-06-16T15:28:23+00:00"
+
+
+def test_idle_todo_tu_detail_hides_import_timestamp(tmp_path):
+    client, _store = make_client(tmp_path)
+
+    tus = client.get("/api/tus", params={"q": "GameSource/A.cpp"}).json()["items"]
+    detail = client.get("/api/tu", params={"id": "GameSource/A.cpp"}).json()
+
+    assert tus[0]["status"] == "todo"
+    assert tus[0]["updated_at"] is None
+    assert detail["status"] == "todo"
+    assert detail["updated_at"] is None
+
+
 def test_dashboard_expires_lease_less_in_progress_work(tmp_path):
     client, store = make_client(tmp_path)
     with store.connect() as con:

@@ -429,6 +429,15 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
         item["completed_by"] = attr["author"]
         item["completed_by_login"] = attr["login"]
 
+    def hide_import_timestamp_for_idle_todo(item: dict) -> None:
+        if (
+            item.get("status") == "todo"
+            and not item.get("owner")
+            and not item.get("completed_by")
+            and not item.get("last_actor")
+        ):
+            item["updated_at"] = None
+
     @app.get("/api/tus")
     async def search_tus(
         q: str | None = Query(None),
@@ -447,6 +456,15 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
             q=q, statuses=status, source=source, goal=goal, owner=owner,
             sort=sort, order=order, limit=limit, offset=offset,
         )
+        done_dest_paths = {
+            item.get("dest_path")
+            for item in result.get("items", [])
+            if item.get("status") == "done" and item.get("dest_path")
+        }
+        attrs_by_dest = await file_attrs(done_dest_paths)
+        for item in result.get("items", []):
+            apply_tu_file_attr(item, attrs_by_dest.get(item.get("dest_path")))
+            hide_import_timestamp_for_idle_todo(item)
         return result
 
     @app.get("/api/tu")
@@ -470,6 +488,7 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
         attrs_by_dest = await file_attrs({dest_path} if dest_path else set())
         attr = attrs_by_dest.get(dest_path)
         apply_tu_file_attr(detail, attr)
+        hide_import_timestamp_for_idle_todo(detail)
         if attr and attr.get("author"):
             for func in detail.get("funcs", []):
                 if func.get("status") != "todo":
