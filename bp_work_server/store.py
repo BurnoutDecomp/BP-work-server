@@ -23,6 +23,15 @@ from bp_work_server.schema import (
 
 SCHEMA = WORK_SCHEMA
 
+DEFAULT_ACTOR_ALIASES = {
+    # Git identities seen in the b5-decomp history. User-maintained
+    # worker_alias rows still override these defaults below.
+    "Niaz": "Derneuere",
+    "tigrexspalterlp@gmail.com": "Derneuere",
+    "Nathan V.": "JeBobs",
+    "jebcraftserver@gmail.com": "JeBobs",
+}
+
 
 def utcnow() -> datetime:
     return datetime.now(UTC).replace(microsecond=0)
@@ -425,16 +434,13 @@ class WorkStore:
 
     def unblock(self, tu_id: str, agent: str) -> None:
         with self.connect() as con:
-            self._require_tu(con, tu_id)
-            con.execute(
-                """
-                UPDATE tu
-                SET status='todo', owner=NULL, notes=NULL, lease_expires_at=NULL, updated_at=?
-                WHERE id=?
-                """,
-                (iso(), tu_id),
-            )
+            self._return_tu_to_todo(con, tu_id, notes=None)
             self._log(con, agent, "unblock", tu_id, {})
+
+    def reset_tu(self, tu_id: str, agent: str, notes: str | None = None) -> None:
+        with self.connect() as con:
+            self._return_tu_to_todo(con, tu_id, notes=notes)
+            self._log(con, agent, "reset_tu", tu_id, {"notes": notes})
 
     # --- workers (server-issued identities) -------------------------------
     def create_worker(
@@ -626,7 +632,15 @@ class WorkStore:
     # single meaningless commit SHA, so their real time comes from the file's own
     # last commit instead (see decomp.DecompRepo).
     BACKFILLED_SOURCES = ("workflow commit delta", "legacy pre-server attribution")
-    RELIABLE_EVENT_ACTIONS = ("claim", "compiled", "review_pass", "review_fail", "block", "unblock")
+    RELIABLE_EVENT_ACTIONS = (
+        "claim",
+        "compiled",
+        "review_pass",
+        "review_fail",
+        "block",
+        "unblock",
+        "reset_tu",
+    )
     DASHBOARD_HIDDEN_ACTIONS = ("lease_missing", "lease_expired")
 
     def actor_maps(
@@ -646,6 +660,11 @@ class WorkStore:
             profiles[username] = profile
             for alias in (username, data.get("github_username"), profile):
                 cleaned = (alias or "").strip()
+                if cleaned:
+                    aliases.setdefault(cleaned.lower(), username)
+        for alias, username in DEFAULT_ACTOR_ALIASES.items():
+            if username in registered_agents:
+                cleaned = alias.strip()
                 if cleaned:
                     aliases.setdefault(cleaned.lower(), username)
         with self.users_connect() as con:
@@ -1306,6 +1325,140 @@ class WorkStore:
             self._enrich_func_items_from_events(con, items, aliases)
             return {"total": total, "limit": limit, "offset": offset, "items": items}
 
+    def actor_profile(
+        self,
+        name: str,
+        attribution_repo_rev: str | None = None,
+    ) -> dict[str, Any]:
+        """Aggregated dashboard profile for one canonical contributor."""
+        requested = name.strip()
+        if not requested:
+            raise KeyError("empty actor name")
+        with self.connect() as con:
+            self._expire_leases(con)
+            registered_agents = self._registered_agents()
+            aliases, profiles = self.actor_maps(registered_agents)
+            actor = self.canonical_actor(requested, aliases) or requested
+            registered = registered_agents.get(actor, {})
+            github_username = registered.get("github_username") or profiles.get(actor)
+            alias_values = sorted(
+                {
+                    alias
+                    for alias, canonical in aliases.items()
+                    if canonical == actor and alias != actor.lower()
+                }
+            )
+
+            active_work = [
+                self._dashboard_tu(row)
+                for row in con.execute(
+                    """
+                    SELECT *
+                    FROM tu
+                    WHERE owner IS NOT NULL
+                      AND status='in_progress'
+                      AND lease_expires_at IS NOT NULL
+                    ORDER BY updated_at DESC, id
+                    """
+                )
+                if self.canonical_actor(row["owner"], aliases) == actor
+            ]
+            self._enrich_tu_items(con, active_work)
+            self._canonicalize_item_actors(active_work, aliases)
+
+            completed_tus = self._profile_completed_tu_items(con, actor, aliases)
+            completed_funcs = self._profile_completed_func_items(con, actor, aliases)
+            contributed_tus, contributed_lines = self._profile_contributed_tus(
+                con, actor, aliases, attribution_repo_rev
+            )
+            contributed_funcs, contributed_func_lines = self._profile_contributed_funcs(
+                con, actor, aliases, attribution_repo_rev
+            )
+            profile_tus = self._merge_profile_items(completed_tus, contributed_tus)
+            profile_funcs = self._merge_profile_items(completed_funcs, contributed_funcs, key="name")
+            recent_events = self._profile_events(con, actor, aliases, limit=80)
+            activity_by_day = self._profile_activity_by_day(recent_events)
+            action_counts = self._profile_action_counts(recent_events)
+            status_counts = {key: 0 for key in TU_STATUSES}
+            for item in profile_tus.values():
+                if item.get("status") in status_counts:
+                    status_counts[item["status"]] += 1
+
+            source_counts: dict[str, int] = defaultdict(int)
+            source_lines: dict[str, int] = defaultdict(int)
+            goal_counts: dict[str, int] = defaultdict(int)
+            for item in profile_tus.values():
+                source = item.get("source") or "unknown"
+                source_counts[source] += 1
+                source_lines[source] += int(item.get("lines") or 0)
+                for goal in item.get("goals") or []:
+                    goal_counts[goal] += 1
+
+            last_activity_candidates = [
+                value
+                for value in [
+                    registered.get("last_seen"),
+                    *(event.get("ts") for event in recent_events),
+                    *(item.get("latest_change_at") for item in contributed_tus.values()),
+                ]
+                if value
+            ]
+            last_activity = max(last_activity_candidates) if last_activity_candidates else None
+
+            return {
+                "name": actor,
+                "github_username": github_username,
+                "registered": bool(registered),
+                "worker_active": bool(registered.get("active", True)),
+                "is_admin": bool(registered.get("is_admin", False)),
+                "aliases": alias_values,
+                "summary": {
+                    "active_tus": len(active_work),
+                    "completed_tus": len(completed_tus),
+                    "completed_funcs": len(completed_funcs),
+                    "contributed_tus": len(profile_tus),
+                    "contributed_funcs": len(profile_funcs),
+                    "contributed_lines": contributed_lines,
+                    "contributed_function_lines": contributed_func_lines,
+                    "attributed_tus": len(contributed_tus),
+                    "attributed_funcs": len(contributed_funcs),
+                    "recent_events": len(recent_events),
+                    "last_activity": last_activity,
+                },
+                "status_counts": status_counts,
+                "activity_by_day": activity_by_day,
+                "action_counts": action_counts,
+                "sources": [
+                    {"name": source, "tus": source_counts[source], "lines": source_lines[source]}
+                    for source in sorted(
+                        source_counts, key=lambda key: (-source_counts[key], -source_lines[key], key)
+                    )[:12]
+                ],
+                "goals": [
+                    {"name": goal, "tus": goal_counts[goal]}
+                    for goal in sorted(goal_counts, key=lambda key: (-goal_counts[key], key))[:12]
+                ],
+                "active_work": active_work[:20],
+                "top_tus": sorted(
+                    profile_tus.values(),
+                    key=lambda item: (
+                        -(item.get("lines") or 0),
+                        item.get("basis") != "surviving_lines",
+                        item["id"],
+                    ),
+                )[:25],
+                "top_funcs": sorted(
+                    profile_funcs.values(),
+                    key=lambda item: (
+                        -(item.get("lines") or 0),
+                        item.get("basis") != "surviving_lines",
+                        item["name"],
+                    ),
+                )[:25],
+                "recent_events": recent_events[:40],
+                "attribution_cache": self._attribution_cache_coverage(con, attribution_repo_rev),
+            }
+
     def _next_tus_from_connection(
         self, con: sqlite3.Connection, n: int = 1, goal: str | None = None
     ) -> tuple[str | None, list[NextTu]]:
@@ -1533,6 +1686,30 @@ class WorkStore:
         if row["status"] not in {"in_progress", "compiled"}:
             raise ValueError(f"TU is {row['status']}, not in progress")
 
+    def _return_tu_to_todo(
+        self, con: sqlite3.Connection, tu_id: str, notes: str | None = None
+    ) -> None:
+        row = self._require_tu(con, tu_id)
+        con.execute(
+            """
+            UPDATE tu
+            SET status='todo', owner=NULL, notes=?, claimed_at=NULL,
+                lease_expires_at=NULL, updated_at=?
+            WHERE id=?
+            """,
+            (notes, iso(), tu_id),
+        )
+        con.execute(
+            """
+            UPDATE func
+            SET status='todo', completed_by=NULL, completed_at=NULL
+            WHERE tu_id=?
+            """,
+            (tu_id,),
+        )
+        if row["dest_path"]:
+            con.execute("DELETE FROM attribution_cache WHERE dest_path=?", (row["dest_path"],))
+
     def _tu_record(self, row: sqlite3.Row) -> TuRecord:
         return TuRecord(
             id=row["id"],
@@ -1707,7 +1884,7 @@ class WorkStore:
             ids,
         ):
             item = by_id.get(row["tu_id"])
-            if item is not None:
+            if item is not None and item.get("status") == "done":
                 item["completed_by"] = row["agent"]
                 item["completed_at"] = row["ts"]
 
@@ -1722,7 +1899,11 @@ class WorkStore:
         items: list[dict[str, Any]],
         aliases: dict[str, str],
     ) -> None:
-        tu_ids = sorted({item["tu_id"] for item in items if item.get("tu_id")})
+        tu_ids = sorted({
+            item["tu_id"]
+            for item in items
+            if item.get("tu_id") and item.get("status") != "todo"
+        })
         if not tu_ids:
             return
         by_tu = {tu_id: [] for tu_id in tu_ids}
@@ -1749,6 +1930,8 @@ class WorkStore:
             detail = json.loads(row["detail_json"] or "{}")
             login = detail.get("github_login")
             for item in by_tu.get(row["tu_id"], []):
+                if item.get("status") == "todo":
+                    continue
                 item["completed_by"] = actor
                 item["completed_at"] = row["ts"]
                 if login:
@@ -1830,6 +2013,268 @@ class WorkStore:
             {actor: len(tus) for actor, tus in contributed_tus.items()},
             {actor: len(funcs) for actor, funcs in contributed_funcs.items()},
         )
+
+    def _profile_contributor_actor(
+        self, contributor: dict[str, Any], aliases: dict[str, str]
+    ) -> str | None:
+        email = str(contributor.get("email") or "").strip()
+        for candidate in (login_from_noreply_email(email), email, contributor.get("name")):
+            cleaned = str(candidate or "").strip()
+            if not cleaned:
+                continue
+            actor = self.canonical_actor(cleaned, aliases)
+            if actor:
+                return actor
+        return None
+
+    def _profile_file_contributors(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        contributors = payload.get("contributors") or {}
+        if isinstance(contributors, dict):
+            return contributors.get("contributors") or []
+        if isinstance(contributors, list):
+            return contributors
+        return []
+
+    def _profile_func_contributors(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        contributors = payload.get("contributors") or []
+        return contributors if isinstance(contributors, list) else []
+
+    def _profile_completed_tu_items(
+        self, con: sqlite3.Connection, actor: str, aliases: dict[str, str]
+    ) -> dict[str, dict[str, Any]]:
+        goals_by_tu: dict[str, list[str]] = defaultdict(list)
+        for goal in con.execute("SELECT goal_name, tu_id FROM goal_tu ORDER BY goal_name"):
+            goals_by_tu[goal["tu_id"]].append(goal["goal_name"])
+        completed: dict[str, dict[str, Any]] = {}
+        for row in con.execute(
+            """
+            SELECT e.agent, e.tu_id, MAX(e.ts) AS completed_at,
+                   t.source, t.status, t.n_funcs, t.dest_path
+            FROM event e
+            JOIN tu t ON t.id=e.tu_id
+            WHERE e.agent IS NOT NULL
+              AND e.action='review_pass'
+              AND e.tu_id IS NOT NULL
+            GROUP BY e.agent, e.tu_id
+            """
+        ):
+            if self.canonical_actor(row["agent"], aliases) == actor:
+                completed[row["tu_id"]] = {
+                    "id": row["tu_id"],
+                    "source": row["source"],
+                    "status": row["status"],
+                    "n_funcs": row["n_funcs"],
+                    "dest_path": row["dest_path"],
+                    "goals": goals_by_tu.get(row["tu_id"], []),
+                    "lines": 0,
+                    "percent": 0,
+                    "basis": "review_pass",
+                    "completed_at": row["completed_at"],
+                    "latest_change_at": row["completed_at"],
+                }
+        return completed
+
+    def _profile_completed_func_items(
+        self, con: sqlite3.Connection, actor: str, aliases: dict[str, str]
+    ) -> dict[str, dict[str, Any]]:
+        completed: dict[str, dict[str, Any]] = {}
+        for row in con.execute(
+            """
+            SELECT f.name, f.tu_id, f.status, f.completed_by, f.completed_at, t.dest_path
+            FROM func f
+            LEFT JOIN tu t ON t.id=f.tu_id
+            WHERE f.completed_by IS NOT NULL
+              AND f.status!='todo'
+            """
+        ):
+            if self.canonical_actor(row["completed_by"], aliases) == actor:
+                completed[row["name"]] = {
+                    "name": row["name"],
+                    "tu_id": row["tu_id"],
+                    "status": row["status"],
+                    "dest_path": row["dest_path"],
+                    "lines": 0,
+                    "percent": 0,
+                    "basis": "completed_by",
+                    "completed_at": row["completed_at"],
+                }
+        return completed
+
+    def _merge_profile_items(
+        self,
+        base: dict[str, dict[str, Any]],
+        attributed: dict[str, dict[str, Any]],
+        *,
+        key: str = "id",
+    ) -> dict[str, dict[str, Any]]:
+        merged = {item_key: dict(item) for item_key, item in base.items()}
+        for item_key, item in attributed.items():
+            current = merged.get(item_key)
+            if not current:
+                merged[item_key] = dict(item)
+                merged[item_key]["basis"] = "surviving_lines"
+                continue
+            current.update({k: v for k, v in item.items() if v not in (None, "", [])})
+            current["lines"] = int(item.get("lines") or 0)
+            current["percent"] = item.get("percent") or current.get("percent") or 0
+            current["basis"] = "surviving_lines"
+            if key not in current:
+                current[key] = item_key
+        return merged
+
+    def _profile_contributed_tus(
+        self,
+        con: sqlite3.Connection,
+        actor: str,
+        aliases: dict[str, str],
+        repo_rev: str | None,
+    ) -> tuple[dict[str, dict[str, Any]], int]:
+        if not repo_rev:
+            return {}, 0
+        contributed: dict[str, dict[str, Any]] = {}
+        total_lines = 0
+        goals_by_tu: dict[str, list[str]] = defaultdict(list)
+        for goal in con.execute("SELECT goal_name, tu_id FROM goal_tu ORDER BY goal_name"):
+            goals_by_tu[goal["tu_id"]].append(goal["goal_name"])
+        for row in con.execute(
+            """
+            SELECT t.id AS tu_id, t.source, t.status, t.n_funcs, t.dest_path, ac.payload_json
+            FROM attribution_cache ac
+            JOIN tu t ON t.dest_path=ac.dest_path
+            WHERE ac.scope='file'
+              AND ac.repo_rev=?
+              AND t.status='done'
+            """,
+            (repo_rev,),
+        ):
+            payload = json.loads(row["payload_json"] or "{}")
+            for contributor in self._profile_file_contributors(payload):
+                if self._profile_contributor_actor(contributor, aliases) != actor:
+                    continue
+                lines = int(contributor.get("lines") or 0)
+                if lines <= 0:
+                    continue
+                latest = payload.get("latest") or {}
+                item = contributed.setdefault(
+                    row["tu_id"],
+                    {
+                        "id": row["tu_id"],
+                        "source": row["source"],
+                        "status": row["status"],
+                        "n_funcs": row["n_funcs"],
+                        "dest_path": row["dest_path"],
+                        "goals": goals_by_tu.get(row["tu_id"], []),
+                        "lines": 0,
+                        "percent": 0,
+                        "basis": "surviving_lines",
+                        "latest_change_at": latest.get("date"),
+                    },
+                )
+                item["lines"] += lines
+                item["percent"] = max(float(contributor.get("percent") or 0), item["percent"])
+                total_lines += lines
+        return contributed, total_lines
+
+    def _profile_contributed_funcs(
+        self,
+        con: sqlite3.Connection,
+        actor: str,
+        aliases: dict[str, str],
+        repo_rev: str | None,
+    ) -> tuple[dict[str, dict[str, Any]], int]:
+        if not repo_rev:
+            return {}, 0
+        contributed: dict[str, dict[str, Any]] = {}
+        total_lines = 0
+        for row in con.execute(
+            """
+            SELECT f.name, f.tu_id, f.status, t.dest_path, ac.payload_json
+            FROM attribution_cache ac
+            JOIN tu t ON t.dest_path=ac.dest_path
+            JOIN func f ON f.tu_id=t.id AND f.name=ac.function_name
+            WHERE ac.scope='function'
+              AND ac.repo_rev=?
+              AND f.status!='todo'
+            """,
+            (repo_rev,),
+        ):
+            payload = json.loads(row["payload_json"] or "{}")
+            for contributor in self._profile_func_contributors(payload):
+                if self._profile_contributor_actor(contributor, aliases) != actor:
+                    continue
+                lines = int(contributor.get("lines") or 0)
+                if lines <= 0:
+                    continue
+                item = contributed.setdefault(
+                    row["name"],
+                    {
+                        "name": row["name"],
+                        "tu_id": row["tu_id"],
+                        "status": row["status"],
+                        "dest_path": row["dest_path"],
+                        "lines": 0,
+                        "percent": 0,
+                        "basis": "surviving_lines",
+                    },
+                )
+                item["lines"] += lines
+                item["percent"] = max(float(contributor.get("percent") or 0), item["percent"])
+                total_lines += lines
+        return contributed, total_lines
+
+    def _profile_events(
+        self,
+        con: sqlite3.Connection,
+        actor: str,
+        aliases: dict[str, str],
+        limit: int = 80,
+    ) -> list[dict[str, Any]]:
+        events: list[dict[str, Any]] = []
+        hidden_placeholders = ",".join("?" for _ in self.DASHBOARD_HIDDEN_ACTIONS)
+        for row in con.execute(
+            f"""
+            SELECT id, ts, tu_id, agent, action, detail_json
+            FROM event
+            WHERE agent IS NOT NULL
+              AND action NOT IN ({hidden_placeholders})
+            ORDER BY id DESC
+            LIMIT 5000
+            """,
+            [*self.DASHBOARD_HIDDEN_ACTIONS],
+        ):
+            canonical = self.canonical_actor(row["agent"], aliases)
+            if canonical != actor:
+                continue
+            events.append(
+                {
+                    "id": row["id"],
+                    "ts": row["ts"],
+                    "tu_id": row["tu_id"],
+                    "agent": canonical,
+                    "action": row["action"],
+                    "detail": json.loads(row["detail_json"] or "{}"),
+                }
+            )
+            if len(events) >= limit:
+                break
+        return events
+
+    def _profile_activity_by_day(self, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        counts: dict[str, int] = defaultdict(int)
+        for event in events:
+            ts = str(event.get("ts") or "")
+            if len(ts) >= 10:
+                counts[ts[:10]] += 1
+        return [{"date": date, "count": counts[date]} for date in sorted(counts)]
+
+    def _profile_action_counts(self, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        counts: dict[str, int] = defaultdict(int)
+        for event in events:
+            counts[event.get("action") or "event"] += 1
+        return [
+            {"action": action, "count": counts[action]}
+            for action in sorted(counts, key=lambda key: (-counts[key], key))
+        ]
 
     def _attribution_cache_coverage(
         self, con: sqlite3.Connection, repo_rev: str | None

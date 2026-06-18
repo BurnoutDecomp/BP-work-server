@@ -191,3 +191,20 @@ def unblock(
     invalidate_dashboard_cache(request)
     log.info("unblock tu=%s actor=%s", tu_id, identity or req.agent)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/tu/{tu_id:path}/reset", status_code=status.HTTP_204_NO_CONTENT)
+def reset_tu(
+    tu_id: str,
+    req: StatusUpdateRequest,
+    request: Request,
+    store: WorkStore = Depends(get_store),
+    identity: str | None = Depends(worker_identity),
+) -> Response:
+    try:
+        store.reset_tu(tu_id, identity or req.agent, notes=req.notes)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    invalidate_dashboard_cache(request)
+    log.info("reset_tu tu=%s actor=%s", tu_id, identity or req.agent)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

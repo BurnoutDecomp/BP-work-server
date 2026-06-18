@@ -12,3 +12,5 @@ build/
 *.sqlite3
 .env
 bp_work_server/static/img/reference/*
+data/
+

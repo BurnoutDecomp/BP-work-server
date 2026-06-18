@@ -246,6 +246,21 @@ Request:
 
 Returns a blocked TU to `todo`.
 
+### `POST /tu/{tu}/reset`
+
+Returns a TU to `todo`, clears its owner/lease, resets every function in that TU to
+`todo`, clears stored `completed_by`/`completed_at` attribution, and drops cached
+file/function attribution for the TU destination path.
+
+Request:
+
+```json
+{
+  "agent": "adrian-codex-1",
+  "notes": "returned to queue for rework"
+}
+```
+
 ### `GET /export/status`
 
 Regenerates the committed `progress/status.json` from the live DB and returns it as
@@ -329,6 +344,7 @@ Mapping:
 | `work review <tu> --verdict pass` | `POST /tu/{tu}/review` |
 | `work block <tu>` | `POST /tu/{tu}/block` |
 | `work unblock <tu>` | `POST /tu/{tu}/unblock` |
+| `work reset-tu <tu>` | `POST /tu/{tu}/reset` |
 | `work server-reconcile-events --actor NAME [--apply]` | `POST /admin/reconcile-events` |
 | `work server-reset [--to REF]` | `POST /admin/sync` with `reset=true` |
 

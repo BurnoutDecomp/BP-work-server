@@ -246,6 +246,26 @@ class GoalDetailResponse(FlexibleModel):
     blocked: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class ProfileResponse(FlexibleModel):
+    name: str
+    github_username: str | None = None
+    registered: bool = False
+    worker_active: bool = True
+    is_admin: bool = False
+    aliases: list[str] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
+    status_counts: dict[str, int] = Field(default_factory=dict)
+    activity_by_day: list[dict[str, Any]] = Field(default_factory=list)
+    action_counts: list[dict[str, Any]] = Field(default_factory=list)
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    goals: list[dict[str, Any]] = Field(default_factory=list)
+    active_work: list[dict[str, Any]] = Field(default_factory=list)
+    top_tus: list[dict[str, Any]] = Field(default_factory=list)
+    top_funcs: list[dict[str, Any]] = Field(default_factory=list)
+    recent_events: list[dict[str, Any]] = Field(default_factory=list)
+    attribution_cache: dict[str, Any] = Field(default_factory=dict)
+
+
 class GitHubOverviewResponse(FlexibleModel):
     repo: dict[str, Any] = Field(default_factory=dict)
     info: dict[str, Any] | None = None

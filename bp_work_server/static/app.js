@@ -169,15 +169,16 @@ function span(className, content) {
 function actorNode(name, githubUsername) {
   if (!name) return span("muted-text", "none");
   const profile = githubUsername || state.actorProfiles[name] || state.actorProfiles[String(name).trim()];
-  if (!profile) return span("actor-name", name);
-  const link = document.createElement("a");
-  link.className = "actor-link";
-  link.href = `https://github.com/${profile}`;
-  link.target = "_blank";
-  link.rel = "noopener";
-  link.textContent = name;
-  link.title = `Open ${name} on GitHub`;
-  return link;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "text-link actor-link";
+  btn.textContent = name;
+  btn.title = profile ? `Open ${name}'s contribution profile` : `Open ${name}'s profile`;
+  btn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openProfile(name, profile);
+  });
+  return btn;
 }
 
 function attributionMeta(item, fallback = "primary contributor") {
@@ -323,7 +324,7 @@ function renderAgents(agents) {
     row.appendChild(
       div(
         "agent-meta",
-        `${fmtInt(agent.total)} active | completed ${fmtInt(agent.completed_tus ?? agent.completed)} TUs / ${fmtInt(
+        `${fmtInt(agent.total)} active | reviewed ${fmtInt(agent.completed_tus ?? agent.completed)} TUs / ${fmtInt(
           agent.completed_funcs,
         )} funcs | ${contributionLabel} ${fmtInt(agent.contributed_tus || 0)} TUs / ${fmtInt(
           agent.contributed_funcs || 0,
@@ -1281,12 +1282,14 @@ function detailIsOpen() {
 
 function detailEntryKey(entry) {
   if (!entry) return "";
+  if (entry.type === "profile") return `${entry.type}:${entry.name}`;
   if (entry.type === "func") return `${entry.type}:${entry.tuId}:${entry.name}`;
   return `${entry.type}:${entry.id}`;
 }
 
 function detailEntryLabel(entry) {
   if (!entry) return "";
+  if (entry.type === "profile") return `Profile: ${entry.name}`;
   if (entry.type === "goal") return `Goal: ${entry.id}`;
   if (entry.type === "func") return entry.name;
   return entry.id;
@@ -1317,7 +1320,8 @@ function updateDetailBack() {
 function goBackDetail() {
   const previous = state.detailNav.stack.pop();
   if (!previous) return updateDetailBack();
-  if (previous.type === "goal") openGoalDetail(previous.id, { push: false });
+  if (previous.type === "profile") openProfile(previous.name, previous.githubUsername, { push: false });
+  else if (previous.type === "goal") openGoalDetail(previous.id, { push: false });
   else if (previous.type === "func") openFunctionDetail(previous.tu, previous.fn, { push: false });
   else openDetail(previous.id, { push: false });
 }
@@ -1367,6 +1371,27 @@ function openFunctionDetail(tu, fn, options = {}) {
   showDetailOverlay();
   text("detailTitle", `Function: ${fn.name}`);
   renderFunctionDetail(tu, fn);
+}
+
+async function openProfile(name, githubUsername, options = {}) {
+  setCurrentDetail({ type: "profile", name, githubUsername }, options);
+  showDetailOverlay();
+  text("detailTitle", `Profile: ${name}`);
+  el("detailBody").innerHTML = '<p class="muted-text">Loading...</p>';
+  try {
+    const profile = await fetchJson(`/api/profile?name=${encodeURIComponent(name)}`, 15000);
+    state.actorProfiles[profile.name] = profile.github_username || githubUsername || profile.name;
+    state.detailNav.current = {
+      type: "profile",
+      name: profile.name,
+      githubUsername: profile.github_username || githubUsername,
+    };
+    text("detailTitle", `Profile: ${profile.name}`);
+    renderProfileDetail(profile);
+  } catch (error) {
+    el("detailBody").innerHTML = "";
+    el("detailBody").appendChild(div("muted-text", `Failed to load profile: ${error.message}`));
+  }
 }
 
 function closeDetail() {
@@ -1469,6 +1494,187 @@ function renderFunctionDetail(tu, fn) {
   row.addEventListener("click", () => openDetail(tu.id));
   related.appendChild(row);
   body.appendChild(related);
+}
+
+function profileMetric(label, value, meta) {
+  const node = div("profile-metric");
+  node.appendChild(div("profile-metric-value", value));
+  node.appendChild(div("profile-metric-label", label));
+  if (meta) node.appendChild(div("tu-meta", meta));
+  return node;
+}
+
+function profileBarList(title, items, labelKey, valueKey, emptyText, metaKey) {
+  const section = detailSection(title);
+  if (!items || !items.length) {
+    section.appendChild(div("muted-text", emptyText));
+    return section;
+  }
+  const max = Math.max(...items.map((item) => Number(item[valueKey] || 0)), 1);
+  for (const item of items) {
+    const row = div("profile-bar-row");
+    const label = div("profile-bar-label");
+    label.appendChild(span("profile-bar-name", item[labelKey] || "unknown"));
+    const meta =
+      metaKey && Number(item[metaKey] || 0) > 0 ? ` (${fmtInt(item[metaKey])} lines)` : "";
+    label.appendChild(span("profile-bar-value", `${fmtInt(item[valueKey])}${meta}`));
+    const bar = div("profile-bar");
+    const fill = div("profile-bar-fill");
+    fill.style.width = `${Math.max(4, (Number(item[valueKey] || 0) / max) * 100)}%`;
+    bar.appendChild(fill);
+    row.append(label, bar);
+    section.appendChild(row);
+  }
+  return section;
+}
+
+function profileSparkline(points) {
+  const wrap = div("profile-spark");
+  if (!points || !points.length) {
+    wrap.appendChild(div("muted-text", "No event activity yet."));
+    return wrap;
+  }
+  const max = Math.max(...points.map((point) => Number(point.count || 0)), 1);
+  for (const point of points.slice(-28)) {
+    const bar = div("profile-spark-bar");
+    bar.style.height = `${Math.max(8, (Number(point.count || 0) / max) * 76)}px`;
+    bar.title = `${point.date}: ${fmtInt(point.count)} events`;
+    wrap.appendChild(bar);
+  }
+  return wrap;
+}
+
+function renderProfileDetail(profile) {
+  const body = el("detailBody");
+  body.innerHTML = "";
+  const summary = profile.summary || {};
+
+  const banner = div("detail-banner");
+  banner.appendChild(span("tag goal-tag", profile.registered ? "registered" : "external contributor"));
+  if (profile.is_admin) banner.appendChild(span("tag goal-tag", "admin"));
+  if (profile.worker_active === false) banner.appendChild(span("tag goal-tag", "disabled"));
+  if (profile.github_username) {
+    const link = document.createElement("a");
+    link.className = "profile-external";
+    link.href = `https://github.com/${profile.github_username}`;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = `GitHub: ${profile.github_username}`;
+    banner.appendChild(link);
+  }
+  body.appendChild(banner);
+
+  const metrics = div("profile-metrics");
+  metrics.appendChild(profileMetric("Active TUs", fmtInt(summary.active_tus)));
+  metrics.appendChild(profileMetric("Completed TUs", fmtInt(summary.completed_tus)));
+  metrics.appendChild(profileMetric("Completed funcs", fmtInt(summary.completed_funcs)));
+  metrics.appendChild(profileMetric("Contributed TUs", fmtInt(summary.contributed_tus)));
+  metrics.appendChild(profileMetric("Contributed funcs", fmtInt(summary.contributed_funcs)));
+  metrics.appendChild(profileMetric("Surviving lines", fmtInt(summary.contributed_lines)));
+  body.appendChild(metrics);
+
+  const overview = detailSection("Overview");
+  overview.appendChild(kv("Last activity", summary.last_activity ? `${fmtTime(summary.last_activity)} (${relTime(summary.last_activity)})` : null));
+  if (profile.aliases && profile.aliases.length) overview.appendChild(kv("Known aliases", profile.aliases.join(", ")));
+  const coverage = profile.attribution_cache || {};
+  overview.appendChild(
+    kv(
+      "Attribution cache",
+      `${fmtInt(coverage.file_cached || 0)}/${fmtInt(coverage.file_total || 0)} TUs, ${fmtInt(
+        coverage.function_cached || 0,
+      )}/${fmtInt(coverage.function_total || 0)} funcs`,
+    ),
+  );
+  body.appendChild(overview);
+
+  const activity = detailSection("Activity");
+  activity.appendChild(profileSparkline(profile.activity_by_day || []));
+  body.appendChild(activity);
+
+  const statusItems = Object.entries(profile.status_counts || {})
+    .filter(([, value]) => Number(value || 0) > 0)
+    .map(([status, count]) => ({ name: status.replace("_", " "), count }));
+  body.appendChild(profileBarList("Contributed TU Status", statusItems, "name", "count", "No contributed TUs found in the current attribution cache."));
+  body.appendChild(profileBarList("Actions", profile.action_counts || [], "action", "count", "No recorded events for this actor."));
+  body.appendChild(profileBarList("Sources", profile.sources || [], "name", "tus", "No source breakdown available.", "lines"));
+  body.appendChild(profileBarList("Goals", profile.goals || [], "name", "tus", "No goal-linked contributions found."));
+
+  body.appendChild(profileTuList("Active Work", profile.active_work || [], "No active claims."));
+  body.appendChild(profileTuList("Top TUs", profile.top_tus || [], "No TU attribution found."));
+  body.appendChild(profileFuncList("Top Functions", profile.top_funcs || []));
+  body.appendChild(profileEventList(profile.recent_events || []));
+}
+
+function profileTuList(title, items, emptyText) {
+  const section = detailSection(`${title} (${items.length})`);
+  if (!items.length) {
+    section.appendChild(div("muted-text", emptyText));
+    return section;
+  }
+  for (const item of items) {
+    const row = div("dep-row clickable profile-tu-row");
+    const main = div("goal-tu-main");
+    main.appendChild(span("dep-name", item.id));
+    const meta = [];
+    if (item.source) meta.push(item.source);
+    if (Number(item.lines || 0) > 0) meta.push(`${fmtInt(item.lines)} lines`);
+    else if (item.basis === "review_pass") meta.push("reviewed");
+    if (item.percent) meta.push(`${item.percent}%`);
+    if (item.dest_path) meta.push(item.dest_path);
+    main.appendChild(div("tu-meta", meta.join(" | ")));
+    row.appendChild(main);
+    if (item.status) row.appendChild(statusPill(item.status));
+    row.addEventListener("click", () => openDetail(item.id));
+    section.appendChild(row);
+  }
+  return section;
+}
+
+function profileFuncList(title, items) {
+  const section = detailSection(`${title} (${items.length})`);
+  if (!items.length) {
+    section.appendChild(div("muted-text", "No function attribution found."));
+    return section;
+  }
+  for (const item of items) {
+    const row = div("dep-row clickable profile-tu-row");
+    const main = div("goal-tu-main");
+    main.appendChild(span("dep-name", item.name));
+    const meta = [];
+    if (item.tu_id) meta.push(item.tu_id);
+    if (Number(item.lines || 0) > 0) meta.push(`${fmtInt(item.lines)} lines`);
+    else if (item.basis === "completed_by") meta.push("completed");
+    if (item.percent) meta.push(`${item.percent}%`);
+    main.appendChild(div("tu-meta", meta.join(" | ")));
+    row.appendChild(main);
+    if (item.status) row.appendChild(statusPill(item.status));
+    row.addEventListener("click", () => openDetail(item.tu_id));
+    section.appendChild(row);
+  }
+  return section;
+}
+
+function profileEventList(events) {
+  const section = detailSection(`Recent Events (${events.length})`);
+  if (!events.length) {
+    section.appendChild(div("muted-text", "No events recorded for this actor."));
+    return section;
+  }
+  for (const event of events) {
+    const row = div("profile-event-row");
+    row.appendChild(div("profile-event-time", event.ts ? fmtTime(event.ts) : "none"));
+    const main = div("goal-tu-main");
+    main.appendChild(div("event-title", event.action || "event"));
+    const target = event.tu_id || detailText(event.detail) || "server";
+    main.appendChild(div("tu-meta", target));
+    row.appendChild(main);
+    if (event.tu_id) {
+      row.classList.add("clickable");
+      row.addEventListener("click", () => openDetail(event.tu_id));
+    }
+    section.appendChild(row);
+  }
+  return section;
 }
 
 function renderDetail(d) {

@@ -10,6 +10,7 @@ from bp_work_server.models import (
     DashboardStateResponse,
     FacetsResponse,
     GoalDetailResponse,
+    ProfileResponse,
     SearchResponse,
     TuDetailResponse,
 )
@@ -17,6 +18,7 @@ from bp_work_server.services.attribution import (
     AttributionService,
     apply_tu_file_attr,
     hide_import_timestamp_for_idle_todo,
+    repo_revision,
 )
 from bp_work_server.services.dashboard import dashboard_state_response
 from bp_work_server.store import WorkStore
@@ -49,6 +51,20 @@ def goal_detail(
 ) -> dict:
     try:
         return store.goal_detail(name)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+
+
+@router.get("/api/profile", response_model=ProfileResponse)
+async def profile_detail(
+    request: Request,
+    name: str = Query(..., min_length=1),
+    store: WorkStore = Depends(get_store),
+) -> dict:
+    decomp: DecompRepo = request.app.state.decomp
+    repo_rev = await repo_revision(decomp)
+    try:
+        return await asyncio.to_thread(store.actor_profile, name, repo_rev)
     except KeyError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
 
@@ -109,7 +125,8 @@ async def tu_detail(
         detail["repo_path"] = repo_path
 
     service = attribution_service(request, store)
-    attrs_by_dest = await service.file_attrs({dest_path} if dest_path else set())
+    attr_dest_paths = {dest_path} if dest_path and detail.get("status") == "done" else set()
+    attrs_by_dest = await service.file_attrs(attr_dest_paths)
     attr = attrs_by_dest.get(dest_path)
     apply_tu_file_attr(detail, attr)
     hide_import_timestamp_for_idle_todo(detail)

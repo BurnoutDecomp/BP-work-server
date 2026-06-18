@@ -141,6 +141,8 @@ class AttributionService:
 def apply_tu_file_attr(item: dict, attr: dict | None) -> None:
     if not attr:
         return
+    if item.get("status") == "todo":
+        return
     if attr.get("latest_change_at"):
         item["updated_at"] = attr["latest_change_at"]
     for key in (

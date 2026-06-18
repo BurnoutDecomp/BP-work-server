@@ -129,6 +129,24 @@ def test_actor_maps_canonicalize_github_and_case_aliases(tmp_path):
     assert {event["agent"] for event in state["recent_events"]} == {"Adriwin", "Derneuere"}
 
 
+def test_actor_maps_include_known_git_identity_defaults(tmp_path):
+    store = make_store(tmp_path)
+    store.create_worker("Derneuere")
+    store.create_worker("JeBobs")
+
+    assert store.canonical_actor("Niaz") == "Derneuere"
+    assert store.canonical_actor("tigrexspalterlp@gmail.com") == "Derneuere"
+    assert store.canonical_actor("Nathan V.") == "JeBobs"
+
+    with store.users_connect() as con:
+        con.execute(
+            "INSERT INTO worker_alias(alias, username, kind) VALUES(?, ?, ?)",
+            ("Nathan V.", "Derneuere", "manual"),
+        )
+
+    assert store.canonical_actor("Nathan V.") == "Derneuere"
+
+
 def test_dashboard_hides_lease_housekeeping_events(tmp_path):
     store = make_store(tmp_path)
     with store.connect() as con:
@@ -189,6 +207,21 @@ def test_review_pass_unblocks_dependents(tmp_path):
     assert rows[0].id == "GameSource/A.cpp"
     assert rows[0].unresolved_deps == 0
     assert rows[1].id == "class:Utility"
+
+
+def test_reset_tu_returns_functions_to_todo_and_clears_completion(tmp_path):
+    store = make_store(tmp_path)
+    store.claim("GameSource/B.cpp", "agent-a")
+    store.mark_compiled("GameSource/B.cpp", "agent-a")
+    store.review("GameSource/B.cpp", "agent-a", "pass", notes="gate-only")
+
+    store.reset_tu("GameSource/B.cpp", "agent-a", notes="returned to queue")
+    detail = store.tu_detail("GameSource/B.cpp")
+
+    assert detail["status"] == "todo"
+    assert detail["completed_by"] is None
+    assert detail["funcs"][0]["status"] == "todo"
+    assert detail["funcs"][0]["completed_by"] is None
 
 
 def _write_workflow(tmp_path, status):

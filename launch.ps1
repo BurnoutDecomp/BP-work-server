@@ -55,6 +55,7 @@ if (-not $WorkflowRoot) {
 }
 
 # Local virtual environment.
+
 $venv = Join-Path $root ".venv"
 $python = Join-Path $venv "Scripts\python.exe"
 if (-not (Test-Path $python)) {

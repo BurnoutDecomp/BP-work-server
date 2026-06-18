@@ -221,6 +221,111 @@ def test_dashboard_agents_include_cached_contribution_counts(tmp_path):
     assert state["attribution_cache"]["function_complete"] is True
 
 
+def test_profile_detail_aggregates_alias_events_and_cached_contributions(tmp_path):
+    client, store = make_client(tmp_path)
+    store.create_worker("Derneuere", github_username="Derneuere")
+    with store.users_connect() as con:
+        con.execute(
+            "INSERT INTO worker_alias(alias, username, kind) VALUES(?, ?, ?)",
+            ("Niaz", "Derneuere", "git-name"),
+        )
+        con.execute(
+            "INSERT INTO worker_alias(alias, username, kind) VALUES(?, ?, ?)",
+            ("tigrexspalterlp@gmail.com", "Derneuere", "git-email"),
+        )
+    with store.connect() as con:
+        con.execute("UPDATE tu SET status='done' WHERE id IN ('GameSource/A.cpp', 'GameSource/B.cpp')")
+        con.execute("UPDATE func SET status='reviewed' WHERE name IN ('A::Run', 'B::Run')")
+        con.execute(
+            "INSERT INTO event(ts, tu_id, agent, action, detail_json) VALUES(?,?,?,?,?)",
+            ("2026-06-16T10:00:00+00:00", "GameSource/A.cpp", "Niaz", "review_pass", "{}"),
+        )
+        con.execute(
+            "INSERT INTO goal(name, category, source, description) VALUES(?, ?, ?, ?)",
+            ("boot", "milestone", "manual", "Boot path"),
+        )
+        con.execute("INSERT INTO goal_tu(goal_name, tu_id) VALUES('boot', 'GameSource/A.cpp')")
+        con.execute(
+            """
+            INSERT INTO attribution_cache(
+                scope, dest_path, function_name, repo_rev, payload_json, updated_at
+            )
+            VALUES(?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "file",
+                "b5-decomp/src/GameSource/A.cpp",
+                "",
+                "rev-profile",
+                '{"latest":{"date":"2026-06-16T10:00:00+00:00"},"contributors":{"contributors":[{"name":"Niaz","email":"tigrexspalterlp@gmail.com","lines":5,"percent":100}]}}',
+                iso(),
+            ),
+        )
+        con.execute(
+            """
+            INSERT INTO attribution_cache(
+                scope, dest_path, function_name, repo_rev, payload_json, updated_at
+            )
+            VALUES(?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "function",
+                "b5-decomp/src/GameSource/A.cpp",
+                "A::Run",
+                "rev-profile",
+                '{"contributors":[{"name":"Niaz","email":"tigrexspalterlp@gmail.com","lines":3,"percent":100}]}',
+                iso(),
+            ),
+        )
+
+    class FakeDecomp:
+        def revision(self):
+            return "rev-profile"
+
+    client.app.state.decomp = FakeDecomp()
+
+    profile = client.get("/api/profile", params={"name": "Niaz"}).json()
+
+    assert profile["name"] == "Derneuere"
+    assert profile["github_username"] == "Derneuere"
+    assert profile["summary"]["completed_tus"] == 1
+    assert profile["summary"]["contributed_tus"] == 1
+    assert profile["summary"]["contributed_funcs"] == 1
+    assert profile["summary"]["contributed_lines"] == 5
+    assert profile["top_tus"][0]["id"] == "GameSource/A.cpp"
+    assert profile["top_funcs"][0]["name"] == "A::Run"
+    assert profile["sources"] == [{"name": "decfigs", "tus": 1, "lines": 5}]
+    assert profile["goals"] == [{"name": "boot", "tus": 1}]
+    assert profile["recent_events"][0]["agent"] == "Derneuere"
+
+
+def test_profile_detail_falls_back_to_reviewed_work_without_attribution_cache(tmp_path):
+    client, _store = make_client(tmp_path)
+
+    client.post("/claims", json={"tu": "GameSource/B.cpp", "agent": "Derneuere"})
+    client.post(
+        "/tu/GameSource%2FB.cpp/compiled",
+        json={"agent": "Derneuere", "notes": "compiled", "files": []},
+    )
+    client.post(
+        "/tu/GameSource%2FB.cpp/review",
+        json={"agent": "Derneuere", "verdict": "pass", "notes": "done", "files": []},
+    )
+
+    profile = client.get("/api/profile", params={"name": "Derneuere"}).json()
+
+    assert profile["summary"]["completed_tus"] == 1
+    assert profile["summary"]["completed_funcs"] == 1
+    assert profile["summary"]["contributed_tus"] == 1
+    assert profile["summary"]["contributed_funcs"] == 1
+    assert profile["summary"]["attributed_tus"] == 0
+    assert profile["top_tus"][0]["id"] == "GameSource/B.cpp"
+    assert profile["top_tus"][0]["basis"] == "review_pass"
+    assert profile["top_funcs"][0]["name"] == "B::Run"
+    assert profile["top_funcs"][0]["basis"] == "completed_by"
+    assert profile["sources"] == [{"name": "decfigs", "tus": 1, "lines": 0}]
+
+
 def test_dashboard_state_warms_missing_attribution_cache(tmp_path):
     client, store = make_client(tmp_path)
     store.create_worker("Derneuere")
@@ -670,6 +775,41 @@ def test_path_encoded_tu_status_endpoints(tmp_path):
     assert detail["funcs"][0]["completed_by"] == "agent-a"
     funcs = client.get("/api/funcs", params={"q": "B::Run"}).json()
     assert funcs["items"][0]["completed_by"] == "agent-a"
+
+
+def test_reset_tu_clears_completion_attribution(tmp_path):
+    client, _ = make_client(tmp_path)
+    tu = "GameSource/B.cpp"
+    encoded = quote(tu, safe="")
+
+    assert client.post("/claims", json={"tu": tu, "agent": "agent-a"}).status_code == 201
+    assert client.post(
+        f"/tu/{encoded}/compiled",
+        json={"agent": "agent-a", "notes": "compiled", "files": []},
+    ).status_code == 204
+    assert client.post(
+        f"/tu/{encoded}/review",
+        json={"agent": "agent-a", "verdict": "pass", "notes": "gate-only", "files": []},
+    ).status_code == 204
+
+    reset = client.post(
+        f"/tu/{encoded}/reset",
+        json={"agent": "agent-a", "notes": "returned to queue"},
+    )
+    detail = client.get("/api/tu", params={"id": tu}).json()
+    tus = client.get("/api/tus", params={"q": tu}).json()["items"]
+    funcs = client.get("/api/funcs", params={"q": "B::Run"}).json()["items"]
+    export = client.get("/export/status").json()
+
+    assert reset.status_code == 204
+    assert detail["status"] == "todo"
+    assert detail.get("completed_by") is None
+    assert detail["funcs"][0]["status"] == "todo"
+    assert detail["funcs"][0]["completed_by"] is None
+    assert tus[0].get("completed_by") is None
+    assert funcs[0]["completed_by"] is None
+    assert tu not in export["tu"]
+    assert "B::Run" not in export["func"]
 
 
 def test_explorer_search_filter_and_detail(tmp_path):
