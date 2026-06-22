@@ -326,7 +326,9 @@ function renderAgents(agents) {
         "agent-meta",
         `${fmtInt(agent.total)} active | ${contributionLabel} ${fmtInt(agent.contributed_tus || 0)} TUs / ${fmtInt(
           agent.contributed_funcs || 0,
-        )} funcs${coverageText} | lease ${shortTime(agent.lease_expires_at)} | last ${
+        )} funcs${coverageText} | primary on ${fmtInt(agent.primary_tus || 0)} TUs / ${fmtInt(
+          agent.primary_funcs || 0,
+        )} funcs | lease ${shortTime(agent.lease_expires_at)} | last ${
           relTime(agent.last_activity || agent.last_update || agent.last_seen) || "never"
         }`,
       ),

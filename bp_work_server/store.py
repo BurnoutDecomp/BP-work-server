@@ -856,9 +856,12 @@ class WorkStore:
                 if actor:
                     completed_funcs_by_agent[actor] += row["completed"]
             attribution_cache_coverage = self._attribution_cache_coverage(con, attribution_repo_rev)
-            contributed_tus_by_agent, contributed_funcs_by_agent = self._contribution_counts_from_cache(
-                con, aliases, attribution_repo_rev
-            )
+            (
+                contributed_tus_by_agent,
+                contributed_funcs_by_agent,
+                primary_tus_by_agent,
+                primary_funcs_by_agent,
+            ) = self._contribution_counts_from_cache(con, aliases, attribution_repo_rev)
             last_activity_by_agent: dict[str, str] = {}
             for row in con.execute(
                 f"""
@@ -953,6 +956,8 @@ class WorkStore:
                         "completed_funcs": completed_funcs_by_agent.get(name, 0),
                         "contributed_tus": contributed_tus_by_agent.get(name, 0),
                         "contributed_funcs": contributed_funcs_by_agent.get(name, 0),
+                        "primary_tus": primary_tus_by_agent.get(name, 0),
+                        "primary_funcs": primary_funcs_by_agent.get(name, 0),
                         "lease_expires_at": active.get("lease_expires_at"),
                         "last_update": active.get("last_update"),
                         "last_activity": last_activity_by_agent.get(
@@ -1989,11 +1994,16 @@ class WorkStore:
         con: sqlite3.Connection,
         aliases: dict[str, str],
         repo_rev: str | None,
-    ) -> tuple[dict[str, int], dict[str, int]]:
+    ) -> tuple[dict[str, int], dict[str, int], dict[str, int], dict[str, int]]:
+        # "contributed" = any surviving-line author (a TU/func can count for several
+        # people). "primary" = the single dominant author (most surviving lines),
+        # credited only when that author maps to a worker -- a subset of contributed.
         contributed_tus: dict[str, set[str]] = defaultdict(set)
         contributed_funcs: dict[str, set[str]] = defaultdict(set)
+        primary_tus: dict[str, set[str]] = defaultdict(set)
+        primary_funcs: dict[str, set[str]] = defaultdict(set)
         if not repo_rev:
-            return {}, {}
+            return {}, {}, {}, {}
 
         def contributor_actor(contributor: dict[str, Any]) -> str | None:
             email = str(contributor.get("email") or "").strip()
@@ -2005,6 +2015,16 @@ class WorkStore:
                 if actor:
                     return actor
             return None
+
+        def primary_actor(contributors: list[dict[str, Any]]) -> str | None:
+            best: tuple[int, dict[str, Any]] | None = None
+            for contributor in contributors:
+                lines = int(contributor.get("lines") or 0)
+                if lines <= 0:
+                    continue
+                if best is None or lines > best[0]:
+                    best = (lines, contributor)
+            return contributor_actor(best[1]) if best else None
 
         for row in con.execute(
             """
@@ -2018,12 +2038,16 @@ class WorkStore:
             (repo_rev,),
         ):
             payload = json.loads(row["payload_json"] or "{}")
-            for contributor in (payload.get("contributors") or {}).get("contributors") or []:
+            contributors = (payload.get("contributors") or {}).get("contributors") or []
+            for contributor in contributors:
                 if int(contributor.get("lines") or 0) <= 0:
                     continue
                 actor = contributor_actor(contributor)
                 if actor:
                     contributed_tus[actor].add(row["tu_id"])
+            primary = primary_actor(contributors)
+            if primary:
+                primary_tus[primary].add(row["tu_id"])
 
         for row in con.execute(
             """
@@ -2038,16 +2062,22 @@ class WorkStore:
             (repo_rev,),
         ):
             payload = json.loads(row["payload_json"] or "{}")
-            for contributor in payload.get("contributors") or []:
+            contributors = payload.get("contributors") or []
+            for contributor in contributors:
                 if int(contributor.get("lines") or 0) <= 0:
                     continue
                 actor = contributor_actor(contributor)
                 if actor:
                     contributed_funcs[actor].add(row["func_name"])
+            primary = primary_actor(contributors)
+            if primary:
+                primary_funcs[primary].add(row["func_name"])
 
         return (
             {actor: len(tus) for actor, tus in contributed_tus.items()},
             {actor: len(funcs) for actor, funcs in contributed_funcs.items()},
+            {actor: len(tus) for actor, tus in primary_tus.items()},
+            {actor: len(funcs) for actor, funcs in primary_funcs.items()},
         )
 
     def _profile_contributor_actor(
