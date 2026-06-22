@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
 import re
 import secrets
 import sqlite3
@@ -632,6 +633,12 @@ class WorkStore:
     # single meaningless commit SHA, so their real time comes from the file's own
     # last commit instead (see decomp.DecompRepo).
     BACKFILLED_SOURCES = ("workflow commit delta", "legacy pre-server attribution")
+    # Events synthesized from b5-decomp git history (reconcile_events.py) after the
+    # server DB was reset -- no real server workflow event ever existed for them, and
+    # their ts is the git commit author date, not a real review time. They are hidden
+    # from all dashboards/metrics/feeds by default so only GitHub-verifiable activity
+    # is shown. The rows are NOT deleted; unhide them with BP_HIDE_RECONSTRUCTED=0.
+    RECONSTRUCTED_SOURCES = ("b5-decomp commit reconstruction",)
     RELIABLE_EVENT_ACTIONS = (
         "claim",
         "compiled",
@@ -642,6 +649,34 @@ class WorkStore:
         "reset_tu",
     )
     DASHBOARD_HIDDEN_ACTIONS = ("lease_missing", "lease_expired")
+
+    @staticmethod
+    def _hide_reconstructed_enabled() -> bool:
+        """Whether git-reconstructed events are hidden from display (default: yes).
+
+        Reversible at runtime via the BP_HIDE_RECONSTRUCTED env var; set it to one
+        of 0/false/no/off to surface the reconstructed events again.
+        """
+        return os.environ.get("BP_HIDE_RECONSTRUCTED", "1").strip().lower() not in (
+            "0",
+            "false",
+            "no",
+            "off",
+            "",
+        )
+
+    def _reconstructed_filter(self, column: str = "detail_json") -> str:
+        """Return a SQL ``AND`` fragment excluding reconstructed events.
+
+        Empty string when hiding is disabled, so callers can interpolate it
+        unconditionally. ``column`` is the (optionally alias-qualified) detail_json
+        column for the query, e.g. ``"e.detail_json"``. Operates on a fixed set of
+        source literals, so there is no SQL-injection surface.
+        """
+        if not self._hide_reconstructed_enabled():
+            return ""
+        quoted = ",".join("'" + s.replace("'", "''") + "'" for s in self.RECONSTRUCTED_SOURCES)
+        return f" AND COALESCE(json_extract({column}, '$.source'), '') NOT IN ({quoted})"
 
     def actor_maps(
         self, registered_agents: dict[str, dict[str, Any]] | None = None
@@ -722,10 +757,10 @@ class WorkStore:
         with self.connect() as con:
             aliases, _profiles = self.actor_maps()
             rows = con.execute(
-                """
+                f"""
                 SELECT id, ts, tu_id, agent, action, detail_json
                 FROM event
-                WHERE id > ?
+                WHERE id > ?{self._reconstructed_filter()}
                 ORDER BY id
                 LIMIT ?
                 """,
@@ -797,10 +832,11 @@ class WorkStore:
                     agent_work[item["owner"]].append(item["id"])
             completed_by_agent: dict[str, int] = defaultdict(int)
             for row in con.execute(
-                """
+                f"""
                 SELECT agent, COUNT(DISTINCT tu_id) AS completed
                 FROM event
                 WHERE agent IS NOT NULL AND action='review_pass' AND tu_id IS NOT NULL
+                  {self._reconstructed_filter()}
                 GROUP BY agent
                 """
             ):
@@ -825,10 +861,10 @@ class WorkStore:
             )
             last_activity_by_agent: dict[str, str] = {}
             for row in con.execute(
-                """
+                f"""
                 SELECT agent, MAX(ts) AS last_activity
                 FROM event
-                WHERE agent IS NOT NULL
+                WHERE agent IS NOT NULL{self._reconstructed_filter()}
                 GROUP BY agent
                 """
             ):
@@ -1749,7 +1785,7 @@ class WorkStore:
             SELECT id, ts, tu_id, agent, action, detail_json
             FROM event
             WHERE id > ?
-              AND action NOT IN ({hidden_placeholders})
+              AND action NOT IN ({hidden_placeholders}){self._reconstructed_filter()}
               AND NOT (
                 tu_id IS NOT NULL
                 AND COALESCE(
@@ -1856,7 +1892,7 @@ class WorkStore:
               FROM event
               WHERE tu_id IN ({placeholders})
                 AND agent IS NOT NULL
-                AND action NOT IN ({hidden_placeholders})
+                AND action NOT IN ({hidden_placeholders}){self._reconstructed_filter()}
               GROUP BY tu_id
             ) latest ON latest.max_id=e.id
             """,
@@ -2047,14 +2083,14 @@ class WorkStore:
             goals_by_tu[goal["tu_id"]].append(goal["goal_name"])
         completed: dict[str, dict[str, Any]] = {}
         for row in con.execute(
-            """
+            f"""
             SELECT e.agent, e.tu_id, MAX(e.ts) AS completed_at,
                    t.source, t.status, t.n_funcs, t.dest_path
             FROM event e
             JOIN tu t ON t.id=e.tu_id
             WHERE e.agent IS NOT NULL
               AND e.action='review_pass'
-              AND e.tu_id IS NOT NULL
+              AND e.tu_id IS NOT NULL{self._reconstructed_filter("e.detail_json")}
             GROUP BY e.agent, e.tu_id
             """
         ):
@@ -2236,7 +2272,7 @@ class WorkStore:
             SELECT id, ts, tu_id, agent, action, detail_json
             FROM event
             WHERE agent IS NOT NULL
-              AND action NOT IN ({hidden_placeholders})
+              AND action NOT IN ({hidden_placeholders}){self._reconstructed_filter()}
             ORDER BY id DESC
             LIMIT 5000
             """,

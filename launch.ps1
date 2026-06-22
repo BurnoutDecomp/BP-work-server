@@ -34,6 +34,7 @@
 [CmdletBinding()]
 param(
     [string]$WorkflowRoot,
+    [string]$DecompRoot,
     [string]$Database,
     [string]$HostName = "127.0.0.1",
     [int]$Port = 8765,
@@ -52,6 +53,20 @@ if (-not $Database) {
 if (-not $WorkflowRoot) {
     if ($env:BP_WORKFLOW_ROOT) { $WorkflowRoot = $env:BP_WORKFLOW_ROOT }
     else { $WorkflowRoot = Join-Path (Split-Path $root -Parent) "BP-Decomp_Workflow" }
+}
+
+# Decomp source clone, read for Git-based contribution attribution. Without this
+# the server falls back to the Linux deploy path and shows zero contributions
+# locally. Default to the b5-decomp checkout inside the workflow root.
+if (-not $DecompRoot) {
+    if ($env:BP_DECOMP_ROOT) { $DecompRoot = $env:BP_DECOMP_ROOT }
+    else { $DecompRoot = Join-Path $WorkflowRoot "b5-decomp" }
+}
+$env:BP_DECOMP_ROOT = $DecompRoot
+if (Test-Path $DecompRoot) {
+    Write-Host "Decomp attribution source: $DecompRoot" -ForegroundColor Cyan
+} else {
+    Write-Warning "Decomp root not found: $DecompRoot - contributions will show 0 until BP_DECOMP_ROOT points at a b5-decomp clone."
 }
 
 # Local virtual environment.

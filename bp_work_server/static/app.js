@@ -324,9 +324,7 @@ function renderAgents(agents) {
     row.appendChild(
       div(
         "agent-meta",
-        `${fmtInt(agent.total)} active | reviewed ${fmtInt(agent.completed_tus ?? agent.completed)} TUs / ${fmtInt(
-          agent.completed_funcs,
-        )} funcs | ${contributionLabel} ${fmtInt(agent.contributed_tus || 0)} TUs / ${fmtInt(
+        `${fmtInt(agent.total)} active | ${contributionLabel} ${fmtInt(agent.contributed_tus || 0)} TUs / ${fmtInt(
           agent.contributed_funcs || 0,
         )} funcs${coverageText} | lease ${shortTime(agent.lease_expires_at)} | last ${
           relTime(agent.last_activity || agent.last_update || agent.last_seen) || "never"
@@ -1566,8 +1564,6 @@ function renderProfileDetail(profile) {
 
   const metrics = div("profile-metrics");
   metrics.appendChild(profileMetric("Active TUs", fmtInt(summary.active_tus)));
-  metrics.appendChild(profileMetric("Completed TUs", fmtInt(summary.completed_tus)));
-  metrics.appendChild(profileMetric("Completed funcs", fmtInt(summary.completed_funcs)));
   metrics.appendChild(profileMetric("Contributed TUs", fmtInt(summary.contributed_tus)));
   metrics.appendChild(profileMetric("Contributed funcs", fmtInt(summary.contributed_funcs)));
   metrics.appendChild(profileMetric("Surviving lines", fmtInt(summary.contributed_lines)));
