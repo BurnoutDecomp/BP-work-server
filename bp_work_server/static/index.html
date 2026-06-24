@@ -310,7 +310,25 @@
               <h2>Blocked</h2>
               <span id="blockedListCount" class="badge">0 TUs</span>
             </div>
+            <div class="mini-controls">
+              <input
+                type="search"
+                id="blockedSearch"
+                class="search-input"
+                placeholder="Search by TU, path, or reason…"
+                autocomplete="off"
+              />
+              <select id="blockedFilterSource" class="filter"><option value="">All sources</option></select>
+            </div>
             <div id="blockedList" class="blocked-list empty">No blocked work.</div>
+            <div class="mini-foot">
+              <span id="blockedRange" class="muted-text">—</span>
+              <div class="mini-pager">
+                <button id="blockedPrev" class="filter">Prev</button>
+                <span id="blockedPageStatus" class="page-status">Page 1 of 1</span>
+                <button id="blockedNext" class="filter">Next</button>
+              </div>
+            </div>
           </section>
         </section>
       </main>

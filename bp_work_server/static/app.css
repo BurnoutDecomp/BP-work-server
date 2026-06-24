@@ -833,7 +833,7 @@ small {
   display: grid;
 }
 
-/* Search + filter row and pager footer for the Live Events / Next Queue panels.
+/* Search + filter row and pager footer for the paginated mini-panels.
    These sit outside the scrolling list so they stay pinned while it scrolls. */
 .mini-controls {
   display: flex;

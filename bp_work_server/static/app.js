@@ -27,6 +27,7 @@ const state = {
   // the dashboard payload carries the full lists; we filter/search/page here.
   eventsView: { all: [], q: "", action: "", actor: "", page: 1, perPage: 50, searchTimer: null },
   queueView: { all: [], q: "", source: "", page: 1, perPage: 50, searchTimer: null },
+  blockedView: { all: [], q: "", source: "", page: 1, perPage: 50, searchTimer: null },
   // Live Events reconstruction. Backfilled rows share one import timestamp, one
   // bogus commit, and a guessed author; we replace each with one event per real
   // commit (2026+) that touched the file. rawEvents is the unexpanded payload;
@@ -283,7 +284,7 @@ function render(data) {
   setQueueData((data.next && data.next.items) || []);
   setEventsData(data.recent_events || []);
   renderGoals(data.goals || []);
-  renderBlocked(data.blocked || []);
+  setBlockedData(data.blocked || []);
 }
 
 function renderAgents(agents) {
@@ -649,23 +650,55 @@ function renderGoals(goals) {
   }
 }
 
-function renderBlocked(items) {
-  text("blockedListCount", `${items.length} TUs`);
+function setBlockedData(items) {
+  const view = state.blockedView;
+  view.all = items || [];
+  fillSelect(
+    "blockedFilterSource",
+    [...new Set(view.all.map((i) => i.source).filter(Boolean))].sort(),
+    "All sources",
+  );
+  renderBlocked();
+}
+
+function filteredBlocked() {
+  const view = state.blockedView;
+  const q = view.q.toLowerCase();
+  return view.all.filter((item) => {
+    if (view.source && item.source !== view.source) return false;
+    if (!q) return true;
+    return (
+      String(item.id || "").toLowerCase().includes(q) ||
+      String(item.dest_path || "").toLowerCase().includes(q) ||
+      String(item.source || "").toLowerCase().includes(q) ||
+      String(item.notes || "").toLowerCase().includes(q)
+    );
+  });
+}
+
+function renderBlocked() {
+  const view = state.blockedView;
+  text("blockedListCount", `${fmtCompact(view.all.length)} TUs`);
+  const items = filteredBlocked();
+  const { slice, from, to, page, totalPages } = paginate(items, view);
+  view.page = page;
+
   const root = el("blockedList");
   clearNode(root);
-  root.className = items.length ? "blocked-list" : "blocked-list empty";
-  if (!items.length) {
-    root.textContent = "No blocked work.";
-    return;
+  root.className = slice.length ? "blocked-list" : "blocked-list empty";
+  if (!slice.length) {
+    root.textContent = view.all.length ? "No blocked TUs match." : "No blocked work.";
+  } else {
+    for (const item of slice) {
+      const row = div("blocked-row");
+      row.classList.add("clickable");
+      row.appendChild(tuButton(item.id));
+      row.appendChild(div("tu-meta", item.notes || "No reason recorded."));
+      row.addEventListener("click", () => openDetail(item.id));
+      root.appendChild(row);
+    }
   }
-  for (const item of items) {
-    const row = div("blocked-row");
-    row.classList.add("clickable");
-    row.appendChild(tuButton(item.id));
-    row.appendChild(div("tu-meta", item.notes || "No reason recorded."));
-    row.addEventListener("click", () => openDetail(item.id));
-    root.appendChild(row);
-  }
+  renderMiniFoot("blocked", items.length, from, to, page, totalPages);
 }
 
 /* ---------------- GitHub panel ---------------- */
@@ -1160,8 +1193,8 @@ function resetAndLoad() {
   loadExplorer();
 }
 
-// Wire the search box, filter selects, and Prev/Next for the Live Events and
-// Next Queue mini-panels. Filtering happens over the in-memory `view.all`.
+// Wire the search box, filter selects, and Prev/Next for the dashboard's
+// paginated mini-panels. Filtering happens over the in-memory `view.all`.
 function initMiniPanels() {
   const panels = [
     { view: state.eventsView, prefix: "events", render: renderEvents, filters: [
@@ -1170,6 +1203,9 @@ function initMiniPanels() {
     ] },
     { view: state.queueView, prefix: "queue", render: renderQueue, filters: [
       ["queueFilterSource", "source"],
+    ] },
+    { view: state.blockedView, prefix: "blocked", render: renderBlocked, filters: [
+      ["blockedFilterSource", "source"],
     ] },
   ];
   for (const { view, prefix, render, filters } of panels) {
