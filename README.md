@@ -23,6 +23,11 @@ This repo contains an MVP server:
 - GitHub repo overview (info, recent commits, file tree) on the dashboard.
 - Explorer panel to search/filter/sort every TU and function, with a detail
   drawer showing the data handed to agents (deps, dependents, funcs, goals).
+- Git-derived contribution attribution per agent: "contributed to" (any
+  surviving-line author) and "primary on" (dominant author). `class:` TUs are
+  attributed via `progress/class_homes.json`; the dashboard shows only
+  GitHub-verifiable data (git-reconstructed events are hidden by default,
+  `BP_HIDE_RECONSTRUCTED=0` to reveal).
 - File-tree entries and TU destinations link straight to the file on GitHub.
 - Burnout Paradise themed dashboard (drop a `logo.png` into the static folder).
 - Small stdlib HTTP client for `work.py` integration.
@@ -142,6 +147,28 @@ When commits reach `b5-decomp` (or the workflow's `progress/` files) outside the
 server's normal claim/submit flow, refresh the server's derived state: re-resolve
 class homes, re-import the progress files, then re-warm Git attribution.
 
+**The easy way — one command.**
+
+- **Local server** (this repo's dev DB) — from the server repo:
+
+  ```powershell
+  .\sync.ps1                 # backup -> resolve class homes -> import (no reset) -> warm
+  .\sync.ps1 -Reconcile      # also reconcile status.json from committed files (promote-only)
+  ```
+
+- **Remote server** (over HTTP) — from the workflow repo:
+
+  ```powershell
+  work server-update                 # refresh class homes, push, re-import on the server
+  work server-update --reconcile     # also reconcile status.json (promote-only)
+  ```
+
+Both preserve live claims + the event log (no `--reset`), and `sync.ps1` backs up the
+DB first (timestamped, never clobbered). The remote path re-warms attribution lazily on
+the next dashboard view.
+
+**The manual steps** (what those commands wrap):
+
 ```powershell
 # 1) Workflow repo: refresh the derived inputs from the new commits
 cd ..\BP-Decomp_Workflow
@@ -151,7 +178,7 @@ python tools\work\resolve_class_homes.py --apply  # refresh class TU -> real hom
 
 # If the new commits also changed which TUs are done and status.json is not
 # already reconciled, regenerate it from the committed files first:
-python tools\work\reconcile_from_files.py --apply
+python tools\work\reconcile_from_files.py --apply --no-demote
 
 # 2) Server repo: re-import progress, then re-warm attribution
 cd ..\BP-work-server

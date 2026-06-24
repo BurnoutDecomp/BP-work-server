@@ -319,6 +319,8 @@ Mapping:
 | `work block <tu>` | `POST /tu/{tu}/block` |
 | `work unblock <tu>` | `POST /tu/{tu}/unblock` |
 | `work reset-tu <tu>` | `POST /tu/{tu}/reset` |
+| `work server-sync [--branch B]` | `POST /admin/sync` (reset=false) |
+| `work server-update [--reconcile]` | refresh `class_homes.json` (+status) & push, then `POST /admin/sync` (reset=false) |
 | `work server-reset [--to REF]` | `POST /admin/sync` with `reset=true` |
 
 The local `ledger.sqlite` can remain a cache for dossiers, dependencies, and
