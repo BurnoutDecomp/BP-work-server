@@ -1531,14 +1531,14 @@ function profileBarList(title, items, labelKey, valueKey, emptyText, metaKey) {
 function profileSparkline(points) {
   const wrap = div("profile-spark");
   if (!points || !points.length) {
-    wrap.appendChild(div("muted-text", "No event activity yet."));
+    wrap.appendChild(div("muted-text", "No activity yet."));
     return wrap;
   }
   const max = Math.max(...points.map((point) => Number(point.count || 0)), 1);
   for (const point of points.slice(-28)) {
     const bar = div("profile-spark-bar");
     bar.style.height = `${Math.max(8, (Number(point.count || 0) / max) * 76)}px`;
-    bar.title = `${point.date}: ${fmtInt(point.count)} events`;
+    bar.title = `${point.date}: ${fmtInt(point.count)} TUs`;
     wrap.appendChild(bar);
   }
   return wrap;

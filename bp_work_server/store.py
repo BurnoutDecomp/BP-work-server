@@ -1446,7 +1446,10 @@ class WorkStore:
             profile_tus = self._merge_profile_items(completed_tus, contributed_tus)
             profile_funcs = self._merge_profile_items(completed_funcs, contributed_funcs, key="name")
             recent_events = self._profile_events(con, actor, aliases, limit=80)
-            activity_by_day = self._profile_activity_by_day(recent_events)
+            # Activity graph: drive it from the real commit dates of contributed TUs, so
+            # it shows a true timeline for everyone (the event log is thin and its
+            # reconstructed rows share one backdated date -> a single misleading bar).
+            activity_by_day = self._profile_activity_by_day(list(contributed_tus.values()))
             action_counts = self._profile_action_counts(recent_events)
             status_counts = {key: 0 for key in TU_STATUSES}
             for item in profile_tus.values():
@@ -2353,10 +2356,16 @@ class WorkStore:
                 break
         return events
 
-    def _profile_activity_by_day(self, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _profile_activity_by_day(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Per-day activity from the real git commit dates of the actor's contributed
+        TUs (each item's ``latest_change_at``), not the event log. The event log is thin
+        and its reconstructed entries share one backdated timestamp, which collapsed the
+        graph into a single bar; committed-file dates spread across the real timeline and
+        exist for every contributor.
+        """
         counts: dict[str, int] = defaultdict(int)
-        for event in events:
-            ts = str(event.get("ts") or "")
+        for item in items:
+            ts = str(item.get("latest_change_at") or "")
             if len(ts) >= 10:
                 counts[ts[:10]] += 1
         return [{"date": date, "count": counts[date]} for date in sorted(counts)]
