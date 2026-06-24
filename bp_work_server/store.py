@@ -845,7 +845,6 @@ class WorkStore:
                     FROM tu
                     WHERE status='blocked'
                     ORDER BY updated_at DESC, id
-                    LIMIT 50
                     """
                 )
             ]

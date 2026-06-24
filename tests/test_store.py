@@ -99,6 +99,25 @@ def test_dashboard_keeps_source_less_workflow_events(tmp_path):
     assert "compiled" in actions
 
 
+def test_dashboard_returns_all_blocked_tus(tmp_path):
+    store = make_store(tmp_path)
+    blocked_ids = [f"GameSource/Blocked{i:02}.cpp" for i in range(60)]
+    with store.connect() as con:
+        con.executemany(
+            """
+            INSERT INTO tu(id, source, status, n_funcs, n_decfigs, updated_at)
+            VALUES(?, 'decfigs', 'blocked', 0, 0, ?)
+            """,
+            [(tu_id, iso()) for tu_id in blocked_ids],
+        )
+
+    state = store.dashboard_state()
+
+    assert state["counts"]["blocked"] == 60
+    assert len(state["blocked"]) == 60
+    assert {item["id"] for item in state["blocked"]} == set(blocked_ids)
+
+
 def test_actor_maps_canonicalize_github_and_case_aliases(tmp_path):
     store = make_store(tmp_path)
     store.create_worker("Adriwin", github_username="adriwin06")
