@@ -53,6 +53,7 @@ function destToRepoPath(dest) {
 }
 
 const el = (id) => document.getElementById(id);
+const RING_CIRCUMFERENCE = 326.7;
 
 function text(id, value) {
   const node = el(id);
@@ -131,7 +132,15 @@ function setConnection(mode, label) {
 
 function setRing(id, value) {
   const node = el(id);
-  if (node) node.style.setProperty("--p", Math.max(0, Math.min(100, Number(value || 0))));
+  if (!node) return;
+  const percent = Math.max(0, Math.min(100, Number(value || 0)));
+  node.style.setProperty("--p", percent);
+  const fill = node.querySelector(".ring-fill");
+  if (fill) {
+    fill.style.strokeDashoffset = String(
+      RING_CIRCUMFERENCE - (RING_CIRCUMFERENCE * percent) / 100,
+    );
+  }
 }
 
 function clearNode(node) {
@@ -973,16 +982,24 @@ async function loadFacets() {
 function fillSelect(id, values, allLabel) {
   const sel = el(id);
   if (!sel) return;
+  const options = [
+    { value: "", text: allLabel },
+    ...(values || []).map((value) => ({ value: String(value), text: String(value) })),
+  ];
+  const existing = [...sel.options];
+  const unchanged =
+    existing.length === options.length &&
+    existing.every(
+      (option, i) => option.value === options[i].value && option.textContent === options[i].text,
+    );
+  if (unchanged) return;
+
   const current = sel.value;
   clearNode(sel);
-  const all = document.createElement("option");
-  all.value = "";
-  all.textContent = allLabel;
-  sel.appendChild(all);
-  for (const v of values || []) {
+  for (const { value, text } of options) {
     const opt = document.createElement("option");
-    opt.value = v;
-    opt.textContent = v;
+    opt.value = value;
+    opt.textContent = text;
     sel.appendChild(opt);
   }
   sel.value = current;

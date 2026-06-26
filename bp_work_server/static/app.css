@@ -449,7 +449,7 @@ h2::before {
   stroke-width: 9;
   stroke-linecap: butt;
   stroke-dasharray: 326.7;
-  stroke-dashoffset: calc(326.7 - (326.7 * var(--p)) / 100);
+  stroke-dashoffset: 326.7;
   transition: stroke-dashoffset 700ms cubic-bezier(0.22, 1, 0.36, 1);
   filter: drop-shadow(0 0 6px rgba(236, 28, 36, 0.5));
 }
@@ -1146,31 +1146,100 @@ td:nth-child(4) {
   font-size: 13px;
 }
 
-/* Scrollbars — asphalt gutter with a brushed crimson thumb */
-* {
+/* Scrollbars — asphalt gutter with a brushed crimson thumb.
+   Keep this scoped to real scroll containers so Firefox does not restyle every
+   element during frequent dashboard refreshes. */
+html,
+.file-tree,
+.panel > .agent-list,
+.panel > .queue,
+.panel > .goal-list,
+.panel > .blocked-list,
+.panel > .event-table,
+.panel > .table-wrap,
+.table-wrap,
+.event-table,
+.cs-menu,
+.drawer-body {
   scrollbar-width: thin;
   scrollbar-color: var(--red-deep) rgba(0, 0, 0, 0.4);
+  scrollbar-gutter: stable;
 }
-*::-webkit-scrollbar {
+html::-webkit-scrollbar,
+.file-tree::-webkit-scrollbar,
+.panel > .agent-list::-webkit-scrollbar,
+.panel > .queue::-webkit-scrollbar,
+.panel > .goal-list::-webkit-scrollbar,
+.panel > .blocked-list::-webkit-scrollbar,
+.panel > .event-table::-webkit-scrollbar,
+.panel > .table-wrap::-webkit-scrollbar,
+.table-wrap::-webkit-scrollbar,
+.event-table::-webkit-scrollbar,
+.cs-menu::-webkit-scrollbar,
+.drawer-body::-webkit-scrollbar {
   width: 12px;
   height: 12px;
 }
-*::-webkit-scrollbar-track {
+html::-webkit-scrollbar-track,
+.file-tree::-webkit-scrollbar-track,
+.panel > .agent-list::-webkit-scrollbar-track,
+.panel > .queue::-webkit-scrollbar-track,
+.panel > .goal-list::-webkit-scrollbar-track,
+.panel > .blocked-list::-webkit-scrollbar-track,
+.panel > .event-table::-webkit-scrollbar-track,
+.panel > .table-wrap::-webkit-scrollbar-track,
+.table-wrap::-webkit-scrollbar-track,
+.event-table::-webkit-scrollbar-track,
+.cs-menu::-webkit-scrollbar-track,
+.drawer-body::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.4);
   box-shadow: inset 1px 0 0 var(--line-soft);
 }
-*::-webkit-scrollbar-thumb {
+html::-webkit-scrollbar-thumb,
+.file-tree::-webkit-scrollbar-thumb,
+.panel > .agent-list::-webkit-scrollbar-thumb,
+.panel > .queue::-webkit-scrollbar-thumb,
+.panel > .goal-list::-webkit-scrollbar-thumb,
+.panel > .blocked-list::-webkit-scrollbar-thumb,
+.panel > .event-table::-webkit-scrollbar-thumb,
+.panel > .table-wrap::-webkit-scrollbar-thumb,
+.table-wrap::-webkit-scrollbar-thumb,
+.event-table::-webkit-scrollbar-thumb,
+.cs-menu::-webkit-scrollbar-thumb,
+.drawer-body::-webkit-scrollbar-thumb {
   /* transparent border + padding-box clip leaves a gutter so the thumb floats */
   background: linear-gradient(180deg, var(--red) 0%, var(--red-deep) 100%);
   background-clip: padding-box;
   border: 3px solid transparent;
   border-radius: 7px;
 }
-*::-webkit-scrollbar-thumb:hover {
+html::-webkit-scrollbar-thumb:hover,
+.file-tree::-webkit-scrollbar-thumb:hover,
+.panel > .agent-list::-webkit-scrollbar-thumb:hover,
+.panel > .queue::-webkit-scrollbar-thumb:hover,
+.panel > .goal-list::-webkit-scrollbar-thumb:hover,
+.panel > .blocked-list::-webkit-scrollbar-thumb:hover,
+.panel > .event-table::-webkit-scrollbar-thumb:hover,
+.panel > .table-wrap::-webkit-scrollbar-thumb:hover,
+.table-wrap::-webkit-scrollbar-thumb:hover,
+.event-table::-webkit-scrollbar-thumb:hover,
+.cs-menu::-webkit-scrollbar-thumb:hover,
+.drawer-body::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, var(--red-bright) 0%, var(--red) 100%);
   background-clip: padding-box;
 }
-*::-webkit-scrollbar-corner {
+html::-webkit-scrollbar-corner,
+.file-tree::-webkit-scrollbar-corner,
+.panel > .agent-list::-webkit-scrollbar-corner,
+.panel > .queue::-webkit-scrollbar-corner,
+.panel > .goal-list::-webkit-scrollbar-corner,
+.panel > .blocked-list::-webkit-scrollbar-corner,
+.panel > .event-table::-webkit-scrollbar-corner,
+.panel > .table-wrap::-webkit-scrollbar-corner,
+.table-wrap::-webkit-scrollbar-corner,
+.event-table::-webkit-scrollbar-corner,
+.cs-menu::-webkit-scrollbar-corner,
+.drawer-body::-webkit-scrollbar-corner {
   background: transparent;
 }
 
