@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from typing import Any
 
@@ -13,6 +14,12 @@ from bp_work_server.services.attribution import repo_revision
 from bp_work_server.store import WorkStore
 
 log = logging.getLogger(__name__)
+
+# How long a built dashboard snapshot is served before rebuilding. The dashboard
+# is a polled overview, so a few seconds of staleness is invisible to users, but
+# a 1s TTL meant near-every poll (clients poll ~5-7s apart) triggered a full
+# ~5s rebuild, pinning a core continuously. 15s collapses that to a trickle.
+DASHBOARD_CACHE_TTL = float(os.environ.get("BP_DASHBOARD_CACHE_TTL", "15"))
 
 
 def cached_dashboard_state(
@@ -42,7 +49,7 @@ def cached_dashboard_state(
         data = store.dashboard_state(attribution_repo_rev=attribution_repo_rev)
         cache["data"] = data
         cache["attribution_repo_rev"] = attribution_repo_rev
-        cache["expires_at"] = now + 1.0
+        cache["expires_at"] = now + DASHBOARD_CACHE_TTL
         log.debug("dashboard_state built in %.3fs", time.perf_counter() - started)
         return data
 

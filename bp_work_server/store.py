@@ -6,6 +6,7 @@ import os
 import re
 import secrets
 import sqlite3
+import threading
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -59,6 +60,15 @@ class WorkStore:
     def __init__(self, db_path: str | Path, users_db_path: str | Path | None = None):
         self.db_path = Path(db_path)
         self.users_db_path = Path(users_db_path) if users_db_path else self._default_users_path()
+        # Memo for _contribution_counts_from_cache: re-deriving per-agent
+        # contribution counts means JSON-parsing the whole attribution_cache
+        # table (~14k rows) on every call, which dominates dashboard_state. The
+        # inputs only change when the attribution cache is re-warmed (new
+        # repo_rev or more rows for the same rev) or worker aliases change, so a
+        # single-slot memo keyed on those collapses the cost to ~0 between warms.
+        self._contrib_cache_lock = threading.Lock()
+        self._contrib_cache_key: tuple | None = None
+        self._contrib_cache_val: tuple[dict, dict, dict, dict] | None = None
 
     def _default_users_path(self) -> Path:
         return self.db_path.with_name(f"{self.db_path.stem}-users{self.db_path.suffix}")
@@ -2020,6 +2030,34 @@ class WorkStore:
         )
 
     def _contribution_counts_from_cache(
+        self,
+        con: sqlite3.Connection,
+        aliases: dict[str, str],
+        repo_rev: str | None,
+    ) -> tuple[dict[str, int], dict[str, int], dict[str, int], dict[str, int]]:
+        if not repo_rev:
+            return {}, {}, {}, {}
+        # Cheap content signature: (row count, latest update) for this repo_rev
+        # changes whenever a warm adds or rewrites rows, so the memo can never
+        # serve stale counts even when attribution_cache mutates under the same
+        # repo_rev. Scanning these two columns is milliseconds vs. the ~3.3s of
+        # JSON parsing the full payload set below.
+        sig = con.execute(
+            "SELECT COUNT(*), COALESCE(MAX(updated_at), '') "
+            "FROM attribution_cache WHERE repo_rev=?",
+            (repo_rev,),
+        ).fetchone()
+        key = (repo_rev, sig[0], sig[1], tuple(sorted(aliases.items())))
+        with self._contrib_cache_lock:
+            if self._contrib_cache_key == key and self._contrib_cache_val is not None:
+                return self._contrib_cache_val
+        result = self._compute_contribution_counts_from_cache(con, aliases, repo_rev)
+        with self._contrib_cache_lock:
+            self._contrib_cache_key = key
+            self._contrib_cache_val = result
+        return result
+
+    def _compute_contribution_counts_from_cache(
         self,
         con: sqlite3.Connection,
         aliases: dict[str, str],
