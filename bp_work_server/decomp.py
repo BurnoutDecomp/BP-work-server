@@ -78,6 +78,10 @@ class DecompRepo:
         self._blame_cache: dict[str, list[dict[str, Any]]] = {}
         self._source_cache: dict[str, str] = {}
         self._function_range_cache: dict[tuple[str, str], tuple[int, int] | None] = {}
+        # Memoised HEAD sha. Only a refresh (fetch + reset) can move HEAD, and
+        # that path clears this, so revision() need not spawn `git rev-parse` on
+        # every call -- it is hit once per dashboard poll as the cache key.
+        self._revision: str | None = None
         self._refreshed_at = 0.0
 
     @property
@@ -132,6 +136,7 @@ class DecompRepo:
             self._blame_cache.clear()
             self._source_cache.clear()
             self._function_range_cache.clear()
+            self._revision = None
         # Record the attempt regardless so a flaky network does not make
         # every request pay the fetch cost.
         self._refreshed_at = time.time()
@@ -199,8 +204,15 @@ class DecompRepo:
     def revision(self) -> str | None:
         """Current checked-out commit for cache keys."""
         self._maybe_refresh()
+        with self._lock:
+            if self._revision is not None:
+                return self._revision
         out = self._git("rev-parse", "HEAD")
-        return out.strip() if out else None
+        rev = out.strip() if out else None
+        if rev:
+            with self._lock:
+                self._revision = rev
+        return rev
 
     def _source(self, path: str | None) -> str:
         if not path:

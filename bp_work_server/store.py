@@ -25,6 +25,11 @@ from bp_work_server.schema import (
 
 SCHEMA = WORK_SCHEMA
 
+# Upper bound on the per-connection memory map for the SQLite DB. Overridable for
+# constrained hosts; 256 MiB is a cap, not a reservation, and covers the current
+# ~30 MB work DB with ample headroom.
+DB_MMAP_SIZE = int(os.environ.get("BP_DB_MMAP_SIZE", str(256 * 1024 * 1024)))
+
 DEFAULT_ACTOR_ALIASES = {
     # Git identities seen in the b5-decomp history. User-maintained
     # worker_alias rows still override these defaults below.
@@ -81,6 +86,13 @@ class WorkStore:
         con.execute(f"PRAGMA busy_timeout = {DB_BUSY_TIMEOUT_MS}")
         con.execute("PRAGMA foreign_keys = ON")
         con.execute("PRAGMA synchronous = NORMAL")
+        # Memory-map the DB so reads are page-cache memory accesses instead of a
+        # pread64 syscall per 4 KiB page. We open a fresh (cold-cache) connection
+        # per call, so without this every query re-reads its pages from the OS/ZFS
+        # layer; mmap made the residual dashboard queries ~4x faster on prod and
+        # cuts the syscall/I-O load across every endpoint. 256 MiB covers the
+        # current ~30 MB DB many times over (cap, not an allocation).
+        con.execute(f"PRAGMA mmap_size = {DB_MMAP_SIZE}")
         if ensure_wal:
             con.execute("PRAGMA journal_mode = WAL")
         try:
