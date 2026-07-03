@@ -129,5 +129,8 @@ def test_github_overview_falls_back_to_local_clone_on_rate_limit(tmp_path, monke
     assert overview["info"]["full_name"] == "owner/repo"
     assert overview["latest_commit"]["message"] == "Local commit"
     assert overview["latest_commit"]["author"] == "Local Dev"
-    assert overview["tree"]["tree"][0] == {"path": "src/foo.cpp", "type": "blob", "size": 7}
+    tree_nodes = overview["tree"]["tree"]
+    assert {"path": "src/foo.cpp", "type": "blob", "size": 7} in tree_nodes
+    # The folder skeleton is listed too (via ls-tree -t), so folders never vanish.
+    assert {"path": "src", "type": "tree", "size": None} in tree_nodes
     assert any("local b5-decomp clone" in error for error in overview["errors"])

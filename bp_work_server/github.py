@@ -58,8 +58,22 @@ def login_from_noreply_email(email: str | None) -> str | None:
     return local.split("+", 1)[-1] or None
 
 # Cap the tree we ship to the browser; the full recursive tree can be huge.
-TREE_LIMIT = 4000
+TREE_LIMIT = 8000
 _FIELD_SEP = "\x1f"
+
+
+def _cap_tree_nodes(nodes: list[dict]) -> tuple[list[dict], bool]:
+    """Truncate a flat recursive tree to TREE_LIMIT without ever dropping a
+    directory. GitHub returns entries in path-sorted order, so a naive
+    ``nodes[:LIMIT]`` slice silently deletes whole subtrees that sort late
+    (folders vanish from the dashboard). Keeping every ``tree`` entry preserves
+    the folder skeleton; blobs fill the remaining budget."""
+    if len(nodes) <= TREE_LIMIT:
+        return nodes, False
+    dirs = [n for n in nodes if n.get("type") == "tree"]
+    blobs = [n for n in nodes if n.get("type") != "tree"]
+    budget = max(0, TREE_LIMIT - len(dirs))
+    return dirs + blobs[:budget], len(blobs) > budget
 
 
 @dataclass
@@ -269,13 +283,14 @@ class GitHubClient:
                     "type": e.get("type"),  # "blob" or "tree"
                     "size": e.get("size"),
                 }
-                for e in entries[:TREE_LIMIT]
+                for e in entries
             ]
+            kept, capped = _cap_tree_nodes(nodes)
             return {
                 "sha": d.get("sha"),
-                "truncated": bool(d.get("truncated")) or len(entries) > TREE_LIMIT,
+                "truncated": bool(d.get("truncated")) or capped,
                 "count": len(entries),
-                "tree": nodes,
+                "tree": kept,
             }
 
         return await self._fetch("tree", url, TTL_TREE, transform)
@@ -347,28 +362,28 @@ class GitHubClient:
         return commits
 
     def _local_tree(self) -> dict | None:
-        out = self._local_git("ls-tree", "-r", "--long", "HEAD")
+        # -t lists directory (tree) entries too, so the folder skeleton matches
+        # what the GitHub API returns and _cap_tree_nodes can preserve it.
+        out = self._local_git("ls-tree", "-r", "-t", "--long", "HEAD")
         if out is None:
             return None
         nodes = []
-        count = 0
         for line in out.splitlines():
             meta, _, path = line.partition("\t")
             if not path:
                 continue
-            count += 1
             parts = meta.split()
             kind = parts[1] if len(parts) > 1 else "blob"
             size = None
             if len(parts) > 3 and parts[3].isdigit():
                 size = int(parts[3])
-            if len(nodes) < TREE_LIMIT:
-                nodes.append({"path": path, "type": kind, "size": size})
+            nodes.append({"path": path, "type": kind, "size": size})
+        kept, capped = _cap_tree_nodes(nodes)
         return {
             "sha": None,
-            "truncated": count > TREE_LIMIT,
-            "count": count,
-            "tree": nodes,
+            "truncated": capped,
+            "count": len(nodes),
+            "tree": kept,
             "local_fallback": True,
         }
 
