@@ -10,8 +10,9 @@ build** button serves the newest one.
  BP-Decomp_Workflow push (main)  ──or──  daily schedule
         │
         ▼
- GitHub-hosted windows-latest runner (MSVC + MSYS2 + Strawberry Perl preinstalled)
-   build_ffmpeg / build_lua (cached) ──► vendored deps (built once, then cached)
+ GitHub-hosted windows-latest runner (MSVC via ilammy/msvc-dev-cmd)
+   download prebuilt FFmpeg release ──► vendor\ffmpeg-build (no source compile)
+   build_lua.bat                     ──► vendor\lua\lua515.lib (fast)
    build_game_exe.bat                 ──► build\game\Burnout_PC.exe (+ DLLs, .cgsmap)
    zip JUST exe + DLLs + .cgsmap       ──► small bundle (no assets)
         │  POST /admin/builds  (admin X-Work-Token)
@@ -33,10 +34,26 @@ uploads only a small exe bundle.
 > **The build is not CMake.** `BP-Decomp_Workflow` has a `b5-decomp/CMakeLists.txt`,
 > but the *shipped* exe is produced by the bespoke `cl` response-file driver
 > `tools/build/build_game_exe.bat`, which emits `build/game/Burnout_PC.exe` and
-> links a prebuilt FFmpeg (movie player, a nested submodule at
-> `b5-decomp/vendor/FFmpeg`) + Lua (FSM VM). The workflow caches those dep builds
-> so they only compile on the first run (or when the FFmpeg submodule / build
-> scripts change).
+> links FFmpeg (movie player) + Lua (FSM VM). Lua compiles on the runner (fast);
+> **FFmpeg is downloaded prebuilt**, not compiled — its MSYS2 source build is
+> fragile on CI (a GNU Make 4.4 awk-recipe bug), so a prebuilt copy is hosted as
+> the `ffmpeg-prebuilt` release on `BurnoutDecomp/FFmpeg-Xenia-new` and the
+> workflow fetches it. See "Refreshing the prebuilt FFmpeg" below.
+
+## Refreshing the prebuilt FFmpeg
+
+The `Fetch prebuilt FFmpeg` step downloads `ffmpeg-build.zip` from the
+`ffmpeg-prebuilt` release on `BurnoutDecomp/FFmpeg-Xenia-new` and extracts it to
+`b5-decomp/vendor/ffmpeg-build`. Rebuild + re-upload that asset only when the
+FFmpeg fork changes:
+
+```powershell
+# after a successful local FFmpeg build (tools\build\build_ffmpeg.bat):
+# zip vendor\ffmpeg-build with FORWARD-slash paths (Unix unzip chokes on the
+# backslashes Compress-Archive writes), then replace the release asset:
+python -c "import zipfile,os; s=r'b5-decomp\vendor\ffmpeg-build'; z=zipfile.ZipFile('ffmpeg-build.zip','w',zipfile.ZIP_DEFLATED); [z.write(os.path.join(r,f), os.path.relpath(os.path.join(r,f),s).replace('\\','/')) for r,_,fs in os.walk(s) for f in fs]; z.close()"
+gh release upload ffmpeg-prebuilt ffmpeg-build.zip --repo BurnoutDecomp/FFmpeg-Xenia-new --clobber
+```
 
 ## Files (all live in the **BP-Decomp_Workflow** repo)
 
@@ -134,8 +151,8 @@ Reload nginx afterward.
   folder *now*. The daily `schedule` triggers a rebuild+republish so asset-only
   edits reach the download even when the source is quiet. The recorded
   `asset_manifest_hash` (computed server-side) tells you which asset set shipped.
-- **First run is slow:** the initial CI run compiles FFmpeg (MSYS2/Perl) and Lua;
-  the workflow caches both, so later runs skip straight to the game build.
+- **Build is fast:** FFmpeg is downloaded prebuilt (no source compile); only Lua
+  (~30 s) and the game exe are built on the runner.
 - **Assembly is in-request:** the server syncs assets and writes the ~1 GB zip
   while handling the upload (off the event loop, in a threadpool). If that ever
   gets too slow, move it to a background task and have `/api/builds` reflect only
