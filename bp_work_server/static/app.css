@@ -256,7 +256,8 @@ h1 .accent {
 
 /* Download build — a red CTA plus the download counter and preview eye, which are
    just the existing gold .badge pills (same clip-path + strip-gold texture as the
-   "N results" tags). The badge stays short, so the gold reads clean, not diagonal. */
+   "N results" tags). The strip texture is flat/full-width, so the gold reads clean at
+   any width, not diagonal. */
 .download-group {
   display: inline-flex;
   align-items: center;
@@ -502,7 +503,9 @@ h2::before {
 
 .badge {
   padding: 4px 13px;
-  /* gold paint strip lifted straight from the menu HUD tags */
+  /* Flat, full-width gold paint strip (rectified from the menu HUD's diagonal source
+     tag so wide badges no longer read slanted). Stretches cleanly at any width; the
+     solid fallback backs the texture. */
   background: url("/static/img/ui/strip-gold.png") center / 100% 100% no-repeat, #d89b1f;
   border: none;
   color: #1c1206;
