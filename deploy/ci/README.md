@@ -1,19 +1,19 @@
 # Automated build → download button
 
 On every push to **`BP-Decomp_Workflow`** `main` (and on a daily schedule), a
-self-hosted Windows runner rebuilds the game, bundles the Google Drive assets
-next to the exe, zips it, and uploads it to the work server. The dashboard shows
-a **Download build** button pointing at the newest zip.
+**GitHub-hosted `windows-latest`** runner rebuilds the game, bundles the Google
+Drive assets next to the exe, zips it, and uploads it to the work server. The
+dashboard shows a **Download build** button pointing at the newest zip.
 
 ```
  BP-Decomp_Workflow push (main)  ──or──  daily schedule
         │
         ▼
- self-hosted Windows runner (MSVC)
-   rclone sync Drive         ──► assets mirror  (only changed files transfer)
-   build_lua / build_ffmpeg  ──► vendored deps  (built once, then cached)
-   build_game_exe.bat        ──► build\game\Burnout_PC.exe (+ FFmpeg DLLs, .cgsmap)
-   bundle exe + DLLs + assets ──► zip
+ GitHub-hosted windows-latest runner (MSVC + MSYS2 + Strawberry Perl preinstalled)
+   rclone sync Drive (service account) ──► assets mirror  (~1GB+, fresh each run)
+   build_ffmpeg / build_lua (cached)   ──► vendored deps  (built once, then cached)
+   build_game_exe.bat                  ──► build\game\Burnout_PC.exe (+ DLLs, .cgsmap)
+   bundle exe + DLLs + assets           ──► zip
         │  POST /admin/builds  (admin X-Work-Token)
         ▼
  work server (adriwin.fr, Linux)
@@ -23,17 +23,31 @@ a **Download build** button pointing at the newest zip.
  dashboard "Download build" button ──► /download/latest
 ```
 
-Why a Windows runner: the build needs MSVC (`cl`), which the Linux download
-server can't run. So the builder and the download host are different machines;
-the runner pushes the finished zip to the server over HTTPS.
+Why GitHub-hosted Windows: the build needs MSVC (`cl`), which the Linux download
+server can't run. `windows-latest` ships MSVC (VS2022 Enterprise), MSYS2 at
+`C:\msys64`, and Strawberry Perl at `C:\Strawberry` — the exact toolchain the
+FFmpeg + game batch builds expect — so no self-hosted machine is needed. The
+runner pushes the finished zip to the server over HTTPS.
 
 > **The build is not CMake.** `BP-Decomp_Workflow` has a `b5-decomp/CMakeLists.txt`,
 > but the *shipped* exe is produced by the bespoke `cl` response-file driver
 > `tools/build/build_game_exe.bat`, which emits `build/game/Burnout_PC.exe` and
-> links a prebuilt FFmpeg (movie player) + Lua (FSM VM). `publish-build.ps1`
-> drives that batch build and builds the two deps first if their outputs are
-> missing. The runtime asset folders (SOUND, VIDEOS, LANGUAGE, …) are git-ignored
-> (`build/*`), so they come from the rclone Drive sync, not the checkout.
+> links a prebuilt FFmpeg (movie player, a nested submodule at
+> `b5-decomp/vendor/FFmpeg`) + Lua (FSM VM). `publish-build.ps1` drives that batch
+> build and builds the two deps first if their outputs are missing; the workflow
+> caches those outputs so they only build on the first run (or when the FFmpeg
+> submodule / build scripts change). The runtime asset folders (SOUND, VIDEOS,
+> LANGUAGE, …) are git-ignored (`build/*`), so they come from the rclone Drive
+> sync, not the checkout.
+
+## Cost / performance note
+
+The asset set is large (SOUND alone is ~1 GB). A GitHub-hosted runner is wiped
+each run, so every build does a full ~1 GB+ Drive download, then zips and uploads
+that to the server. Windows runners bill at **2× minutes**, and the daily
+schedule means this recurs. If minutes or latency become a problem, switch
+`runs-on:` to a self-hosted Windows runner (which keeps assets/deps on disk and
+syncs incrementally) — the `publish-build.ps1` driver is identical either way.
 
 ## Files (all live in the **BP-Decomp_Workflow** repo)
 
@@ -47,48 +61,21 @@ part of BP-work-server — nothing to install there beyond the config below.
 
 ## One-time setup
 
-### 1. Self-hosted Windows runner
+### 1. Google Drive service account (for headless asset sync)
 
-Register a runner on a Windows box that has the game's build toolchain with the
-labels the workflow expects:
+A GitHub-hosted runner can't do interactive OAuth, so rclone authenticates with a
+**service account**:
 
-```
-labels: self-hosted, windows, msvc
-```
+1. In Google Cloud Console, create a project → enable the **Google Drive API**.
+2. Create a **service account**, add a **JSON key**, download it.
+3. **Share the asset Drive folder** (`1CgSSjtenfAc_Ps6_JLhtGhTly1K5n_HO`) with the
+   service account's email (`...@...iam.gserviceaccount.com`), Viewer access.
+4. Store the JSON key as the repo secret `GDRIVE_SA_JSON` (step 3 below).
 
-BP-Decomp_Workflow → Settings → Actions → Runners → New self-hosted runner. Add
-`msvc` as a custom label. Keep it running as a service so scheduled builds fire
-unattended. The box needs:
+The workflow builds the rclone remote at runtime from that key and pins it to the
+folder ID (`rclone config create gdrive drive service_account_file … root_folder_id …`).
 
-- **Visual Studio 2022** (MSVC `cl` — the toolchain `build_game_exe.bat` finds via
-  `vcvars64`).
-- **MSYS2 + Strawberry Perl** — only required the first time FFmpeg is built (see
-  `tools/build/build_ffmpeg.bat`). Once `b5-decomp/vendor/ffmpeg-build/` is
-  populated, later runs skip the FFmpeg build. To skip it entirely, prebuild
-  FFmpeg on the runner once.
-- **`py`** on PATH (optional) — used for the `.cgsmap` step; skipped if absent.
-
-### 2. rclone + the Drive remote (on the runner)
-
-```powershell
-winget install Rclone.Rclone           # or scoop install rclone
-rclone config                          # n) new remote, type "drive"
-```
-
-Pin the remote to the **folder ID**, not the share link, so re-sharing the folder
-never breaks the build. In `rclone config` set `root_folder_id` to
-`1CgSSjtenfAc_Ps6_JLhtGhTly1K5n_HO` (the folder from the Drive URL). For an
-unattended runner use a **service account** (`service_account_file`) instead of the
-interactive OAuth token so it never needs a browser re-auth. Name it e.g.
-`gdrive` → the workflow passes `gdrive:` as `RCLONE_REMOTE`.
-
-Verify:
-
-```powershell
-rclone lsf gdrive:            # lists the asset folder
-```
-
-### 3. Mint an admin token (on the server)
+### 2. Mint an admin token (on the server)
 
 The runner authenticates to `/admin/builds` with an admin `X-Work-Token`:
 
@@ -97,22 +84,24 @@ bp-work-server --db data\bp-work.sqlite3 worker add ci-build --admin
 # prints: WORK_AGENT=<token>   <-- this is WORK_PUBLISH_TOKEN
 ```
 
-### 4. Secrets & variables (in BP-Decomp_Workflow)
+### 3. Secrets & variables (in BP-Decomp_Workflow)
 
 Settings → Secrets and variables → Actions:
 
 | Kind | Name | Value |
 | --- | --- | --- |
 | Variable | `WORK_SERVER` | `https://adriwin.fr` |
-| Variable | `RCLONE_REMOTE` | `gdrive:` (or `gdrive:Subfolder`) |
-| Secret | `WORK_PUBLISH_TOKEN` | the admin token from step 3 |
+| Variable | `RCLONE_REMOTE` | `gdrive:` |
+| Secret | `WORK_PUBLISH_TOKEN` | the admin token from step 2 |
+| Secret | `GDRIVE_SA_JSON` | the full service-account JSON key from step 1 |
 
-### 5. nginx upload limit (on the server) — important
+(`WORK_SERVER` and `RCLONE_REMOTE` are already set.)
 
-The zip is uploaded *through* nginx to the app. nginx's default
-`client_max_body_size` is **1 MB**, which will reject a game bundle with `413`.
-Raise it for the upload path (a game download served back out is fine, but the
-upload needs headroom):
+### 4. nginx upload limit (on the server) — important
+
+The zip (~1 GB) is uploaded *through* nginx to the app. nginx's default
+`client_max_body_size` is **1 MB**, which will reject it with `413`. Raise it for
+the upload path:
 
 ```nginx
 location /admin/builds {
@@ -149,12 +138,12 @@ Reload nginx afterward.
 
 - **Asset changes without a commit:** `rclone sync` always mirrors the current
   Drive state, so each build reflects whatever is in the folder *now*. The daily
-  `schedule` in the workflow rebuilds so asset-only edits get published even when
-  the source is quiet. The recorded `asset_manifest_hash` tells you which asset
-  set a given build shipped.
-- **First run is slow:** the initial build compiles FFmpeg and Lua; subsequent
-  runs skip both (they're only rebuilt when their outputs are missing, or when
-  `publish-build.ps1` is invoked with `-ForceFfmpeg` / `-ForceLua`).
+  `schedule` rebuilds so asset-only edits get published even when the source is
+  quiet. The recorded `asset_manifest_hash` tells you which asset set a given
+  build shipped.
+- **First run is slow:** the initial build compiles FFmpeg (MSYS2/Perl) and Lua;
+  the workflow caches both (keyed on the FFmpeg submodule commit + build scripts),
+  so later runs restore them and skip straight to the game build.
 - **Large downloads:** builds stream from disk via the app. If traffic grows,
   serve `/download/*` directly from nginx (`X-Accel-Redirect`) so the Python
   process isn't in the byte path.
