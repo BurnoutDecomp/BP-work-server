@@ -4,10 +4,12 @@ import hashlib
 import logging
 import os
 import re
+import subprocess
 import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 
 from bp_work_server.dependencies import get_store, invalidate_dashboard_cache, require_admin_worker
@@ -43,6 +45,80 @@ def _keep_builds() -> int:
         return 5
 
 
+# ---- Server-side asset merge -------------------------------------------------
+#
+# CI (a GitHub-hosted runner) compiles *only* the exe and uploads a small bundle
+# (exe + FFmpeg DLLs + .cgsmap). The heavy game assets (~1 GB) live here: the
+# server rclone-syncs them from Drive and merges them with the exe into the zip
+# the download button serves. This keeps the ~1 GB off CI (no per-run download/
+# upload) and lets the sync be incremental on the server's persistent disk.
+#
+# Opt-in: only when BP_ASSET_RCLONE_REMOTE is set does the server sync+merge.
+# Unset (dev/tests) -> the uploaded bundle is stored verbatim.
+
+
+def _asset_remote() -> str | None:
+    """rclone remote to sync assets from, e.g. ``gdrive:``. None disables merge."""
+    return os.environ.get("BP_ASSET_RCLONE_REMOTE") or None
+
+
+def assets_dir() -> Path:
+    """Local mirror of the Drive assets (persistent; incremental rclone target)."""
+    d = Path(os.environ.get("BP_ASSETS_DIR", "data/assets"))
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _run_rclone(remote: str, dest: Path) -> None:
+    """Mirror ``remote`` into ``dest`` (adds/edits/deletes). Raises on failure.
+
+    Isolated in its own function so tests can monkeypatch it with a fake that
+    populates ``dest`` without a real rclone/Drive.
+    """
+    rclone = os.environ.get("BP_RCLONE_BIN", "rclone")
+    subprocess.run(  # noqa: S603 - args are server-config, not user input
+        [rclone, "sync", remote, str(dest), "--fast-list", "--transfers", "8", "--checkers", "16"],
+        check=True,
+    )
+
+
+def _asset_manifest_hash(root: Path) -> str | None:
+    """Fingerprint the synced asset set (sha256 over sorted ``relpath:md5`` lines),
+    so each build records exactly which assets it shipped. None if empty."""
+    files = sorted(p for p in root.rglob("*") if p.is_file())
+    if not files:
+        return None
+    h = hashlib.sha256()
+    for f in files:
+        rel = f.relative_to(root).as_posix()
+        digest = hashlib.md5(f.read_bytes()).hexdigest()  # noqa: S324 - fingerprint, not security
+        h.update(f"{rel}:{digest}\n".encode())
+    return h.hexdigest()
+
+
+def _assemble_build_zip(bundle: Path, assets: Path | None, dest: Path) -> tuple[str, int]:
+    """Write ``dest`` = the uploaded exe bundle's files + the asset tree at the root.
+    Returns ``(sha256, size_bytes)`` of the finished zip.
+
+    Assets are STORED (they're already-compressed game data; DEFLATE would burn CPU
+    for almost no gain); the small exe/DLL entries are DEFLATED.
+    """
+    with zipfile.ZipFile(dest, "w") as out:
+        with zipfile.ZipFile(bundle) as src:
+            for info in src.infolist():
+                if info.is_dir():
+                    continue
+                out.writestr(info.filename, src.read(info.filename), compress_type=zipfile.ZIP_DEFLATED)
+        if assets is not None:
+            for f in sorted(p for p in assets.rglob("*") if p.is_file()):
+                out.write(f, f.relative_to(assets).as_posix(), compress_type=zipfile.ZIP_STORED)
+    hasher = hashlib.sha256()
+    with dest.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(_UPLOAD_CHUNK), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest(), dest.stat().st_size
+
+
 def _safe_slug(value: str | None, fallback: str) -> str:
     slug = _SAFE.sub("-", (value or "").strip()).strip("-")
     return slug or fallback
@@ -60,26 +136,28 @@ def _friendly_name(row: dict) -> str:
 @router.post("/admin/builds", response_model=BuildInfo, status_code=status.HTTP_201_CREATED)
 async def upload_build(
     request: Request,
-    file: UploadFile = File(..., description="The built + zipped game bundle"),
+    file: UploadFile = File(..., description="The compiled exe bundle (exe + DLLs + .cgsmap), zipped"),
     commit_sha: str = Form(..., description="b5-decomp revision the exe was built from"),
     commit_short: str | None = Form(None),
     branch: str | None = Form(None),
-    asset_manifest_hash: str | None = Form(None, description="Fingerprint of the bundled Drive assets"),
+    asset_manifest_hash: str | None = Form(None, description="Ignored when the server merges assets; used verbatim otherwise"),
     built_at: str | None = Form(None, description="ISO time CI produced the artifact"),
     notes: str | None = Form(None),
     _admin: str = Depends(require_admin_worker),
     store: WorkStore = Depends(get_store),
 ) -> BuildInfo:
-    """Receive a freshly built game zip from CI and publish it as the latest download.
+    """Receive a compiled exe bundle from CI and publish the game as the latest download.
 
-    Streams the upload to a temp file (hashing as it goes), names the artifact by its
-    content hash, records it, then prunes older builds off disk. Called by the
-    self-hosted Windows runner with an admin ``X-Work-Token``.
+    CI uploads only the exe bundle (exe + FFmpeg DLLs + .cgsmap). When
+    ``BP_ASSET_RCLONE_REMOTE`` is set, the server rclone-syncs the ~1 GB game assets
+    and merges them with the exe into the served zip; otherwise the bundle is stored
+    verbatim. Names the artifact by its content hash, records it, then prunes older
+    builds off disk. Called with an admin ``X-Work-Token``.
     """
     dest = downloads_dir()
     tmp = dest / f".incoming-{_safe_slug(commit_short or commit_sha, 'build')}.part"
-    hasher = hashlib.sha256()
-    size = 0
+    bundle_hasher = hashlib.sha256()
+    bundle_size = 0
     try:
         with tmp.open("wb") as out:
             while True:
@@ -87,24 +165,48 @@ async def upload_build(
                 if not chunk:
                     break
                 out.write(chunk)
-                hasher.update(chunk)
-                size += len(chunk)
+                bundle_hasher.update(chunk)
+                bundle_size += len(chunk)
     except Exception:
         tmp.unlink(missing_ok=True)
         raise
     finally:
         await file.close()
 
-    if size == 0:
+    if bundle_size == 0:
         tmp.unlink(missing_ok=True)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "uploaded build is empty")
 
-    sha256 = hasher.hexdigest()
+    remote = _asset_remote()
+    if remote:
+        # Sync assets + merge exe+assets into the final zip. Both are blocking
+        # (subprocess + a ~1 GB zip write), so run off the event loop.
+        assembled = dest / f".assembled-{_safe_slug(commit_short or commit_sha, 'build')}.part"
+        try:
+            assets = assets_dir()
+            await run_in_threadpool(_run_rclone, remote, assets)
+            asset_manifest_hash = await run_in_threadpool(_asset_manifest_hash, assets)
+            sha256, size = await run_in_threadpool(_assemble_build_zip, tmp, assets, assembled)
+        except subprocess.CalledProcessError as exc:
+            tmp.unlink(missing_ok=True)
+            assembled.unlink(missing_ok=True)
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, "asset sync (rclone) failed") from exc
+        except Exception:
+            tmp.unlink(missing_ok=True)
+            assembled.unlink(missing_ok=True)
+            raise
+        tmp.unlink(missing_ok=True)
+        source = assembled
+    else:
+        # No asset merge configured: publish the uploaded bundle as-is.
+        sha256, size = bundle_hasher.hexdigest(), bundle_size
+        source = tmp
+
     # Content-addressed name: identical bytes reuse the same file; a re-publish of the
     # same commit with changed assets gets a distinct name via its hash.
     filename = f"burnout-{_safe_slug(commit_short or commit_sha, 'build')}-{sha256[:12]}.zip"
     final = dest / filename
-    tmp.replace(final)
+    source.replace(final)
 
     row = store.record_build(
         commit_sha=commit_sha,

@@ -135,6 +135,67 @@ def test_build_contents_lists_zip(tmp_path, monkeypatch):
     assert client.get("/api/builds/999/contents").status_code == 404
 
 
+def test_server_merges_assets_into_zip(tmp_path, monkeypatch):
+    """With BP_ASSET_RCLONE_REMOTE set, CI uploads only the exe bundle and the
+    server merges the (rclone-synced) assets into the served zip."""
+    import bp_work_server.routes.downloads as dl
+
+    monkeypatch.setenv("BP_ASSET_RCLONE_REMOTE", "gdrive:")
+    monkeypatch.setenv("BP_ASSETS_DIR", str(tmp_path / "assets"))
+
+    # Fake rclone: populate the assets dir instead of hitting Drive.
+    def fake_rclone(remote, dest):
+        assert remote == "gdrive:"
+        (dest / "SOUND").mkdir(parents=True, exist_ok=True)
+        (dest / "SOUND" / "music.dat").write_bytes(b"a" * 1000)
+        (dest / "LANGUAGE.bin").write_bytes(b"lang")
+
+    monkeypatch.setattr(dl, "_run_rclone", fake_rclone)
+
+    client, admin, _ = client_with_downloads(tmp_path, monkeypatch)
+
+    # Exe bundle from CI: exe + DLL, NO assets.
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("Burnout_PC.exe", b"the-exe")
+        zf.writestr("avcodec-63.dll", b"dll")
+    bundle = buf.getvalue()
+
+    resp = upload(client, admin["token"], bundle)
+    assert resp.status_code == 201
+    body = resp.json()
+    bid = body["id"]
+    # server computed the manifest from the synced assets (form value ignored)
+    assert body["asset_manifest_hash"] and body["asset_manifest_hash"] != "deadbeef"
+
+    # the served zip is exe + DLL + the merged asset tree
+    contents = client.get(f"/api/builds/{bid}/contents").json()
+    paths = {e["path"] for e in contents["entries"]}
+    assert paths == {"Burnout_PC.exe", "avcodec-63.dll", "SOUND/music.dat", "LANGUAGE.bin"}
+
+    dz = client.get(f"/download/{bid}")
+    assert dz.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(dz.content)) as zf:
+        assert zf.read("Burnout_PC.exe") == b"the-exe"
+        assert zf.read("SOUND/music.dat") == b"a" * 1000
+
+
+def test_asset_sync_failure_is_502(tmp_path, monkeypatch):
+    import subprocess
+
+    import bp_work_server.routes.downloads as dl
+
+    monkeypatch.setenv("BP_ASSET_RCLONE_REMOTE", "gdrive:")
+    monkeypatch.setenv("BP_ASSETS_DIR", str(tmp_path / "assets"))
+
+    def boom(remote, dest):
+        raise subprocess.CalledProcessError(1, ["rclone", "sync"])
+
+    monkeypatch.setattr(dl, "_run_rclone", boom)
+    client, admin, _ = client_with_downloads(tmp_path, monkeypatch)
+    assert upload(client, admin["token"], make_zip()).status_code == 502
+
+
 def test_latest_reflects_newest_and_prunes_disk(tmp_path, monkeypatch):
     monkeypatch.setenv("BP_KEEP_BUILDS", "2")
     client, admin, _ = client_with_downloads(tmp_path, monkeypatch)
