@@ -262,6 +262,16 @@ h1 .accent {
   display: inline-flex;
   align-items: stretch;
   gap: 0;
+  /* Shadow lives here, not on the clipped children: clip-path erases box-shadow, so
+     glow set on .download-build never rendered. A drop-shadow filter on the group
+     follows the angled silhouette and lifts the whole strip as one object. */
+  filter: drop-shadow(0 5px 13px rgba(0, 0, 0, 0.42));
+  transition: transform 0.16s ease, filter 0.16s ease;
+}
+
+.download-group:hover {
+  transform: translateY(-1px);
+  filter: drop-shadow(0 9px 20px rgba(207, 23, 34, 0.3));
 }
 
 .download-group[hidden] {
@@ -269,37 +279,50 @@ h1 .accent {
 }
 
 .download-build {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 15px;
+  gap: 11px;
+  padding: 7px 17px 7px 16px;
   text-decoration: none;
   color: #fff;
-  background: linear-gradient(135deg, var(--red-bright), var(--red-deep));
-  box-shadow: var(--glow);
+  /* stacked: 2px gold baseline · top sheen · diagonal red body — all clipped to the
+     angled shape, so the gold reads as a crisp angle-ended underline. */
+  background:
+    linear-gradient(0deg, var(--gold) 0, var(--gold) 2px, transparent 2px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.17), rgba(255, 255, 255, 0) 42%),
+    linear-gradient(135deg, var(--red-bright), var(--red-deep));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
   clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
-  transition: filter 0.12s ease;
+  transition: filter 0.14s ease;
 }
 
 .download-build:hover {
-  filter: brightness(1.08);
+  filter: brightness(1.09);
 }
 
 .download-build:active {
-  filter: brightness(0.95);
+  filter: brightness(0.94);
 }
 
 .download-build .download-icon {
   width: 18px;
   height: 18px;
   color: var(--gold);
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.55));
+  transition: transform 0.18s ease;
+}
+
+/* the arrow nudges down on hover — a small, on-the-nose cue that this downloads. */
+.download-build:hover .download-icon {
+  transform: translateY(2px);
 }
 
 .download-build .download-text {
   display: flex;
   flex-direction: column;
-  line-height: 1.13;
+  gap: 1px;
+  line-height: 1.12;
 }
 
 .download-build .download-text strong {
@@ -307,13 +330,15 @@ h1 .accent {
   font-weight: 700;
   font-size: 13px;
   text-transform: uppercase;
-  letter-spacing: 0.8px;
+  letter-spacing: 1px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
 .download-build .download-text small {
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.82);
+  font-size: 10px;
+  letter-spacing: 0.2px;
+  color: rgba(255, 255, 255, 0.72);
 }
 
 /* the counter + eye ARE .badge; this only adds icon layout + button reset.
@@ -325,10 +350,15 @@ h1 .accent {
   align-items: center;
   gap: 5px;
   margin-left: -8px;
+  padding-left: 15px;
   cursor: pointer;
   line-height: 1;
   clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
-  transition: filter 0.12s ease;
+  /* inset shadows survive clip-path (box-shadow doesn't): a top sheen + a warm bottom
+     shade give the flat gold pills some dimension against the red CTA. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(120, 68, 8, 0.35);
+  transition: filter 0.14s ease;
 }
 
 .download-badge[hidden] {
@@ -342,6 +372,11 @@ h1 .accent {
 .download-badge svg {
   width: 13px;
   height: 13px;
+}
+
+.download-badge .dc-num {
+  font-size: 12px;
+  font-weight: 800;
 }
 
 #downloadPreview svg {
