@@ -338,7 +338,8 @@ h1 .accent {
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.2px;
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(255, 255, 255, 0.78);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
 }
 
 /* the counter + eye ARE .badge; this only adds icon layout + button reset.
@@ -382,6 +383,74 @@ h1 .accent {
 #downloadPreview svg {
   width: 15px;
   height: 15px;
+}
+
+/* ---------- Download-button style variants ----------------------------------------
+   The active style is set by the dv-* class on #downloadGroup in index.html — swap
+   that one class to change it (dv-tireburn is the default). Each class only swaps the
+   CTA *body*; the angled clip-path shape, the gold count/eye pills, the hover lift and
+   arrow cue stay shared. No class = the plain red/gold base look above. Built from the
+   game's own textures in /static/img/ui/. */
+
+/* 1 · Asphalt — black banner, red splatter bleeding off the icon, gold baseline */
+.download-group.dv-asphalt .download-build {
+  background:
+    url("/static/img/ui/splatter-red.png") no-repeat -14px center / auto 150%,
+    linear-gradient(0deg, var(--gold) 0, var(--gold) 2px, transparent 2px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 45%),
+    url("/static/img/ui/banner-black.png") center / cover,
+    #16100f;
+}
+
+/* 2 · Crimson Streak — red banner body with a motion streak swiping across it */
+.download-group.dv-streak .download-build {
+  background:
+    url("/static/img/ui/streak-red.png") no-repeat right center / cover,
+    linear-gradient(0deg, rgba(0, 0, 0, 0.35) 0, rgba(0, 0, 0, 0.35) 2px, transparent 2px),
+    url("/static/img/ui/banner-red.png") center / cover,
+    linear-gradient(135deg, var(--red-bright), var(--red-deep));
+}
+.download-group.dv-streak .download-icon {
+  color: #fff;
+}
+
+/* 3 · Paradise Skyline — black asphalt, the city skyline glowing red along the base */
+.download-group.dv-skyline .download-build {
+  background:
+    url("/static/img/ui/skyline-red.png") no-repeat right bottom / auto 78%,
+    radial-gradient(120% 150% at 12% 60%, rgba(236, 28, 36, 0.55), transparent 62%),
+    linear-gradient(0deg, var(--red-bright) 0, var(--red-bright) 2px, transparent 2px),
+    url("/static/img/ui/banner-black.png") center / cover,
+    #0d0a0a;
+}
+
+/* 4 · Tire Burn — asphalt + tire-track grit, bright splatter kicking up behind the arrow */
+.download-group.dv-tireburn .download-build {
+  background:
+    url("/static/img/ui/splatter-red-bright.png") no-repeat 2px center / auto 135%,
+    url("/static/img/ui/tiretrack.png") repeat-x left center / auto 220%,
+    linear-gradient(0deg, var(--gold) 0, var(--gold) 2px, transparent 2px),
+    linear-gradient(180deg, #1c1413, #0f0b0b);
+}
+
+/* 5 · Torn Poster — red brush body with a grunge-torn bottom edge */
+.download-group.dv-torn .download-build {
+  padding-bottom: 11px;
+  background:
+    url("/static/img/ui/grunge-edge.png") no-repeat center bottom / 100% 9px,
+    url("/static/img/ui/brush-black.png") no-repeat -20px center / auto 160%,
+    linear-gradient(135deg, var(--red-bright), var(--red-deep));
+}
+.download-group.dv-torn .download-icon {
+  color: var(--gold);
+}
+
+/* 6 · Split Livery — diagonal black/red split with a splatter burst at the seam */
+.download-group.dv-split .download-build {
+  background:
+    url("/static/img/ui/splatter-black.png") no-repeat 44% center / auto 150%,
+    linear-gradient(0deg, var(--gold) 0, var(--gold) 2px, transparent 2px),
+    linear-gradient(100deg, #141010 0%, #141010 44%, var(--red-bright) 44%, var(--red-deep) 100%);
 }
 
 /* build-contents preview (rendered in the shared detail drawer) */
