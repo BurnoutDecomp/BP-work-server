@@ -89,8 +89,17 @@ Then set the server env (see the config table below): `BP_ASSET_RCLONE_REMOTE=gd
 The runner authenticates to `/admin/builds` with an admin `X-Work-Token`:
 
 ```powershell
-bp-work-server --db data\bp-work.sqlite3 worker add ci-build --admin
+bp-work-server --db data\bp-work.sqlite3 worker add ci-build --admin --service
 # prints: WORK_AGENT=<token>   <-- this is WORK_PUBLISH_TOKEN
+```
+
+`--service` marks it as a bot identity: the token works exactly like any other admin
+token, but the account is left out of the dashboard's AGENTS roster and its user count,
+where it would otherwise sit at 0 TUs forever. If `ci-build` was minted before the flag
+existed, retrofit it (no need to re-issue the token or touch the GitHub secret):
+
+```powershell
+bp-work-server --db data\bp-work.sqlite3 worker service ci-build
 ```
 
 ### 3. Secrets & variables (in BP-Decomp_Workflow)

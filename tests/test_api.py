@@ -35,6 +35,12 @@ def make_client(tmp_path) -> tuple[TestClient, WorkStore]:
     return TestClient(create_app(store)), store
 
 
+def bust_dashboard_cache(client: TestClient) -> None:
+    """Drop the cached /dashboard/state snapshot (15s TTL). Needed only when a test
+    writes to the store directly, since API writes invalidate the cache themselves."""
+    client.app.state.dashboard_cache.update({"data": None, "expires_at": 0.0})
+
+
 def test_dashboard_page_and_state(tmp_path):
     client, _ = make_client(tmp_path)
 
@@ -113,6 +119,39 @@ def test_dashboard_lists_registered_agents_without_claims(tmp_path):
         "Derneuere": "Derneuere",
         "JeBobs": "JeBobs",
     }
+
+
+def test_dashboard_hides_service_workers_from_the_agent_roster(tmp_path):
+    client, store = make_client(tmp_path)
+    store.create_worker("Adriwin", is_admin=True, github_username="Adriwin06")
+    store.create_worker("ci-build", is_admin=True, is_service=True)
+
+    state = client.get("/dashboard/state").json()
+
+    # The CI identity is a bot, not a contributor: no row, and not in the headcount.
+    assert [agent["name"] for agent in state["agents"]] == ["Adriwin"]
+    # ...but it is still a real, usable worker.
+    assert {w["username"] for w in store.list_workers()} == {"Adriwin", "ci-build"}
+
+
+def test_service_flag_can_be_set_on_an_existing_worker(tmp_path):
+    client, store = make_client(tmp_path)
+    store.create_worker("Adriwin", is_admin=True)
+    ci = store.create_worker("ci-build", is_admin=True)  # minted before the flag existed
+
+    assert "ci-build" in [a["name"] for a in client.get("/dashboard/state").json()["agents"]]
+
+    assert store.set_worker_service("ci-build") == 1
+    bust_dashboard_cache(client)  # the CLI writes to the DB, not through the API
+    state = client.get("/dashboard/state").json()
+
+    assert [agent["name"] for agent in state["agents"]] == ["Adriwin"]
+    # Retrofitting must not disturb the token -- WORK_PUBLISH_TOKEN keeps working.
+    assert store.resolve_admin(ci["token"]) == "ci-build"
+
+    assert store.set_worker_service("ci-build", False) == 1
+    bust_dashboard_cache(client)
+    assert "ci-build" in [a["name"] for a in client.get("/dashboard/state").json()["agents"]]
 
 
 def test_dashboard_agents_include_cached_contribution_counts(tmp_path):

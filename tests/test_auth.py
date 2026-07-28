@@ -80,6 +80,31 @@ def test_admin_is_a_role_not_a_shared_secret(tmp_path):
     assert revoked.status_code == 401
 
 
+def test_service_worker_authenticates_like_any_other_admin(tmp_path):
+    """The `service` flag is a display concern only -- it must not weaken the token,
+    which is what CI uses as WORK_PUBLISH_TOKEN to reach /admin/builds."""
+    store = make_store(tmp_path)
+    admin = store.create_worker("Adriwin", is_admin=True)
+    ci = store.create_worker("ci-build", is_admin=True, is_service=True)
+    client = TestClient(create_app(store))
+
+    assert ci["is_service"] is True
+    assert client.get("/admin/workers", headers={"X-Work-Token": ci["token"]}).status_code == 200
+
+    listed = client.get("/admin/workers", headers={"X-Work-Token": admin["token"]}).json()
+    flags = {w["username"]: w["is_service"] for w in listed["workers"]}
+    assert flags == {"Adriwin": False, "ci-build": True}
+
+    # minting over HTTP carries the flag too
+    minted = client.post(
+        "/admin/workers",
+        json={"username": "ci-nightly", "is_admin": True, "is_service": True},
+        headers={"X-Work-Token": admin["token"]},
+    )
+    assert minted.status_code == 201
+    assert minted.json()["is_service"] is True
+
+
 def test_enforcement_can_be_disabled(tmp_path, monkeypatch):
     monkeypatch.setenv("BP_WORK_REQUIRE_TOKEN", "0")
     store = make_store(tmp_path)

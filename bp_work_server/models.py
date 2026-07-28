@@ -138,6 +138,7 @@ class SyncResponse(ImportResponse):
 class WorkerCreateRequest(BaseModel):
     username: str = Field(min_length=1, max_length=160)
     is_admin: bool = False
+    is_service: bool = False
     github_username: str | None = Field(default=None, max_length=160)
 
 
@@ -145,6 +146,7 @@ class WorkerResponse(BaseModel):
     token: str
     username: str
     is_admin: bool = False
+    is_service: bool = False
     github_username: str | None = None
 
 
@@ -153,6 +155,7 @@ class WorkerInfo(BaseModel):
     username: str
     active: bool
     is_admin: bool = False
+    is_service: bool = False
     github_username: str | None = None
     created_at: datetime | None = None
     last_seen: datetime | None = None

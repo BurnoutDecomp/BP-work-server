@@ -28,10 +28,18 @@ def create_worker(
     store: WorkStore = Depends(get_store),
 ) -> WorkerResponse:
     result = store.create_worker(
-        req.username, is_admin=req.is_admin, github_username=req.github_username
+        req.username,
+        is_admin=req.is_admin,
+        github_username=req.github_username,
+        is_service=req.is_service,
     )
     invalidate_dashboard_cache(request)
-    log.info("admin created worker username=%s admin=%s", req.username, req.is_admin)
+    log.info(
+        "admin created worker username=%s admin=%s service=%s",
+        req.username,
+        req.is_admin,
+        req.is_service,
+    )
     return WorkerResponse(**result)
 
 

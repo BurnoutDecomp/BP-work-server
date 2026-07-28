@@ -146,6 +146,8 @@ class WorkStore:
                 con.execute("ALTER TABLE worker ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
             if "github_username" not in cols:
                 con.execute("ALTER TABLE worker ADD COLUMN github_username TEXT")
+            if "is_service" not in cols:
+                con.execute("ALTER TABLE worker ADD COLUMN is_service INTEGER NOT NULL DEFAULT 0")
         self._copy_legacy_workers()
 
     def _copy_legacy_workers(self) -> None:
@@ -159,10 +161,12 @@ class WorkStore:
                 return
             cols = {r["name"] for r in con.execute("PRAGMA table_info(worker)")}
             is_admin_expr = "is_admin" if "is_admin" in cols else "0 AS is_admin"
+            service_expr = "is_service" if "is_service" in cols else "0 AS is_service"
             github_expr = "github_username" if "github_username" in cols else "NULL AS github_username"
             rows = con.execute(
                 f"""
-                SELECT token, username, active, {is_admin_expr}, {github_expr}, created_at, last_seen
+                SELECT token, username, active, {is_admin_expr}, {service_expr}, {github_expr},
+                       created_at, last_seen
                 FROM worker
                 """
             ).fetchall()
@@ -172,9 +176,10 @@ class WorkStore:
                     con.execute(
                         """
                         INSERT INTO worker(
-                          token, username, active, is_admin, github_username, created_at, last_seen
+                          token, username, active, is_admin, is_service, github_username,
+                          created_at, last_seen
                         )
-                        VALUES(?, ?, ?, ?, ?, ?, ?)
+                        VALUES(?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(token) DO NOTHING
                         """,
                         (
@@ -182,6 +187,7 @@ class WorkStore:
                             row["username"],
                             int(row["active"]),
                             int(row["is_admin"]),
+                            int(row["is_service"]),
                             row["github_username"],
                             row["created_at"],
                             row["last_seen"],
@@ -491,27 +497,49 @@ class WorkStore:
 
     # --- workers (server-issued identities) -------------------------------
     def create_worker(
-        self, username: str, is_admin: bool = False, github_username: str | None = None
+        self,
+        username: str,
+        is_admin: bool = False,
+        github_username: str | None = None,
+        is_service: bool = False,
     ) -> dict[str, Any]:
         """Mint a new secret token bound to a human username. `is_admin` grants access to
         the /admin/* endpoints (minting/revoking ids, import/sync/reset). Admin is a role
-        on a worker, not a separate shared secret."""
+        on a worker, not a separate shared secret. `is_service` marks a bot identity (CI
+        publishing builds, say) -- it authenticates exactly like any other worker but is
+        left out of the dashboard's agent roster, which counts humans doing decomp work."""
         token = secrets.token_urlsafe(24)
         github_username = self._normalize_github_username(username, github_username)
         with self.users_connect() as con:
             con.execute(
                 """
-                INSERT INTO worker(token, username, active, is_admin, github_username, created_at)
-                VALUES(?, ?, 1, ?, ?, ?)
+                INSERT INTO worker(
+                  token, username, active, is_admin, is_service, github_username, created_at
+                )
+                VALUES(?, ?, 1, ?, ?, ?, ?)
                 """,
-                (token, username, 1 if is_admin else 0, github_username, iso()),
+                (
+                    token,
+                    username,
+                    1 if is_admin else 0,
+                    1 if is_service else 0,
+                    github_username,
+                    iso(),
+                ),
             )
         with self.connect() as con:
-            self._log(con, username, "worker_create", None, {"is_admin": bool(is_admin)})
+            self._log(
+                con,
+                username,
+                "worker_create",
+                None,
+                {"is_admin": bool(is_admin), "is_service": bool(is_service)},
+            )
         return {
             "token": token,
             "username": username,
             "is_admin": bool(is_admin),
+            "is_service": bool(is_service),
             "github_username": github_username,
         }
 
@@ -548,6 +576,7 @@ class WorkStore:
                     "username": r["username"],
                     "active": bool(r["active"]),
                     "is_admin": bool(r["is_admin"]),
+                    "is_service": bool(r["is_service"]),
                     "github_username": r["github_username"],
                     "created_at": r["created_at"],
                     "last_seen": r["last_seen"],
@@ -562,6 +591,7 @@ class WorkStore:
                 SELECT username,
                        MAX(active) AS active,
                        MAX(is_admin) AS is_admin,
+                       MAX(is_service) AS is_service,
                        MAX(github_username) AS github_username,
                        COUNT(*) AS tokens,
                        MIN(created_at) AS created_at,
@@ -584,6 +614,7 @@ class WorkStore:
                     "username": username,
                     "active": bool(row["active"]),
                     "is_admin": bool(row["is_admin"]),
+                    "is_service": bool(row["is_service"]),
                     "github_username": row["github_username"],
                     "tokens": row["tokens"],
                     "created_at": row["created_at"],
@@ -595,6 +626,7 @@ class WorkStore:
                 current["username"] = username
             current["active"] = bool(current["active"] or row["active"])
             current["is_admin"] = bool(current["is_admin"] or row["is_admin"])
+            current["is_service"] = bool(current["is_service"] or row["is_service"])
             current["github_username"] = current["github_username"] or row["github_username"]
             current["tokens"] += row["tokens"]
             if row["created_at"] and (
@@ -619,6 +651,16 @@ class WorkStore:
             with self.connect() as con:
                 self._log(con, None, "worker_revoke", None, {})
         return revoked
+
+    def set_worker_service(self, username: str, is_service: bool = True) -> int:
+        """Flag (or unflag) every token for `username` as a service identity. Used to
+        retrofit bot accounts minted before the flag existed."""
+        with self.users_connect() as con:
+            cur = con.execute(
+                "UPDATE worker SET is_service=? WHERE username=?",
+                (1 if is_service else 0, username),
+            )
+            return cur.rowcount
 
     def set_worker_github_username(
         self, username: str, github_username: str | None
@@ -1080,6 +1122,13 @@ class WorkStore:
                 | set(contributed_tus_by_agent)
                 | set(contributed_funcs_by_agent)
             )
+            # Service identities (CI publishing builds) authenticate like any worker but
+            # are not decomp contributors -- keep them out of the roster and its headcount.
+            agent_names -= {
+                name
+                for name, data in registered_agents.items()
+                if data.get("is_service")
+            }
             agents = []
             for name in sorted(
                 agent_names,

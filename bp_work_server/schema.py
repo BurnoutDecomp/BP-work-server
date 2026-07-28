@@ -123,6 +123,7 @@ CREATE TABLE IF NOT EXISTS worker(
   username TEXT NOT NULL,
   active INTEGER NOT NULL DEFAULT 1,
   is_admin INTEGER NOT NULL DEFAULT 0,
+  is_service INTEGER NOT NULL DEFAULT 0,
   github_username TEXT,
   created_at TEXT,
   last_seen TEXT
