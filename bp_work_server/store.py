@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 
+from bp_work_server.build_link import is_linked, parse_build_sources
 from bp_work_server.models import ClaimResponse, NextTu, StatusCounts, TuRecord
 from bp_work_server.schema import (
     DB_BUSY_TIMEOUT_MS,
@@ -134,6 +135,10 @@ class WorkStore:
             build_cols = {r["name"] for r in con.execute("PRAGMA table_info(build)")}
             if build_cols and "downloads" not in build_cols:
                 con.execute("ALTER TABLE build ADD COLUMN downloads INTEGER NOT NULL DEFAULT 0")
+            tu_cols = {r["name"] for r in con.execute("PRAGMA table_info(tu)")}
+            if "linked" not in tu_cols:
+                # Stays 0 until the next workflow import parses the build script.
+                con.execute("ALTER TABLE tu ADD COLUMN linked INTEGER NOT NULL DEFAULT 0")
             self._backfill_missing_dest_paths(con)
         self._migrate_users()
 
@@ -270,6 +275,7 @@ class WorkStore:
             status_rows = self._restore_status(con, status)
             dep_count = self._restore_deps(con, deps)
             goal_count = self._restore_goals(con, goals)
+            linked_count = self._restore_linked(con, workflow_root)
             self._log(con, "server", "import", None, {"workflow_root": str(workflow_root)})
             return {
                 "tus": len(tu_index),
@@ -277,7 +283,27 @@ class WorkStore:
                 "deps": dep_count,
                 "goals": goal_count,
                 "status_rows": status_rows,
+                "linked": linked_count,
             }
+
+    def _restore_linked(self, con: sqlite3.Connection, workflow_root: str | Path) -> int:
+        """Flag every TU whose destination file the game build actually compiles.
+
+        The build script is the only source of truth here, so when it cannot be
+        read the previous flags are left alone -- zeroing them would report the
+        exe as empty just because a checkout was incomplete.
+        """
+        sources = parse_build_sources(workflow_root)
+        if not sources:
+            return 0
+        linked_ids = [
+            (row["id"],)
+            for row in con.execute("SELECT id, dest_path FROM tu")
+            if is_linked(row["dest_path"], sources)
+        ]
+        con.execute("UPDATE tu SET linked=0 WHERE linked!=0")
+        con.executemany("UPDATE tu SET linked=1 WHERE id=?", linked_ids)
+        return len(linked_ids)
 
     def next_tus(self, n: int = 1, goal: str | None = None) -> tuple[str | None, list[NextTu]]:
         with self.connect() as con:
@@ -990,6 +1016,7 @@ class WorkStore:
                 WHERE t.status='done'
                 """
             ).fetchone()[0]
+            linked_tus = con.execute("SELECT COUNT(*) FROM tu WHERE linked=1").fetchone()[0]
 
             active_work = [
                 self._dashboard_tu(row)
@@ -1203,8 +1230,10 @@ class WorkStore:
                     "funcs": total_funcs,
                     "done_tus": counts["done"],
                     "done_funcs": done_funcs,
+                    "linked_tus": linked_tus,
                     "tu_percent": self._percent(counts["done"], total_tus),
                     "func_percent": self._percent(done_funcs, total_funcs),
+                    "linked_percent": self._percent(linked_tus, total_tus),
                 },
                 "agents": agents,
                 "attribution_cache": attribution_cache_coverage,

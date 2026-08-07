@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS tu(
   n_funcs INTEGER NOT NULL DEFAULT 0,
   n_decfigs INTEGER NOT NULL DEFAULT 0,
   dest_path TEXT,
+  -- 1 when this TU's destination file is on the game build's compile line
+  -- (tools/build/build_game_exe.bat); refreshed on every workflow import.
+  linked INTEGER NOT NULL DEFAULT 0,
   owner TEXT,
   notes TEXT,
   updated_at TEXT,

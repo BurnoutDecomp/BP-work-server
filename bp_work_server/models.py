@@ -120,6 +120,8 @@ class ImportResponse(BaseModel):
     deps: int
     goals: int
     status_rows: int
+    # TUs whose destination file the game build compiles into the exe.
+    linked: int = 0
 
 
 class SyncRequest(BaseModel):

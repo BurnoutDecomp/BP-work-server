@@ -150,6 +150,26 @@
             </div>
           </article>
 
+          <article
+            class="card metric ring-card exe-card"
+            title="Translation units whose file is on the game build's compile line (tools/build/build_game_exe.bat)"
+          >
+            <div class="ring" id="exeRing" style="--p: 0">
+              <svg viewBox="0 0 120 120" aria-hidden="true">
+                <circle class="ring-track" cx="60" cy="60" r="52" />
+                <circle class="ring-fill exe" cx="60" cy="60" r="52" />
+              </svg>
+              <div class="ring-label">
+                <strong id="exePercent">0%</strong>
+                <span>In Exe</span>
+              </div>
+            </div>
+            <div class="metric-body">
+              <span class="label">In Executable</span>
+              <small id="exeCount">0 / 0 linked</small>
+            </div>
+          </article>
+
           <article class="card metric goal-card">
             <span class="label">Active Goal</span>
             <strong id="activeGoal">Whole program</strong>

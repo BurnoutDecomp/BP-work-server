@@ -278,10 +278,13 @@ function render(data) {
   text("subtitle", `${fmtInt(totals.tus)} translation units · ${fmtInt(totals.funcs)} functions`);
   text("tuPercent", `${Number(totals.tu_percent || 0).toFixed(1)}%`);
   text("fnPercent", `${Number(totals.func_percent || 0).toFixed(1)}%`);
+  text("exePercent", `${Number(totals.linked_percent || 0).toFixed(1)}%`);
   setRing("tuRing", totals.tu_percent);
   setRing("fnRing", totals.func_percent);
+  setRing("exeRing", totals.linked_percent);
   text("tuCount", `${fmtInt(totals.done_tus)} / ${fmtInt(totals.tus)} done`);
   text("fnCount", `${fmtInt(totals.done_funcs)} / ${fmtInt(totals.funcs)} covered`);
+  text("exeCount", `${fmtInt(totals.linked_tus)} / ${fmtInt(totals.tus)} linked`);
   text("activeGoal", data.active_goal || "Whole program");
   text("serverTime", fmtTime(data.server_time));
 

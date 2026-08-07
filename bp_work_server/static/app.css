@@ -656,7 +656,7 @@ h2::before {
 /* ---------- Headline metrics ---------- */
 .metrics {
   display: grid;
-  grid-template-columns: 1fr 1fr 1.3fr;
+  grid-template-columns: 1fr 1fr 1fr 1.4fr;
   gap: 20px;
   min-width: 0;
 }
@@ -708,6 +708,12 @@ h2::before {
 .ring-fill.fn {
   stroke: var(--gold);
   filter: drop-shadow(0 0 6px rgba(227, 165, 44, 0.5));
+}
+
+/* nitrous blue — the "it's actually in the game" ring */
+.ring-fill.exe {
+  stroke: var(--blue);
+  filter: drop-shadow(0 0 6px rgba(87, 168, 224, 0.5));
 }
 
 .ring-label {
@@ -1491,10 +1497,30 @@ html::-webkit-scrollbar-corner,
 }
 
 /* ---------- Responsive ---------- */
+/* Four cards across only survive on a wide viewport: below that the three rings
+   keep a full row of their own and the goal card drops underneath. */
+@media (max-width: 1280px) {
+  .metrics {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .goal-card {
+    grid-column: span 3;
+  }
+  .ring {
+    width: 104px;
+    height: 104px;
+  }
+  .ring-card {
+    gap: 16px;
+  }
+}
+
 @media (max-width: 1150px) {
   .metrics {
     grid-template-columns: 1fr 1fr;
   }
+  /* odd one out of the three rings — spans the row rather than leaving a hole */
+  .exe-card,
   .goal-card {
     grid-column: span 2;
   }
@@ -1510,6 +1536,7 @@ html::-webkit-scrollbar-corner,
   .metrics {
     grid-template-columns: 1fr;
   }
+  .exe-card,
   .goal-card {
     grid-column: auto;
   }

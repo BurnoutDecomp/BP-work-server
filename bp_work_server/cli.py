@@ -92,7 +92,8 @@ def main() -> None:
         print(
             "imported "
             f"{result['tus']} TUs, {result['funcs']} funcs, {result['deps']} deps, "
-            f"{result['goals']} goals ({result['status_rows']} status rows)"
+            f"{result['goals']} goals ({result['status_rows']} status rows), "
+            f"{result['linked']} TUs linked into the exe"
         )
         return
 
