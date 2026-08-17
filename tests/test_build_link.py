@@ -45,6 +45,20 @@ def test_parse_build_sources_resolves_vars_dedupes_and_skips_comments(tmp_path):
     }
 
 
+def test_parse_build_sources_resolves_canonical_absolute_root_assignment(tmp_path):
+    script = BUILD_SCRIPT.replace(
+        r"set ROOT=%~dp0..\..",
+        r'for %%I in ("%~dp0..\..") do set "ROOT=%%~fI"',
+    )
+    root = write_script(tmp_path, script)
+
+    assert parse_build_sources(root) == {
+        "b5-decomp/src/GameSource/Main/BrnMain.cpp",
+        "b5-decomp/src/GameShared/GameClasses/Core/CgsAssert.cpp",
+        "b5-decomp/vendor/coreallocator/source/icoreallocator_interface.cpp",
+    }
+
+
 def test_parse_build_sources_missing_script_is_unknown_not_empty_build(tmp_path):
     assert parse_build_sources(tmp_path) == set()
 

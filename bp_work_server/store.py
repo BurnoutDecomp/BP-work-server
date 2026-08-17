@@ -223,6 +223,8 @@ class WorkStore:
             if class_homes_path.exists()
             else {}
         )
+        if not isinstance(tu_index, dict) or not tu_index:
+            raise ValueError(f"empty or invalid TU index: {tu_index_path}")
 
         with self.connect(ensure_wal=True) as con:
             con.executescript(SCHEMA)
@@ -231,6 +233,31 @@ class WorkStore:
                     "DELETE FROM event; DELETE FROM goal_tu; DELETE FROM goal; "
                     "DELETE FROM tu_dep; DELETE FROM func; DELETE FROM tu; DELETE FROM meta;"
                 )
+
+            # `tu_index.json` is authoritative for ledger membership.  Imports used
+            # to be additive, so TUs/functions removed or regrouped by a later index
+            # survived forever in production and inflated every dashboard total.
+            # Stage the current identities so a normal (non-reset) sync can prune
+            # stale rows while preserving live state and event history for entries
+            # that still exist.
+            con.executescript(
+                """
+                CREATE TEMP TABLE current_import_tu(id TEXT PRIMARY KEY);
+                CREATE TEMP TABLE current_import_func(name TEXT PRIMARY KEY);
+                """
+            )
+            con.executemany(
+                "INSERT INTO current_import_tu(id) VALUES(?)",
+                ((tu_id,) for tu_id in tu_index),
+            )
+            con.executemany(
+                "INSERT OR IGNORE INTO current_import_func(name) VALUES(?)",
+                (
+                    (fn,)
+                    for row in tu_index.values()
+                    for fn in row.get("functions", [])
+                ),
+            )
 
             for tu_id, row in tu_index.items():
                 con.execute(
@@ -261,6 +288,14 @@ class WorkStore:
                         """,
                         (fn, tu_id),
                     )
+
+            con.execute(
+                "DELETE FROM func WHERE name NOT IN (SELECT name FROM current_import_func)"
+            )
+            con.execute("DELETE FROM tu WHERE id NOT IN (SELECT id FROM current_import_tu)")
+            con.executescript(
+                "DROP TABLE current_import_func; DROP TABLE current_import_tu;"
+            )
 
             # class TU dest_paths are otherwise the synthetic src/classes/<Class>.cpp
             # (kept by the ON CONFLICT COALESCE above). The resolved home is always the

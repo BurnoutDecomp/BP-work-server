@@ -372,6 +372,39 @@ def test_live_claim_survives_resync(tmp_path):
     assert by_id["GameSource/C.cpp"].owner == "live-agent"
 
 
+def test_resync_prunes_tus_and_functions_removed_from_authoritative_index(tmp_path):
+    store = WorkStore(tmp_path / "work.sqlite3")
+    store.migrate()
+    workflow = _write_workflow(tmp_path, {"tu": {}})
+    store.import_workflow(workflow, reset=True)
+    with store.connect() as con:
+        con.execute(
+            "INSERT INTO event(ts, tu_id, agent, action, detail_json) VALUES(?,?,?,?,?)",
+            (iso(), "GameSource/D.cpp", "agent", "review_pass", "{}"),
+        )
+
+    (workflow / "progress" / "tu_index.json").write_text(
+        json.dumps(
+            {
+                "GameSource/A.cpp": {
+                    "source": "decfigs",
+                    "n_funcs": 1,
+                    "functions": ["A::Renamed"],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    store.import_workflow(workflow, reset=False)
+
+    with store.connect() as con:
+        assert [row["id"] for row in con.execute("SELECT id FROM tu")] == ["GameSource/A.cpp"]
+        assert [row["name"] for row in con.execute("SELECT name FROM func")] == ["A::Renamed"]
+        assert con.execute(
+            "SELECT COUNT(*) FROM event WHERE tu_id='GameSource/D.cpp' AND action='review_pass'"
+        ).fetchone()[0] == 1
+
+
 def test_expired_claim_returns_to_todo(tmp_path):
     store = make_store(tmp_path)
     store.claim("GameSource/B.cpp", "agent-a")

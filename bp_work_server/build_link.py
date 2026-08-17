@@ -26,6 +26,19 @@ BUILD_SCRIPT = "tools/build/build_game_exe.bat"
 # `set NAME=value` / `set "NAME=value"`, the two forms the script uses.
 _SET_LINE = re.compile(r'^set\s+"?([A-Za-z_]\w*)=([^"]*)"?\s*$', re.IGNORECASE)
 
+# Canonical absolute-path assignment used by the game build:
+# `for %%I in ("%~dp0..\..") do set "ROOT=%%~fI"`.
+#
+# `%~fI` makes the value absolute at batch runtime.  The dashboard only needs
+# repo-relative paths, so resolving the expression relative to this script and
+# normalising `..` segments gives the same source-list base without depending on
+# the server's checkout location.
+_FOR_ABSOLUTE_SET_LINE = re.compile(
+    r'^for\s+%%([A-Za-z])\s+in\s+\("([^"]+)"\)\s+do\s+set\s+"?'
+    r'([A-Za-z_]\w*)=%%~f([A-Za-z])"?\s*$',
+    re.IGNORECASE,
+)
+
 # One source file appended to the response file: `  echo "%SRC%\path\to\File.cpp"`.
 _SOURCE_LINE = re.compile(
     r'^\s*echo\s+"?%(\w+)%\\([^"\r\n]+?\.(?:cpp|cxx|cc|c))"?\s*$',
@@ -60,6 +73,22 @@ def _script_vars(text: str) -> dict[str, str]:
         stripped = line.strip()
         if stripped.lower().startswith("rem"):
             continue
+
+        absolute_match = _FOR_ABSOLUTE_SET_LINE.match(stripped)
+        if absolute_match:
+            loop_var, value, name, expansion_var = absolute_match.groups()
+            if loop_var.lower() != expansion_var.lower():
+                continue
+            value = value.replace("%~dp0", _SCRIPT_DIR)
+            value = re.sub(
+                r"%(\w+)%",
+                lambda m: resolved.get(m.group(1).upper(), _UNRESOLVED),
+                value,
+            )
+            if _UNRESOLVED not in value:
+                resolved[name.upper()] = normalize_path(value)
+            continue
+
         match = _SET_LINE.match(stripped)
         if not match:
             continue
