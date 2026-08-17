@@ -268,7 +268,7 @@ class WorkStore:
                       source=excluded.source,
                       n_funcs=excluded.n_funcs,
                       n_decfigs=excluded.n_decfigs,
-                      dest_path=COALESCE(NULLIF(tu.dest_path, ''), excluded.dest_path)
+                      dest_path=excluded.dest_path
                     """,
                     (
                         tu_id,
@@ -296,16 +296,6 @@ class WorkStore:
             con.executescript(
                 "DROP TABLE current_import_func; DROP TABLE current_import_tu;"
             )
-
-            # class TU dest_paths are otherwise the synthetic src/classes/<Class>.cpp
-            # (kept by the ON CONFLICT COALESCE above). The resolved home is always the
-            # better, real path, so let class_homes win for class TUs. This only moves
-            # attribution to the right file -- it never touches TU status.
-            for class_tu_id, home in class_homes.items():
-                con.execute(
-                    "UPDATE tu SET dest_path=? WHERE id=? AND source='class' AND dest_path IS NOT ?",
-                    (home, class_tu_id, home),
-                )
 
             status_rows = self._restore_status(con, status)
             dep_count = self._restore_deps(con, deps)

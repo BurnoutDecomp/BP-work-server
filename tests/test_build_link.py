@@ -167,6 +167,24 @@ def test_import_clears_tus_dropped_from_the_compile_line(tmp_path):
     assert len(linked) == 2
 
 
+def test_import_clears_a_stale_class_home_dropped_from_the_current_map(tmp_path):
+    store = WorkStore(tmp_path / "work.sqlite3")
+    store.migrate()
+    root = make_workflow(tmp_path)
+    store.import_workflow(root)
+
+    (root / "progress" / "class_homes.json").write_text("{}", encoding="utf-8")
+    store.import_workflow(root)
+
+    with store.connect() as con:
+        allocator = con.execute(
+            "SELECT dest_path, linked FROM tu WHERE id='class:Allocator'"
+        ).fetchone()
+    assert allocator["dest_path"] == "b5-decomp/src/classes/Allocator.cpp"
+    assert allocator["linked"] == 0
+    assert store.dashboard_state()["totals"]["linked_tus"] == 2
+
+
 def test_migrate_adds_linked_to_a_pre_existing_tu_table(tmp_path):
     import sqlite3
 
