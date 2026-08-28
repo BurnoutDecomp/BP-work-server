@@ -59,6 +59,40 @@ def test_parse_build_sources_resolves_canonical_absolute_root_assignment(tmp_pat
     }
 
 
+def test_parse_build_sources_honors_filters_before_incremental_driver(tmp_path):
+    script = BUILD_SCRIPT.replace(
+        'set OUT=%ROOT%\\build\\game',
+        'set OUT=%ROOT%\\build\\game\nset RSP=%OUT%\\obj\\build.rsp',
+    ).replace(
+        ') > "%OUT%\\obj\\build.rsp"',
+        ') > "%RSP%"\n'
+        'findstr /v /c:"CgsAssert.cpp" "%RSP%" > "%RSP%.tmp"\n'
+        'move /y "%RSP%.tmp" "%RSP%" >nul\n'
+        ':driver_compile\n'
+        'python compile_exe.py --rsp "%RSP%"',
+    )
+    root = write_script(tmp_path, script)
+
+    assert parse_build_sources(root) == {
+        "b5-decomp/src/GameSource/Main/BrnMain.cpp",
+        "b5-decomp/vendor/coreallocator/source/icoreallocator_interface.cpp",
+    }
+
+
+def test_parse_build_sources_ignores_legacy_only_response_file_filters(tmp_path):
+    script = BUILD_SCRIPT.replace(
+        ') > "%OUT%\\obj\\build.rsp"',
+        ') > "%OUT%\\obj\\build.rsp"\n'
+        ':driver_compile\n'
+        'python compile_exe.py --rsp "%RSP%"\n'
+        ':legacy_compile\n'
+        'findstr /v /c:"CgsAssert.cpp" "%RSP%" > "%RSP%.tmp"',
+    )
+    root = write_script(tmp_path, script)
+
+    assert "b5-decomp/src/GameShared/GameClasses/Core/CgsAssert.cpp" in parse_build_sources(root)
+
+
 def test_parse_build_sources_missing_script_is_unknown_not_empty_build(tmp_path):
     assert parse_build_sources(tmp_path) == set()
 

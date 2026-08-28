@@ -3,8 +3,9 @@
 ``tools/build/build_game_exe.bat`` in the workflow repo is the ground truth for
 what ships: its source list exceeds cmd's ~8191-char command-line limit, so the
 script ``echo``s every source file into a ``cl`` response file. A TU whose
-destination file appears on that list is *in the executable*; everything else is
-decompiled but not yet wired into the build.
+destination file survives the response-file filters and appears on that list is
+*in the executable*; everything else is decompiled but not yet wired into the
+build.
 
 Parsing the batch script beats parsing build output: the script is committed
 (so it syncs with the rest of the workflow snapshot), while the response file
@@ -44,6 +45,19 @@ _SOURCE_LINE = re.compile(
     r'^\s*echo\s+"?%(\w+)%\\([^"\r\n]+?\.(?:cpp|cxx|cc|c))"?\s*$',
     re.IGNORECASE,
 )
+
+# The incremental build may deliberately drop a source from its response file
+# before invoking ``compile_exe.py``.  The production script uses this for a
+# source whose symbols are supplied by a link-stub TU.  It is intentionally
+# narrow: legacy-only filters later in the batch file remove collision-prone
+# files only to compile them separately, so those files are still linked.
+_PRE_DRIVER_RSP_FILTER = re.compile(
+    r'^\s*findstr\s+/v\s+/c:"([^"]+)"\s+"?%(\w+)%"?\s*>'
+    r'\s*"?%(\w+)%\.tmp"?\s*$',
+    re.IGNORECASE,
+)
+
+_DRIVER_LABEL = re.compile(r'^\s*:driver_compile\s*$', re.IGNORECASE)
 
 # %~dp0 expands to the directory holding the script, so ROOT=%~dp0..\.. is the
 # repo root -- which is what every path here is expressed relative to.
@@ -106,6 +120,31 @@ def _script_vars(text: str) -> dict[str, str]:
     return resolved
 
 
+def _pre_driver_source_exclusions(text: str) -> list[str]:
+    """Return source-path fragments removed before the incremental driver runs.
+
+    ``build_game_exe.bat`` has a legacy fallback after ``:driver_compile``.  Its
+    filters are implementation details for separately-compiled objects, which
+    still enter the executable, so only filters before that label apply here.
+    """
+    exclusions: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if _DRIVER_LABEL.match(stripped):
+            break
+        if stripped.lower().startswith("rem"):
+            continue
+        match = _PRE_DRIVER_RSP_FILTER.match(stripped)
+        if not match:
+            continue
+        fragment, source_var, output_var = match.groups()
+        # A filter only changes the source response file when it reads and
+        # replaces the same variable, as the game build does.
+        if source_var.lower() == output_var.lower():
+            exclusions.append(normalize_path(fragment).lower())
+    return exclusions
+
+
 def parse_build_sources(workflow_root: str | Path) -> set[str]:
     """Repo-relative paths of every source file the game build compiles.
 
@@ -130,6 +169,9 @@ def parse_build_sources(workflow_root: str | Path) -> set[str]:
         if base is None:
             continue
         sources.add(normalize_path(f"{base}/{match.group(2)}"))
+
+    for fragment in _pre_driver_source_exclusions(text):
+        sources = {source for source in sources if fragment not in source.lower()}
     return sources
 
 

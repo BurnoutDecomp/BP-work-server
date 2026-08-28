@@ -150,3 +150,22 @@ def test_missing_clone_is_graceful(tmp_path):
     assert repo.available is False
     assert repo.history("b5-decomp/src/World/Foo.cpp") == []
     assert repo.resolve("b5-decomp/src/World/Foo.cpp") == (None, None)
+
+
+def test_git_reads_repository_metadata_as_utf8(monkeypatch, tmp_path):
+    received = {}
+
+    class Result:
+        returncode = 0
+        stdout = "revision\\n"
+
+    def fake_run(*args, **kwargs):
+        received.update(kwargs)
+        return Result()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    repo = DecompRepo(root=tmp_path, branch="main")
+
+    assert repo._git("rev-parse", "HEAD") == "revision\\n"
+    assert received["encoding"] == "utf-8"
+    assert received["errors"] == "replace"

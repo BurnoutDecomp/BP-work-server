@@ -94,6 +94,12 @@ class DecompRepo:
                 ["git", "-C", str(self.root), *args],
                 capture_output=True,
                 text=True,
+                # Git emits UTF-8 repository metadata regardless of the Windows
+                # ANSI code page.  Letting ``text=True`` select cp1252 can make
+                # a non-ASCII author or commit message abort an attribution
+                # refresh midway through, leaving dashboard contributors stale.
+                encoding="utf-8",
+                errors="replace",
                 check=False,
                 timeout=30,
             )
