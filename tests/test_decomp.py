@@ -226,3 +226,38 @@ def test_refresh_leaves_a_fresh_index_lock_alone(cloned_decomp):
     assert lock.exists()
     assert (clone / "src" / "World" / "Foo.cpp").read_text() == "// foo v3\n"
     assert repo.health()["behind"] == 1
+
+
+def test_function_ranges_sanitize_each_file_once(tmp_path, monkeypatch):
+    """Sanitising is a pure-Python character walk; it must not run per function.
+
+    It used to: every one of production's 21,238 function targets re-walked its
+    whole file, which is what made a full attribution warm take hours.
+    """
+    root = tmp_path / "b5-decomp"
+    (root / "src").mkdir(parents=True)
+    (root / "src" / "Many.cpp").write_text(
+        "// header comment\n"
+        "void Many::A() { int a = 0; }\n"
+        "void Many::B() { int b = 1; }\n"
+        "void Many::C() { int c = 2; }\n"
+    )
+    _git(root, "init", "-q", "-b", "main")
+    _git(root, "config", "user.email", "t@example.com")
+    _git(root, "add", ".")
+    _commit(root, "Adriwin06", "three methods", when="2026-06-12T10:00:00")
+    repo = DecompRepo(root=root, branch="main")
+
+    calls = {"n": 0}
+    original = DecompRepo._sanitize_cpp
+
+    def counting(text):
+        calls["n"] += 1
+        return original(text)
+
+    monkeypatch.setattr(DecompRepo, "_sanitize_cpp", staticmethod(counting))
+
+    for name in ("Many::A", "Many::B", "Many::C"):
+        assert repo.function_range("b5-decomp/src/Many.cpp", name) is not None
+
+    assert calls["n"] == 1

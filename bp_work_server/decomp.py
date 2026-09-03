@@ -83,7 +83,10 @@ class DecompRepo:
         # path-relative-to-root -> {"path": existing_path|None, "history": [...]}
         self._cache: dict[str, dict] = {}
         self._blame_cache: dict[str, list[dict[str, Any]]] = {}
-        self._source_cache: dict[str, str] = {}
+        # Comment/string-blanked source text, cached per file: sanitising is a
+        # pure-Python character walk, and it used to run once per *function*
+        # rather than once per file -- 21k re-walks of the same 50 MB tree.
+        self._sanitized_cache: dict[str, str] = {}
         self._function_range_cache: dict[tuple[str, str], tuple[int, int] | None] = {}
         # Memoised HEAD sha. Only a refresh (fetch + reset) can move HEAD, and
         # that path clears this, so revision() need not spawn `git rev-parse` on
@@ -150,7 +153,7 @@ class DecompRepo:
         if ok is not None and self._reset_to_branch() is not None:
             self._cache.clear()
             self._blame_cache.clear()
-            self._source_cache.clear()
+            self._sanitized_cache.clear()
             self._function_range_cache.clear()
             self._revision = None
             self._revision_date = None
@@ -308,20 +311,27 @@ class DecompRepo:
                 self._revision = rev
         return rev
 
-    def _source(self, path: str | None) -> str:
+    def _sanitized_source(self, path: str | None) -> str:
+        """File text with comments and string literals blanked, cached per file.
+
+        Blanking is length-preserving, so offsets and line numbers still match
+        the file on disk. Only ``function_range`` reads source, and it only ever
+        wants the sanitised form, so the raw text is never worth keeping.
+        """
         if not path:
             return ""
         with self._lock:
-            hit = self._source_cache.get(path)
+            hit = self._sanitized_cache.get(path)
         if hit is not None:
             return hit
         try:
             text = (self.root / path).read_text(encoding="utf-8", errors="ignore")
         except OSError:
             text = ""
+        clean = self._sanitize_cpp(text)
         with self._lock:
-            self._source_cache[path] = text
-        return text
+            self._sanitized_cache[path] = clean
+        return clean
 
     def _blame(self, path: str | None) -> list[dict[str, Any]]:
         if not path:
@@ -503,8 +513,7 @@ class DecompRepo:
         with self._lock:
             if key in self._function_range_cache:
                 return self._function_range_cache[key]
-        text = self._source(path)
-        clean = self._sanitize_cpp(text)
+        clean = self._sanitized_source(path)
         found: tuple[int, int] | None = None
         for pattern in self._function_patterns(function_name):
             for match in re.finditer(pattern, clean):
