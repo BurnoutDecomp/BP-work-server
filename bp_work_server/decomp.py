@@ -213,6 +213,36 @@ class DecompRepo:
         text = (out or "").strip()
         return int(text) if text.isdigit() else 0
 
+    def changed_paths(self, base_rev: str | None, head_rev: str | None) -> set[str] | None:
+        """Repo paths that differ between two revisions, or None if unknowable.
+
+        ``None`` means "assume everything changed": the base is missing, or it
+        is not an ancestor of head (a force-push or a rewritten branch), so no
+        cached blame from it can be trusted. Callers fall back to a full pass.
+        """
+        if not base_rev or not head_rev:
+            return None
+        if base_rev == head_rev:
+            return set()
+        if self._git("merge-base", "--is-ancestor", base_rev, head_rev) is None:
+            return None
+        # --no-renames keeps both sides of a rename in the list; a rename
+        # invalidates the old path's cached entry as surely as an edit does.
+        # core.quotePath=false keeps a non-ASCII path as itself instead of an
+        # escaped, quoted form that would never match a stored destination.
+        out = self._git(
+            "-c",
+            "core.quotePath=false",
+            "diff",
+            "--name-only",
+            "--no-renames",
+            base_rev,
+            head_rev,
+        )
+        if out is None:
+            return None
+        return {line.strip() for line in out.splitlines() if line.strip()}
+
     def health(self) -> dict[str, Any]:
         """Freshness of the clone the attribution numbers are computed from.
 
@@ -243,12 +273,25 @@ class DecompRepo:
         path = dest_path.removeprefix(_REPO_PREFIX)
         return path.lstrip("/")
 
-    def _existing_path(self, rel: str) -> str | None:
-        """The file that exists for ``rel`` (a missing *.h maps to its .cpp)."""
+    @classmethod
+    def candidate_paths(cls, dest_path: str) -> list[str]:
+        """Every repo path a destination could resolve to, most specific first.
+
+        Headers are inlined into the .cpp, so a missing *.h has no file of its
+        own. Callers deciding whether a destination's attribution can be reused
+        across revisions must test all of these: which one resolves depends on
+        what exists at that revision, so a sibling appearing or disappearing
+        changes the answer just as much as an edit does.
+        """
+        rel = cls._repo_relative(dest_path)
         candidates = [rel]
-        # Headers are inlined into the .cpp, so a missing *.h has no file of its own.
         if rel.endswith(".h"):
             candidates.append(rel[:-2] + ".cpp")
+        return candidates
+
+    def _existing_path(self, rel: str) -> str | None:
+        """The file that exists for ``rel`` (a missing *.h maps to its .cpp)."""
+        candidates = self.candidate_paths(rel)
         for candidate in candidates:
             if (self.root / candidate).is_file():
                 return candidate

@@ -24,7 +24,8 @@ This repo contains an MVP server:
 - Explorer panel to search/filter/sort every TU and function, with a detail
   drawer showing the data handed to agents (deps, dependents, funcs, goals).
 - Git-derived contribution attribution per agent: "contributed to" (any
-  surviving-line author) and "primary on" (dominant author). `class:` TUs are
+  surviving-line author) and "primary on" (dominant author), warmed
+  incrementally against a local clone whose freshness the dashboard reports. `class:` TUs are
   attributed via `progress/class_homes.json`; the dashboard shows only
   GitHub-verifiable data (git-reconstructed events are hidden by default,
   `BP_HIDE_RECONSTRUCTED=0` to reveal).
@@ -191,7 +192,13 @@ bp-work-server --db data\bp-work.sqlite3 warm-attribution-cache `
   `progress/class_homes.json`, preserving existing data.
 - `warm-attribution-cache` recomputes Git surviving-line attribution for the new
   revision. The dashboard also auto-warms when it sees a new repo revision, so the
-  explicit warm is optional.
+  explicit warm is optional. It is **incremental**: `git blame` for a file depends
+  only on that file's own history, so when the previously warmed revision is an
+  ancestor of the new one, every destination whose file is untouched between them
+  is carried forward verbatim and only the files a push actually changed are
+  re-blamed. A full pass over the whole tree takes about an hour; a typical push
+  takes seconds. Pass `--full` to force a complete re-blame (rarely needed — a
+  force-push is detected and falls back on its own).
 - `resolve_class_homes.py` maps each `class:` TU to the committed file that holds
   its code, so class work attributes to its authors instead of a synthetic
   `src/classes/<Class>.cpp` path; ambiguous classes are left unmapped, never guessed.

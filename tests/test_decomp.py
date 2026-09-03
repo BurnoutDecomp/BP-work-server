@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import time
 
@@ -22,6 +23,12 @@ def _commit(root, author, message, when=None):
         env["GIT_AUTHOR_DATE"] = when
         env["GIT_COMMITTER_DATE"] = when
     _git(root, "-c", "commit.gpgsign=false", "commit", "-q", "-m", message, env=env)
+
+
+def _git_out(root, *args):
+    return subprocess.run(
+        ["git", "-C", str(root), *args], check=True, capture_output=True, text=True
+    ).stdout.strip()
 
 
 @pytest.fixture
@@ -261,3 +268,106 @@ def test_function_ranges_sanitize_each_file_once(tmp_path, monkeypatch):
         assert repo.function_range("b5-decomp/src/Many.cpp", name) is not None
 
     assert calls["n"] == 1
+
+
+def test_changed_paths_lists_only_what_moved(cloned_decomp):
+    repo, clone = cloned_decomp
+    # Read HEAD directly: repo.revision() refreshes on first use, which is
+    # exactly the fetch this test needs to happen *after* it samples the base.
+    base = _git_out(clone, "rev-parse", "HEAD")
+    repo.force_refresh()
+    head = repo.revision()
+
+    assert base != head
+    assert repo.changed_paths(base, head) == {"src/World/Foo.cpp"}
+    assert repo.changed_paths(head, head) == set()
+
+
+def test_changed_paths_refuses_a_base_that_is_not_an_ancestor(cloned_decomp, tmp_path):
+    """A rewritten branch cannot be diffed into; the caller must re-blame in full."""
+    repo, clone = cloned_decomp
+    head = repo.revision()
+
+    # A commit on an unrelated root: reachable in the repo, but not an ancestor.
+    _git(clone, "checkout", "-q", "--orphan", "sideline")
+    (clone / "src" / "World" / "Foo.cpp").write_text("// unrelated\n")
+    _git(clone, "add", ".")
+    _commit(clone, "Somebody", "unrelated root", when="2026-06-20T10:00:00")
+    orphan = _git_out(clone, "rev-parse", "HEAD")
+    _git(clone, "checkout", "-q", "main")
+
+    assert repo.changed_paths(orphan, head) is None
+    assert repo.changed_paths("0" * 40, head) is None
+
+def test_incremental_warm_against_a_real_clone(tmp_path):
+    """End-to-end: real git, real store, one file changed upstream.
+
+    The unit tests drive the warm with a fake repo, so they cannot catch the
+    thing most likely to break this: `git diff --name-only` prints repo-relative
+    paths while the ledger stores "b5-decomp/"-prefixed destinations. If those
+    two shapes ever stop lining up, every entry looks untouched and the warm
+    serves blame from the previous revision forever.
+    """
+    from bp_work_server.attribution_cache import warm_attribution_cache
+    from bp_work_server.store import WorkStore, iso
+
+    upstream = tmp_path / "upstream"
+    (upstream / "src" / "World").mkdir(parents=True)
+    foo = upstream / "src" / "World" / "Foo.cpp"
+    other = upstream / "src" / "World" / "Other.cpp"
+    foo.write_text("void Foo::Run() { int a = 0; }\n")
+    other.write_text("void Other::Run() { int x = 1; }\n")
+    _git(upstream, "init", "-q", "-b", "main")
+    _git(upstream, "config", "user.email", "t@example.com")
+    _git(upstream, "add", ".")
+    _commit(upstream, "JeBobs", "both files", when="2026-06-12T10:00:00")
+
+    clone = tmp_path / "clone"
+    subprocess.run(
+        ["git", "clone", "-q", str(upstream), str(clone)], check=True, capture_output=True
+    )
+    repo = DecompRepo(root=clone, branch="main")
+
+    store = WorkStore(tmp_path / "work.sqlite3")
+    store.migrate()
+    with store.connect() as con:
+        con.execute(
+            """
+            INSERT INTO tu(id, source, status, n_funcs, n_decfigs, dest_path, updated_at)
+            VALUES
+              ('World/Foo.cpp', 'decfigs', 'done', 1, 1, 'b5-decomp/src/World/Foo.cpp', ?),
+              ('World/Other.cpp', 'decfigs', 'done', 1, 1, 'b5-decomp/src/World/Other.cpp', ?)
+            """,
+            (iso(), iso()),
+        )
+        con.execute(
+            "INSERT INTO func(name, tu_id, status) VALUES('Other::Run', 'World/Other.cpp', 'reviewed')"
+        )
+
+    first = warm_attribution_cache(store, repo)
+    assert (first.files_cached, first.files_reused) == (2, 0)
+    base_rev = first.repo_rev
+
+    # Upstream advances Foo.cpp only; Other.cpp is untouched.
+    foo.write_text("void Foo::Run() { int a = 2; }\n")
+    _git(upstream, "add", ".")
+    _commit(upstream, "Adriwin06", "tweak Foo", when="2026-07-01T10:00:00")
+    repo.force_refresh()
+
+    second = warm_attribution_cache(store, repo)
+
+    assert second.repo_rev != base_rev
+    assert second.base_rev == base_rev
+    assert (second.files_reused, second.functions_reused) == (1, 1)
+
+    with store.connect() as con:
+        rows = con.execute(
+            "SELECT dest_path, repo_rev, payload_json FROM attribution_cache WHERE scope='file'"
+        ).fetchall()
+    by_path = {row["dest_path"]: row for row in rows}
+    # Every row -- carried forward or recomputed -- is stamped at the new tip.
+    assert {row["repo_rev"] for row in rows} == {second.repo_rev}
+    carried = json.loads(by_path["b5-decomp/src/World/Other.cpp"]["payload_json"])
+    assert carried["contributors"]["contributors"][0]["name"] == "JeBobs"
+    recomputed = json.loads(by_path["b5-decomp/src/World/Foo.cpp"]["payload_json"])
+    assert recomputed["contributors"]["contributors"][0]["name"] == "Adriwin06"

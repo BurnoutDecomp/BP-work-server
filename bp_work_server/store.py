@@ -2733,6 +2733,44 @@ class WorkStore:
             return 0.0
         return round((value / total) * 100, 2)
 
+    def attribution_cache_reuse_base(self, exclude_rev: str | None = None) -> str | None:
+        """The cached revision a new warm should try to carry forward.
+
+        The best-covered revision in the table, which after a full warm is the
+        only one there. Excluding the revision being warmed keeps a partial set
+        of rows -- written one at a time by ordinary dashboard requests -- from
+        being mistaken for a finished pass.
+        """
+        with self.connect() as con:
+            row = con.execute(
+                """
+                SELECT repo_rev
+                FROM attribution_cache
+                WHERE scope='file' AND (? IS NULL OR repo_rev != ?)
+                GROUP BY repo_rev
+                ORDER BY COUNT(*) DESC, MAX(updated_at) DESC
+                LIMIT 1
+                """,
+                (exclude_rev, exclude_rev),
+            ).fetchone()
+        return row["repo_rev"] if row else None
+
+    def attribution_cache_payloads(self, repo_rev: str) -> dict[tuple[str, str, str], str]:
+        """Every cached payload for one revision, keyed by (scope, dest, function).
+
+        Returned as the raw JSON text: a warm that carries an entry forward
+        re-stamps it under the new revision without ever parsing it.
+        """
+        with self.connect() as con:
+            return {
+                (row["scope"], row["dest_path"], row["function_name"]): row["payload_json"]
+                for row in con.execute(
+                    "SELECT scope, dest_path, function_name, payload_json "
+                    "FROM attribution_cache WHERE repo_rev=?",
+                    (repo_rev,),
+                )
+            }
+
     def attribution_cache_get(
         self,
         *,

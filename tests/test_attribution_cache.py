@@ -79,3 +79,142 @@ def test_warm_attribution_cache_populates_cacheable_reviewed_work(tmp_path):
         ("function", "Utility::Fn"),
     ]
     assert json.loads(rows[0]["payload_json"])["contributors"]["contributors"][0]["name"] == "Niaz"
+
+
+class RecordingDecomp:
+    """A decomp stand-in that reports which revision it is at and what changed.
+
+    Counts the blame-shaped calls so a test can assert what a warm recomputed
+    rather than only what it stored.
+    """
+
+    def __init__(self, rev, changed=None, ancestor=True):
+        self.rev = rev
+        self.changed = changed if changed is not None else set()
+        self.ancestor = ancestor
+        self.file_calls = []
+        self.function_calls = []
+
+    def revision(self):
+        return self.rev
+
+    def candidate_paths(self, dest_path):
+        rel = dest_path.removeprefix("b5-decomp/")
+        return [rel, rel[:-2] + ".cpp"] if rel.endswith(".h") else [rel]
+
+    def changed_paths(self, base_rev, head_rev):
+        if not self.ancestor:
+            return None
+        return set(self.changed)
+
+    def history(self, dest_path):
+        self.file_calls.append(dest_path)
+        return [{"date": "2026-06-17T10:00:00+00:00", "name": self.rev, "email": "n@example.test"}]
+
+    def contributors(self, dest_path):
+        return {
+            "path": dest_path.removeprefix("b5-decomp/"),
+            "basis": "surviving_lines",
+            "contributors": [{"name": self.rev, "email": "n@example.test", "lines": 4}],
+        }
+
+    def function_contributors(self, dest_path, function_name):
+        self.function_calls.append((dest_path, function_name))
+        return {
+            "path": dest_path.removeprefix("b5-decomp/"),
+            "basis": "surviving_lines",
+            "contributors": [{"name": self.rev, "email": "n@example.test", "lines": 3}],
+        }
+
+
+def test_warm_carries_untouched_files_forward(tmp_path):
+    """A push that touches nothing cacheable must not re-blame the whole tree."""
+    store = make_store(tmp_path)
+    warm_attribution_cache(store, RecordingDecomp("rev-1"))
+
+    decomp = RecordingDecomp("rev-2", changed={"src/GameSource/Untracked.cpp"})
+    result = warm_attribution_cache(store, decomp)
+
+    assert result.base_rev == "rev-1"
+    assert (result.files_reused, result.functions_reused) == (1, 2)
+    assert decomp.file_calls == []
+    assert decomp.function_calls == []
+    # Carried-forward payloads are re-stamped under the new revision, so the
+    # dashboard reads them as a complete pass at the current tip.
+    state = store.dashboard_state(attribution_repo_rev="rev-2")
+    assert state["attribution_cache"]["file_complete"] is True
+    assert state["attribution_cache"]["function_complete"] is True
+
+
+def test_warm_recomputes_only_the_files_a_push_touched(tmp_path):
+    store = make_store(tmp_path)
+    warm_attribution_cache(store, RecordingDecomp("rev-1"))
+
+    # A.cpp changed; the class TU's home file did not.
+    decomp = RecordingDecomp("rev-2", changed={"src/GameSource/A.cpp"})
+    result = warm_attribution_cache(store, decomp)
+
+    assert decomp.file_calls == ["b5-decomp/src/GameSource/A.cpp"]
+    assert decomp.function_calls == [("b5-decomp/src/GameSource/A.cpp", "A::Run")]
+    assert (result.files_reused, result.functions_reused) == (0, 1)
+    with store.connect() as con:
+        payload = con.execute(
+            "SELECT payload_json FROM attribution_cache "
+            "WHERE scope='file' AND dest_path='b5-decomp/src/GameSource/A.cpp'"
+        ).fetchone()["payload_json"]
+    assert json.loads(payload)["contributors"]["contributors"][0]["name"] == "rev-2"
+
+
+def test_warm_recomputes_a_header_whose_cpp_sibling_changed(tmp_path):
+    """A *.h blames through its .cpp, so an edit there invalidates the header."""
+    store = make_store(tmp_path)
+    with store.connect() as con:
+        con.execute(
+            "UPDATE tu SET dest_path='b5-decomp/src/GameSource/A.h' WHERE id='GameSource/A.cpp'"
+        )
+    warm_attribution_cache(store, RecordingDecomp("rev-1"))
+
+    decomp = RecordingDecomp("rev-2", changed={"src/GameSource/A.cpp"})
+    result = warm_attribution_cache(store, decomp)
+
+    assert decomp.file_calls == ["b5-decomp/src/GameSource/A.h"]
+    assert result.files_reused == 0
+
+
+def test_warm_recomputes_everything_when_the_base_is_not_an_ancestor(tmp_path):
+    """A force-push invalidates every cached blame; nothing may be carried over."""
+    store = make_store(tmp_path)
+    warm_attribution_cache(store, RecordingDecomp("rev-1"))
+
+    decomp = RecordingDecomp("rev-2", ancestor=False)
+    result = warm_attribution_cache(store, decomp)
+
+    assert result.base_rev is None
+    assert (result.files_reused, result.functions_reused) == (0, 0)
+    assert decomp.file_calls == ["b5-decomp/src/GameSource/A.cpp"]
+
+
+def test_warm_computes_targets_the_previous_pass_never_covered(tmp_path):
+    """Newly finished work is computed even when its file did not change."""
+    store = make_store(tmp_path)
+    warm_attribution_cache(store, RecordingDecomp("rev-1"))
+    with store.connect() as con:
+        con.execute("UPDATE func SET status='reviewed' WHERE name='A::Stop'")
+
+    decomp = RecordingDecomp("rev-2")
+    result = warm_attribution_cache(store, decomp)
+
+    assert decomp.function_calls == [("b5-decomp/src/GameSource/A.cpp", "A::Stop")]
+    assert result.functions_reused == 2
+
+
+def test_full_warm_ignores_the_cache(tmp_path):
+    store = make_store(tmp_path)
+    warm_attribution_cache(store, RecordingDecomp("rev-1"))
+
+    decomp = RecordingDecomp("rev-2")
+    result = warm_attribution_cache(store, decomp, full=True)
+
+    assert result.base_rev is None
+    assert result.files_reused == 0
+    assert decomp.file_calls == ["b5-decomp/src/GameSource/A.cpp"]

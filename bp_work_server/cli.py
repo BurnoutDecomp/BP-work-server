@@ -37,6 +37,11 @@ def main() -> None:
     warm_p.add_argument(
         "--functions-only", action="store_true", help="Only cache reviewed function attribution."
     )
+    warm_p.add_argument(
+        "--full",
+        action="store_true",
+        help="Re-blame every target instead of carrying unchanged files forward.",
+    )
 
     serve_p = sub.add_parser("serve", help="Run the API server.")
     serve_p.add_argument("--host", default="127.0.0.1")
@@ -113,11 +118,19 @@ def main() -> None:
             include_files=not args.functions_only,
             include_functions=not args.files_only,
             progress=progress,
+            full=args.full,
         )
         print("attribution cache warmed")
         print(f"  repo rev: {result.repo_rev}")
         print(f"  files cached: {result.files_cached}/{result.file_targets}")
         print(f"  functions cached: {result.functions_cached}/{result.function_targets}")
+        if result.base_rev:
+            print(
+                f"  carried forward from {result.base_rev[:12]}: "
+                f"{result.files_reused} files, {result.functions_reused} functions"
+            )
+        else:
+            print("  carried forward: nothing (full pass)")
         return
 
     if args.cmd == "worker":
