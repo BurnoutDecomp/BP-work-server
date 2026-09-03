@@ -80,7 +80,11 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
             log.exception("request failed method=%s path=%s", request.method, request.url.path)
             raise
         elapsed_ms = (time.perf_counter() - started) * 1000
-        log.info(
+        # Debug, not info: uvicorn already logs one access line per request, and
+        # the dashboard is polled every few seconds by every open tab. Now that
+        # app loggers actually reach the journal, this would double that volume
+        # and bury the events worth reading.
+        log.debug(
             "request method=%s path=%s status=%s elapsed_ms=%.1f",
             request.method,
             request.url.path,

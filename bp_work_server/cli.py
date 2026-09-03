@@ -1,10 +1,26 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 from pathlib import Path
 
 from bp_work_server.store import WorkStore
+
+# Uvicorn's logging config wires up its own loggers and nothing else, so every
+# bp_work_server log call -- request failures, admin actions, the warnings that
+# say the attribution clone has stopped advancing -- was written to a logger
+# with no handler and silently dropped in production. Configure the root logger
+# before uvicorn.run() installs its config: it sets disable_existing_loggers to
+# false and defines no root logger, so this survives.
+DEFAULT_LOG_LEVEL = "INFO"
+
+
+def configure_logging() -> None:
+    logging.basicConfig(
+        level=os.environ.get("BP_LOG_LEVEL", DEFAULT_LOG_LEVEL).upper(),
+        format="%(levelname)s: %(name)s: %(message)s",
+    )
 
 
 def main() -> None:
@@ -194,6 +210,7 @@ def main() -> None:
         os.environ["BP_WORK_DB"] = str(args.db)
         if args.users_db:
             os.environ["BP_WORK_USERS_DB"] = str(args.users_db)
+        configure_logging()
         app = create_app(store)
         uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)
         return

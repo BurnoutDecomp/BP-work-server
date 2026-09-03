@@ -371,3 +371,21 @@ def test_incremental_warm_against_a_real_clone(tmp_path):
     assert carried["contributors"]["contributors"][0]["name"] == "JeBobs"
     recomputed = json.loads(by_path["b5-decomp/src/World/Foo.cpp"]["payload_json"])
     assert recomputed["contributors"]["contributors"][0]["name"] == "Adriwin06"
+
+
+def test_a_clone_that_cannot_advance_warns(cloned_decomp, caplog):
+    """The freeze was invisible because nothing ever said so out loud.
+
+    A lock a live git might still own is left alone -- but the refresh must then
+    say the worktree is behind, or the next 41-day freeze is just as silent.
+    """
+    import logging
+
+    repo, clone = cloned_decomp
+    (clone / ".git" / "index.lock").write_text("")
+
+    with caplog.at_level(logging.WARNING, logger="bp_work_server.decomp"):
+        repo.force_refresh()
+
+    assert any("behind" in record.message for record in caplog.records)
+    assert repo.health()["behind"] == 1
