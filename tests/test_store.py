@@ -422,3 +422,72 @@ def test_expired_claim_returns_to_todo(tmp_path):
     by_id = {tu.id: tu for tu in tus}
     assert counts.todo == 3
     assert by_id["GameSource/B.cpp"].owner is None
+
+
+def test_covered_funcs_count_reviewed_functions_outside_done_tus(tmp_path):
+    """A reviewed function counts even when its TU is still blocked.
+
+    Counting whole done TUs instead dropped 1,401 reviewed functions on
+    production and understated the Functions ring by five points.
+    """
+    store = make_store(tmp_path)
+    with store.connect() as con:
+        # A.cpp is finished; B.cpp is blocked but one of its functions is reviewed.
+        con.execute("UPDATE tu SET status='done' WHERE id='GameSource/A.cpp'")
+        con.execute("UPDATE func SET status='reviewed' WHERE tu_id='GameSource/A.cpp'")
+        con.execute("UPDATE tu SET status='blocked' WHERE id='GameSource/B.cpp'")
+        con.execute("UPDATE func SET status='reviewed' WHERE name='B::Run'")
+
+    totals = store.dashboard_state()["totals"]
+
+    assert totals["done_tus"] == 1
+    assert totals["done_funcs"] == 3
+
+
+def test_contribution_counts_hold_the_last_complete_revision_while_warming(tmp_path):
+    """A new decomp commit must not blank every contributor to zero.
+
+    A warm writes its whole revision in one transaction at the end, so the new
+    revision has no rows until it finishes; reading it anyway showed an empty
+    roster for the length of the warm.
+    """
+    store = make_store(tmp_path)
+    store.create_worker("Adriwin", github_username="Adriwin06")
+    payload = json.dumps(
+        {
+            "latest": None,
+            "contributors": {
+                "basis": "surviving_lines",
+                "contributors": [
+                    {
+                        "name": "Adriwin",
+                        "email": "1+Adriwin06@users.noreply.github.com",
+                        "lines": 40,
+                    }
+                ],
+            },
+        }
+    )
+    with store.connect() as con:
+        con.execute("UPDATE tu SET status='done' WHERE id='GameSource/A.cpp'")
+        con.execute(
+            """
+            INSERT INTO attribution_cache(
+                scope, dest_path, function_name, repo_rev, payload_json, updated_at
+            )
+            VALUES('file', 'b5-decomp/src/GameSource/A.cpp', '', 'oldrev', ?, ?)
+            """,
+            (payload, iso()),
+        )
+
+    warmed = store.dashboard_state(attribution_repo_rev="oldrev")
+    by_name = {agent["name"]: agent for agent in warmed["agents"]}
+    assert by_name["Adriwin"]["contributed_tus"] == 1
+
+    # A newer tip with nothing cached yet keeps serving the previous pass, and
+    # says which revision the numbers actually came from.
+    warming = store.dashboard_state(attribution_repo_rev="newrev")
+    by_name = {agent["name"]: agent for agent in warming["agents"]}
+    assert by_name["Adriwin"]["contributed_tus"] == 1
+    assert warming["attribution_cache"]["repo_rev"] == "newrev"
+    assert warming["attribution_cache"]["counts_repo_rev"] == "oldrev"

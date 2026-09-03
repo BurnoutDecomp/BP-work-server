@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import subprocess
+import time
 
 import pytest
 
-from bp_work_server.decomp import DecompRepo
+from bp_work_server.decomp import STALE_LOCK_SECONDS, DecompRepo
 
 
 def _git(root, *args, env=None):
@@ -169,3 +170,59 @@ def test_git_reads_repository_metadata_as_utf8(monkeypatch, tmp_path):
     assert repo._git("rev-parse", "HEAD") == "revision\\n"
     assert received["encoding"] == "utf-8"
     assert received["errors"] == "replace"
+
+
+@pytest.fixture
+def cloned_decomp(tmp_path, decomp_repo):
+    """A clone of the fixture repo whose origin has advanced one commit ahead."""
+    upstream = decomp_repo.root
+    clone = tmp_path / "clone"
+    subprocess.run(
+        ["git", "clone", "-q", str(upstream), str(clone)], check=True, capture_output=True
+    )
+    (upstream / "src" / "World" / "Foo.cpp").write_text("// foo v4\n")
+    _git(upstream, "add", ".")
+    _commit(upstream, "Adriwin06", "newer work", when="2026-07-01T10:00:00")
+    repo = DecompRepo(root=clone, branch="main")
+    return repo, clone
+
+
+def test_refresh_advances_the_worktree(cloned_decomp):
+    repo, clone = cloned_decomp
+    repo.force_refresh()
+    assert (clone / "src" / "World" / "Foo.cpp").read_text() == "// foo v4\n"
+    assert repo.health()["behind"] == 0
+
+
+def test_refresh_clears_a_stale_index_lock(cloned_decomp):
+    """A killed git leaves index.lock behind; fetch keeps working, reset never does.
+
+    That pair silently froze production's attribution for 41 days, so the
+    refresh has to notice a lock nothing owns and get past it.
+    """
+    repo, clone = cloned_decomp
+    lock = clone / ".git" / "index.lock"
+    lock.write_text("")
+    import os
+
+    stale = time.time() - (STALE_LOCK_SECONDS + 60)
+    os.utime(lock, (stale, stale))
+
+    repo.force_refresh()
+
+    assert not lock.exists()
+    assert (clone / "src" / "World" / "Foo.cpp").read_text() == "// foo v4\n"
+    assert repo.health()["behind"] == 0
+
+
+def test_refresh_leaves_a_fresh_index_lock_alone(cloned_decomp):
+    """A lock a live git may still own is not ours to delete; report behind instead."""
+    repo, clone = cloned_decomp
+    lock = clone / ".git" / "index.lock"
+    lock.write_text("")
+
+    repo.force_refresh()
+
+    assert lock.exists()
+    assert (clone / "src" / "World" / "Foo.cpp").read_text() == "// foo v3\n"
+    assert repo.health()["behind"] == 1

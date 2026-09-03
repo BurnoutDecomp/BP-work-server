@@ -22,6 +22,13 @@ log = logging.getLogger(__name__)
 DASHBOARD_CACHE_TTL = float(os.environ.get("BP_DASHBOARD_CACHE_TTL", "15"))
 
 
+async def decomp_health(decomp: DecompRepo) -> dict:
+    """Clone freshness, or an empty dict for a repo object that cannot report it."""
+    if not hasattr(decomp, "health"):
+        return {}
+    return await asyncio.to_thread(decomp.health)
+
+
 def cached_dashboard_state(
     request: Request,
     store: WorkStore,
@@ -82,6 +89,10 @@ async def dashboard_state_response(
     repo_rev = await repo_revision(decomp)
     data = cached_dashboard_state(request, store, attribution_repo_rev=repo_rev)
     data["attribution_cache_warming"] = is_attribution_warming(request)
+    # Freshness of the clone every contribution number is blamed from. A clone
+    # that quietly stops advancing (a stale git lock did exactly that for 41
+    # days) is otherwise indistinguishable from contributors who stopped working.
+    data["decomp_repo"] = await decomp_health(decomp)
     if attribution_cache_needs_warm(data):
         schedule_attribution_warm(request, store, decomp, background_tasks)
         data["attribution_cache_warming"] = True

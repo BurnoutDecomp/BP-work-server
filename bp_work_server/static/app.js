@@ -273,6 +273,8 @@ async function refresh() {
 function render(data) {
   state.actorProfiles = data.actor_profiles || {};
   state.attributionCache = data.attribution_cache || {};
+  state.attributionWarming = Boolean(data.attribution_cache_warming);
+  state.decompRepo = data.decomp_repo || {};
   const totals = data.totals || {};
   const counts = data.counts || {};
   text("subtitle", `${fmtInt(totals.tus)} translation units · ${fmtInt(totals.funcs)} functions`);
@@ -314,12 +316,20 @@ function renderAgents(agents) {
   }
   const coverage = state.attributionCache || {};
   const fullContributionCoverage = Boolean(coverage.file_complete && coverage.function_complete);
-  const contributionLabel = fullContributionCoverage ? "contributed to" : "contributed to cached";
-  const coverageText = fullContributionCoverage
+  // The counts can be read from an earlier revision than the checked-out tip
+  // while a warm is in flight; then they are complete, just behind, and the
+  // note below says so instead of the per-row "cache x/y" caveat.
+  const countsFromOlderRev = Boolean(
+    coverage.counts_repo_rev && coverage.repo_rev && coverage.counts_repo_rev !== coverage.repo_rev,
+  );
+  const countsComplete = fullContributionCoverage || countsFromOlderRev;
+  const contributionLabel = countsComplete ? "contributed to" : "contributed to cached";
+  const coverageText = countsComplete
     ? ""
     : ` (cache ${fmtInt(coverage.file_cached || 0)}/${fmtInt(coverage.file_total || 0)} TUs, ${fmtInt(
         coverage.function_cached || 0,
       )}/${fmtInt(coverage.function_total || 0)} funcs)`;
+  renderAttributionNote(countsFromOlderRev);
   for (const agent of agents) {
     const row = div("agent-row");
     row.classList.toggle("agent-idle", !agent.has_active_work && Number(agent.total || 0) === 0);
@@ -356,6 +366,41 @@ function renderAgents(agents) {
     }
     root.appendChild(row);
   }
+}
+
+// Contribution counts read as a judgement on people, so the one thing the
+// roster must never do is show stale numbers as if they were current. A git
+// index.lock left by a killed process once froze the clone for 41 days: every
+// refresh "succeeded", HEAD never moved, and two thirds of one contributor's
+// work simply did not exist as far as this panel was concerned.
+function renderAttributionNote(countsFromOlderRev) {
+  const note = el("attributionNote");
+  if (!note) return;
+  const repo = state.decompRepo || {};
+  const behind = Number(repo.behind || 0);
+  const messages = [];
+  let warming = false;
+  if (repo.available === false) {
+    messages.push("No local decomp clone: contribution counts cannot be computed.");
+  } else if (behind > 0) {
+    messages.push(
+      `Attribution is ${fmtInt(behind)} commit${behind === 1 ? "" : "s"} behind ${
+        state.repo.name
+      }/${state.repo.ref} — the counts below miss that work.`,
+    );
+  }
+  if (countsFromOlderRev || state.attributionWarming) {
+    warming = true;
+    messages.push("Recomputing contributions for the newest commits; the counts below are from the previous pass.");
+  }
+  if (!messages.length) {
+    note.hidden = true;
+    note.textContent = "";
+    return;
+  }
+  note.hidden = false;
+  note.className = warming && behind <= 0 ? "attribution-note warming" : "attribution-note";
+  note.textContent = messages.join(" ");
 }
 
 function renderActiveWork(items) {

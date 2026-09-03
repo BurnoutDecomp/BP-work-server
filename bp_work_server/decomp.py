@@ -15,6 +15,7 @@ sibling, which also fixes the destination links that used to 404 on ``.h`` TUs.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import subprocess
@@ -49,6 +50,12 @@ _FIELD_SEP = "\x1f"
 # stripped to get the path relative to the clone root.
 _REPO_PREFIX = "b5-decomp/"
 
+# A `.git/index.lock` this old cannot belong to a live git: every command here
+# runs with a 30s timeout, so anything older is the corpse of a killed process.
+STALE_LOCK_SECONDS = 300
+
+log = logging.getLogger(__name__)
+
 
 class DecompRepo:
     """Reads per-file commit history from a local clone of the decomp source.
@@ -82,7 +89,11 @@ class DecompRepo:
         # that path clears this, so revision() need not spawn `git rev-parse` on
         # every call -- it is hit once per dashboard poll as the cache key.
         self._revision: str | None = None
+        self._revision_date: str | None = None
         self._refreshed_at = 0.0
+        # Commits fetched but not checked out; non-zero means a refresh could
+        # not advance the worktree and attribution is being read from a stale tree.
+        self._behind = 0
 
     @property
     def available(self) -> bool:
@@ -136,16 +147,93 @@ class DecompRepo:
     def _refresh_locked(self) -> None:
         """Fetch + hard-reset to the branch tip and clear memos. Caller holds the lock."""
         ok = self._git("fetch", "--quiet", "origin", self.branch)
-        if ok is not None:
-            self._git("reset", "--hard", f"origin/{self.branch}")
+        if ok is not None and self._reset_to_branch() is not None:
             self._cache.clear()
             self._blame_cache.clear()
             self._source_cache.clear()
             self._function_range_cache.clear()
             self._revision = None
+            self._revision_date = None
         # Record the attempt regardless so a flaky network does not make
         # every request pay the fetch cost.
         self._refreshed_at = time.time()
+        self._behind = self._count_behind()
+        if self._behind:
+            log.warning(
+                "decomp clone %s is %d commit(s) behind origin/%s after a refresh; "
+                "contribution attribution will be computed against a stale tree",
+                self.root,
+                self._behind,
+                self.branch,
+            )
+
+    def _reset_to_branch(self) -> str | None:
+        """Hard-reset onto the fetched branch tip, clearing a stale index lock.
+
+        A git killed mid-command leaves a zero-byte ``.git/index.lock`` behind.
+        ``fetch`` does not need that lock, so it keeps succeeding while every
+        ``reset`` fails -- which froze production for 41 days: refreshes looked
+        healthy, HEAD never moved, and every contribution number on the
+        dashboard stayed pinned to the commit the lock was born at. Recovering
+        here is safe because this clone is a read-only mirror: nothing but this
+        refresh ever writes to its worktree or index.
+        """
+        out = self._git("reset", "--hard", f"origin/{self.branch}")
+        if out is not None:
+            return out
+        lock = self.root / ".git" / "index.lock"
+        try:
+            stale = lock.is_file() and time.time() - lock.stat().st_mtime > STALE_LOCK_SECONDS
+        except OSError:
+            stale = False
+        if not stale:
+            log.warning("decomp clone %s failed to reset onto origin/%s", self.root, self.branch)
+            return None
+        log.warning("clearing stale git index lock %s that was blocking the decomp refresh", lock)
+        try:
+            lock.unlink()
+        except OSError:
+            log.exception("could not remove stale git index lock %s", lock)
+            return None
+        out = self._git("reset", "--hard", f"origin/{self.branch}")
+        if out is None:
+            log.error(
+                "decomp clone %s still cannot reset onto origin/%s after clearing the lock",
+                self.root,
+                self.branch,
+            )
+        return out
+
+    def _count_behind(self) -> int:
+        """How many fetched commits the checked-out tree is missing (0 when current)."""
+        out = self._git("rev-list", "--count", f"HEAD..origin/{self.branch}")
+        text = (out or "").strip()
+        return int(text) if text.isdigit() else 0
+
+    def health(self) -> dict[str, Any]:
+        """Freshness of the clone the attribution numbers are computed from.
+
+        Surfaced on the dashboard so a clone that stops advancing is visible as
+        a stale number rather than as numbers that merely look low.
+        """
+        if not self.available:
+            return {"available": False, "revision": None, "revision_date": None, "behind": 0}
+        revision = self.revision()
+        with self._lock:
+            date = self._revision_date
+        if date is None:
+            # Memoised beside the HEAD sha: only a refresh moves either, and it
+            # clears both. Without this the dashboard spawned a `git log` per
+            # poll, per viewer.
+            date = (self._git("log", "-1", "--format=%aI", "HEAD") or "").strip() or None
+            with self._lock:
+                self._revision_date = date
+        return {
+            "available": True,
+            "revision": revision,
+            "revision_date": date,
+            "behind": self._behind,
+        }
 
     @staticmethod
     def _repo_relative(dest_path: str) -> str:

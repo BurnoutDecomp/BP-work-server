@@ -1033,13 +1033,14 @@ class WorkStore:
                 counts[row["status"]] = row["c"]
             total_tus = sum(counts.values())
             total_funcs = con.execute("SELECT COUNT(*) FROM func").fetchone()[0]
+            # A function counts as covered when the ledger says *it* is reviewed,
+            # not when its whole TU happens to be finished. Counting by TU threw
+            # away every reviewed function sitting in a TU that is still blocked
+            # or open -- 1,401 of them on production, a five-point understatement
+            # of the ring -- while adding nothing, because status.json never
+            # marks a TU done while one of its functions is still todo.
             done_funcs = con.execute(
-                """
-                SELECT COUNT(*)
-                FROM func f
-                JOIN tu t ON t.id=f.tu_id
-                WHERE t.status='done'
-                """
+                "SELECT COUNT(*) FROM func WHERE status!='todo'"
             ).fetchone()[0]
             linked_tus = con.execute("SELECT COUNT(*) FROM tu WHERE linked=1").fetchone()[0]
 
@@ -1103,12 +1104,16 @@ class WorkStore:
                 if actor:
                     completed_funcs_by_agent[actor] += row["completed"]
             attribution_cache_coverage = self._attribution_cache_coverage(con, attribution_repo_rev)
+            counts_repo_rev = self._attribution_counts_rev(
+                con, attribution_repo_rev, attribution_cache_coverage
+            )
+            attribution_cache_coverage["counts_repo_rev"] = counts_repo_rev
             (
                 contributed_tus_by_agent,
                 contributed_funcs_by_agent,
                 primary_tus_by_agent,
                 primary_funcs_by_agent,
-            ) = self._contribution_counts_from_cache(con, aliases, attribution_repo_rev)
+            ) = self._contribution_counts_from_cache(con, aliases, counts_repo_rev)
             last_activity_by_agent: dict[str, str] = {}
             for row in con.execute(
                 f"""
@@ -2247,6 +2252,35 @@ class WorkStore:
             int(username[:1].isupper()),
             -sum(1 for ch in username if ch.isupper()),
         )
+
+    def _attribution_counts_rev(
+        self, con: sqlite3.Connection, repo_rev: str | None, coverage: dict[str, Any]
+    ) -> str | None:
+        """The cached revision the per-agent contribution counts should be read from.
+
+        A warm collects every blame first and writes the whole revision in one
+        transaction at the end, so from the moment a new decomp commit lands
+        until that warm finishes the current revision has no rows at all.
+        Reading it regardless blanked every agent's contribution counts to 0 on
+        the live dashboard for the length of the warm; falling back to the last
+        fully-warmed revision shows the previous truth, a few commits stale,
+        instead of a false one.
+        """
+        if not repo_rev:
+            return None
+        if coverage.get("file_complete") and coverage.get("function_complete"):
+            return repo_rev
+        row = con.execute(
+            """
+            SELECT repo_rev
+            FROM attribution_cache
+            WHERE scope='file'
+            GROUP BY repo_rev
+            ORDER BY COUNT(*) DESC, MAX(updated_at) DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        return (row[0] if row else None) or repo_rev
 
     def _contribution_counts_from_cache(
         self,

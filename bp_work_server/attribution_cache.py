@@ -136,6 +136,15 @@ def warm_attribution_cache(
             """,
             rows,
         )
+        if include_files and include_functions:
+            # A full warm rewrites every cacheable target, so anything left under
+            # another revision is a TU or function that no longer qualifies. The
+            # per-row DELETE above only reaches keys this warm rewrote, so those
+            # orphans accumulated forever -- production carried six superseded
+            # revisions, 2,876 dead function rows in the newest one alone. Prune
+            # only after a complete warm: a --files-only pass would otherwise
+            # throw away the function half of the previous revision.
+            con.execute("DELETE FROM attribution_cache WHERE repo_rev != ?", (repo_rev,))
 
     return AttributionCacheWarmResult(
         repo_rev=repo_rev,
