@@ -19,9 +19,17 @@ from bp_work_server.schema import (
     DB_BUSY_TIMEOUT_MS,
     DURABLE_IMPORT_STATUSES,
     TU_STATUSES,
+    UNIDENTIFIED_SOURCE,
+    UNIDENTIFIED_TU_PREFIX,
     USERS_SCHEMA,
     WORK_SCHEMA,
 )
+
+# Reused wherever a query means "translation units", which is everywhere except
+# the function totals. Kept as one string so a new call site cannot quietly
+# forget it and start counting the synthetic bucket as real work.
+NOT_UNIDENTIFIED = f"(tu.source IS NULL OR tu.source != '{UNIDENTIFIED_SOURCE}')"
+NOT_UNIDENTIFIED_BARE = f"(source IS NULL OR source != '{UNIDENTIFIED_SOURCE}')"
 
 
 SCHEMA = WORK_SCHEMA
@@ -214,6 +222,11 @@ class WorkStore:
         # Git contribution attribution can never resolve them.
         class_homes_path = progress / "class_homes.json"
 
+        # Functions in the shipped binary that carry no name (tools/work/
+        # build_unidentified.py). Optional: a workflow checkout without it simply
+        # has no unidentified bucket, and the previous rows are pruned.
+        unidentified_path = progress / "unidentified.json"
+
         tu_index = json.loads(tu_index_path.read_text(encoding="utf-8"))
         status = json.loads(status_path.read_text(encoding="utf-8")) if status_path.exists() else {}
         deps = json.loads(deps_path.read_text(encoding="utf-8")) if deps_path.exists() else []
@@ -221,6 +234,11 @@ class WorkStore:
         class_homes = (
             json.loads(class_homes_path.read_text(encoding="utf-8"))
             if class_homes_path.exists()
+            else {}
+        )
+        unidentified = (
+            json.loads(unidentified_path.read_text(encoding="utf-8"))
+            if unidentified_path.exists()
             else {}
         )
         if not isinstance(tu_index, dict) or not tu_index:
@@ -246,10 +264,23 @@ class WorkStore:
                 CREATE TEMP TABLE current_import_func(name TEXT PRIMARY KEY);
                 """
             )
+            unidentified_tu_id = (
+                f"{UNIDENTIFIED_TU_PREFIX}{unidentified.get('binary')}"
+                if unidentified.get("functions")
+                else None
+            )
             con.executemany(
                 "INSERT INTO current_import_tu(id) VALUES(?)",
                 ((tu_id,) for tu_id in tu_index),
             )
+            if unidentified_tu_id:
+                con.execute(
+                    "INSERT INTO current_import_tu(id) VALUES(?)", (unidentified_tu_id,)
+                )
+                con.executemany(
+                    "INSERT OR IGNORE INTO current_import_func(name) VALUES(?)",
+                    ((row["name"],) for row in unidentified["functions"]),
+                )
             con.executemany(
                 "INSERT OR IGNORE INTO current_import_func(name) VALUES(?)",
                 (
@@ -297,6 +328,9 @@ class WorkStore:
                 "DROP TABLE current_import_func; DROP TABLE current_import_tu;"
             )
 
+            unidentified_count = self._restore_unidentified(
+                con, unidentified_tu_id, unidentified
+            )
             status_rows = self._restore_status(con, status)
             dep_count = self._restore_deps(con, deps)
             goal_count = self._restore_goals(con, goals)
@@ -309,7 +343,45 @@ class WorkStore:
                 "goals": goal_count,
                 "status_rows": status_rows,
                 "linked": linked_count,
+                "unidentified": unidentified_count,
             }
+
+    def _restore_unidentified(
+        self,
+        con: sqlite3.Connection,
+        tu_id: str | None,
+        payload: dict[str, Any],
+    ) -> int:
+        """Seed the synthetic bucket holding the binary's unnamed functions.
+
+        One TU, never claimable, excluded from every translation-unit count; its
+        functions are ordinary `todo` rows so they land in the function totals
+        and the explorer like anything else. Names are IDA's placeholders
+        (`sub_<addr>`), which is what someone would search for.
+        """
+        if not tu_id:
+            return 0
+        functions = payload.get("functions") or []
+        con.execute(
+            """
+            INSERT INTO tu(id, source, status, n_funcs, n_decfigs, dest_path, updated_at)
+            VALUES(?, ?, 'todo', ?, 0, NULL, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              source=excluded.source,
+              n_funcs=excluded.n_funcs,
+              dest_path=NULL
+            """,
+            (tu_id, UNIDENTIFIED_SOURCE, len(functions), iso()),
+        )
+        con.executemany(
+            """
+            INSERT INTO func(name, tu_id, status)
+            VALUES(?, ?, 'todo')
+            ON CONFLICT(name) DO UPDATE SET tu_id=excluded.tu_id
+            """,
+            ((row["name"], tu_id) for row in functions),
+        )
+        return len(functions)
 
     def _restore_linked(self, con: sqlite3.Connection, workflow_root: str | Path) -> int:
         """Flag every TU whose destination file the game build actually compiles.
@@ -346,6 +418,12 @@ class WorkStore:
             row = con.execute("SELECT * FROM tu WHERE id=?", (tu_id,)).fetchone()
             if not row:
                 raise KeyError(f"unknown TU: {tu_id}")
+            if row["source"] == UNIDENTIFIED_SOURCE:
+                raise ValueError(
+                    f"{tu_id} is the unidentified-function bucket, not claimable work: "
+                    "these are unnamed functions in the shipped binary, identified in "
+                    "IDA rather than through a claim"
+                )
 
             if row["status"] == "in_progress" and row["owner"] == agent:
                 con.execute(
@@ -1029,10 +1107,24 @@ class WorkStore:
         with self.connect() as con:
             self._expire_leases(con)
             counts = {key: 0 for key in TU_STATUSES}
-            for row in con.execute("SELECT status, COUNT(*) AS c FROM tu GROUP BY status"):
+            for row in con.execute(
+                f"SELECT status, COUNT(*) AS c FROM tu "
+                f"WHERE {NOT_UNIDENTIFIED_BARE} GROUP BY status"
+            ):
                 counts[row["status"]] = row["c"]
             total_tus = sum(counts.values())
+            # The function totals DO include the unidentified bucket: it is real
+            # code in the shipped binary, and leaving it out measured completion
+            # against the part of the executable that had already been named.
             total_funcs = con.execute("SELECT COUNT(*) FROM func").fetchone()[0]
+            unidentified_funcs = con.execute(
+                f"""
+                SELECT COUNT(*)
+                FROM func f
+                JOIN tu ON tu.id=f.tu_id
+                WHERE NOT {NOT_UNIDENTIFIED}
+                """
+            ).fetchone()[0]
             # A function counts as covered when the ledger says *it* is reviewed,
             # not when its whole TU happens to be finished. Counting by TU threw
             # away every reviewed function sitting in a TU that is still blocked
@@ -1042,7 +1134,9 @@ class WorkStore:
             done_funcs = con.execute(
                 "SELECT COUNT(*) FROM func WHERE status!='todo'"
             ).fetchone()[0]
-            linked_tus = con.execute("SELECT COUNT(*) FROM tu WHERE linked=1").fetchone()[0]
+            linked_tus = con.execute(
+                f"SELECT COUNT(*) FROM tu WHERE linked=1 AND {NOT_UNIDENTIFIED_BARE}"
+            ).fetchone()[0]
 
             active_work = [
                 self._dashboard_tu(row)
@@ -1260,6 +1354,8 @@ class WorkStore:
                     "funcs": total_funcs,
                     "done_tus": counts["done"],
                     "done_funcs": done_funcs,
+                    "unidentified_funcs": unidentified_funcs,
+                    "identified_funcs": total_funcs - unidentified_funcs,
                     "linked_tus": linked_tus,
                     "tu_percent": self._percent(counts["done"], total_tus),
                     "func_percent": self._percent(done_funcs, total_funcs),
@@ -1770,11 +1866,14 @@ class WorkStore:
         active_goal = goal or self._get_meta(con, "active_goal")
         scope = self._goal_scope(con, active_goal) if active_goal else None
 
+        # The unidentified bucket is todo forever and has no dependency edges, so
+        # it would rank arbitrarily and sit at the head of a queue it can never
+        # leave. Naming a function happens in IDA, not under a TU lease.
         rows = con.execute(
-            """
+            f"""
             SELECT id, source, n_funcs, n_decfigs, dest_path
             FROM tu
-            WHERE status='todo'
+            WHERE status='todo' AND {NOT_UNIDENTIFIED_BARE}
             """
         ).fetchall()
 
@@ -2858,10 +2957,10 @@ class WorkStore:
 
     def _backfill_missing_dest_paths(self, con: sqlite3.Connection) -> None:
         for row in con.execute(
-            """
+            f"""
             SELECT id, source
             FROM tu
-            WHERE dest_path IS NULL OR dest_path=''
+            WHERE (dest_path IS NULL OR dest_path='') AND {NOT_UNIDENTIFIED_BARE}
             """
         ):
             dest_path = self._dest_for(row["id"], row["source"])

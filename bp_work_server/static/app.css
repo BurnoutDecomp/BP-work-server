@@ -1240,6 +1240,16 @@ tbody tr:hover td {
    not blamed from the current decomp tip -- a warm in flight, or a clone that
    stopped advancing. Contribution counts look like a judgement on people, so
    they must never be silently stale. */
+/* Second line under a ring's count: the caveat that makes the number honest
+   (e.g. how much of the Functions denominator nobody has named yet). */
+.metric-note {
+  display: block;
+  margin-top: 2px;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .attribution-note {
   margin: 0;
   padding: 8px 14px;

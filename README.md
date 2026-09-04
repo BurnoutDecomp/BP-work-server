@@ -29,6 +29,12 @@ This repo contains an MVP server:
   attributed via `progress/class_homes.json`; the dashboard shows only
   GitHub-verifiable data (git-reconstructed events are hidden by default,
   `BP_HIDE_RECONSTRUCTED=0` to reveal).
+- Unidentified-function accounting: `progress/unidentified.json` lists the functions
+  IDA found in the shipped binary that carry no name. They join the **function**
+  totals (the denominator is the binary, not the named part of it) under one
+  synthetic `unidentified:` TU, and are excluded from every *translation unit*
+  count, from `next`, and from claiming — an unnamed function is not a TU, and it
+  is identified in IDA rather than under a lease.
 - File-tree entries and TU destinations link straight to the file on GitHub.
 - Burnout Paradise themed dashboard (drop a `logo.png` into the static folder).
 - Small stdlib HTTP client for `work.py` integration.

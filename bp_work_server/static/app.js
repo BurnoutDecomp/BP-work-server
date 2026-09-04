@@ -286,6 +286,16 @@ function render(data) {
   setRing("exeRing", totals.linked_percent);
   text("tuCount", `${fmtInt(totals.done_tus)} / ${fmtInt(totals.tus)} done`);
   text("fnCount", `${fmtInt(totals.done_funcs)} / ${fmtInt(totals.funcs)} covered`);
+  // Say why the denominator is bigger than the count of functions anyone has
+  // named. Without this the ring just looks lower than it used to for no reason.
+  const unidentified = Number(totals.unidentified_funcs || 0);
+  const unidentifiedNote = el("fnUnidentified");
+  if (unidentifiedNote) {
+    unidentifiedNote.hidden = unidentified <= 0;
+    unidentifiedNote.textContent = unidentified
+      ? `includes ${fmtInt(unidentified)} not yet identified in the binary`
+      : "";
+  }
   text("exeCount", `${fmtInt(totals.linked_tus)} / ${fmtInt(totals.tus)} linked`);
   text("activeGoal", data.active_goal || "Whole program");
   text("serverTime", fmtTime(data.server_time));

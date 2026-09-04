@@ -491,3 +491,141 @@ def test_contribution_counts_hold_the_last_complete_revision_while_warming(tmp_p
     assert by_name["Adriwin"]["contributed_tus"] == 1
     assert warming["attribution_cache"]["repo_rev"] == "newrev"
     assert warming["attribution_cache"]["counts_repo_rev"] == "oldrev"
+
+
+def _workflow_with_unidentified(tmp_path, functions=None):
+    """A minimal workflow checkout carrying an unidentified-function table."""
+    progress = tmp_path / "progress"
+    progress.mkdir(parents=True, exist_ok=True)
+    (progress / "tu_index.json").write_text(
+        json.dumps(
+            {
+                "GameSource/A.cpp": {
+                    "source": "decfigs",
+                    "n_funcs": 2,
+                    "n_decfigs": 2,
+                    "functions": ["A::Run", "A::Stop"],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (progress / "status.json").write_text(
+        json.dumps({"tu": {"GameSource/A.cpp": {"status": "done"}},
+                    "func": {"A::Run": {"status": "reviewed"},
+                             "A::Stop": {"status": "reviewed"}}}),
+        encoding="utf-8",
+    )
+    if functions is None:
+        functions = [
+            {"addr": "0x82000000", "name": "sub_82000000", "insns": 40},
+            {"addr": "0x82000100", "name": "sub_82000100", "insns": 12},
+            {"addr": "0x82000200", "name": "sub_82000200", "insns": 7},
+        ]
+    (progress / "unidentified.json").write_text(
+        json.dumps({"binary": "TEST.XEX", "exported": 5, "identified": 2,
+                    "thunks_skipped": 1, "instructions": 59, "functions": functions}),
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def test_unidentified_functions_join_the_function_totals(tmp_path):
+    """The denominator is the binary, not the part of it that has names.
+
+    Leaving unnamed functions out measured completion against work already
+    identified: on production 2,533 functions -- ~6% of the executable -- were
+    neither done nor todo, just absent.
+    """
+    store = WorkStore(tmp_path / "work.sqlite3")
+    store.migrate()
+    result = store.import_workflow(_workflow_with_unidentified(tmp_path / "wf"), reset=True)
+    assert result["unidentified"] == 3
+
+    totals = store.dashboard_state()["totals"]
+    assert totals["identified_funcs"] == 2
+    assert totals["unidentified_funcs"] == 3
+    assert totals["funcs"] == 5
+    assert totals["done_funcs"] == 2
+    assert totals["func_percent"] == 40.0
+
+
+def test_unidentified_bucket_is_not_a_translation_unit(tmp_path):
+    """It exists only because func.tu_id is NOT NULL; counting it would be a
+    second lie in the opposite direction."""
+    store = WorkStore(tmp_path / "work.sqlite3")
+    store.migrate()
+    store.import_workflow(_workflow_with_unidentified(tmp_path / "wf"), reset=True)
+
+    state = store.dashboard_state()
+    assert state["totals"]["tus"] == 1
+    assert state["counts"]["todo"] == 0
+    assert state["counts"]["done"] == 1
+    with store.connect() as con:
+        assert con.execute("SELECT COUNT(*) FROM tu").fetchone()[0] == 2  # bucket is present
+
+
+def test_unidentified_bucket_is_never_queued_or_claimable(tmp_path):
+    store = WorkStore(tmp_path / "work.sqlite3")
+    store.migrate()
+    store.import_workflow(_workflow_with_unidentified(tmp_path / "wf"), reset=True)
+
+    _goal, items = store.next_tus(n=50)
+    assert all(not item.id.startswith("unidentified:") for item in items)
+    with pytest.raises(ValueError, match="not claimable"):
+        store.claim("unidentified:TEST.XEX", "someone")
+
+
+def test_unidentified_bucket_keeps_a_null_destination(tmp_path):
+    """A synthesised path would send Git attribution hunting a file that cannot exist."""
+    store = WorkStore(tmp_path / "work.sqlite3")
+    store.migrate()
+    store.import_workflow(_workflow_with_unidentified(tmp_path / "wf"), reset=True)
+    store.migrate()  # backfill pass runs here
+
+    with store.connect() as con:
+        dest = con.execute(
+            "SELECT dest_path FROM tu WHERE id='unidentified:TEST.XEX'"
+        ).fetchone()["dest_path"]
+    assert dest is None
+
+
+def test_naming_a_function_removes_it_from_the_unidentified_bucket(tmp_path):
+    """The count has to fall as work happens, or it is just another frozen number."""
+    workflow = _workflow_with_unidentified(tmp_path / "wf")
+    store = WorkStore(tmp_path / "work.sqlite3")
+    store.migrate()
+    store.import_workflow(workflow, reset=True)
+    assert store.dashboard_state()["totals"]["unidentified_funcs"] == 3
+
+    # sub_82000100 gets identified: it leaves unidentified.json on the next build.
+    (workflow / "progress" / "unidentified.json").write_text(
+        json.dumps({"binary": "TEST.XEX", "functions": [
+            {"addr": "0x82000000", "name": "sub_82000000", "insns": 40},
+            {"addr": "0x82000200", "name": "sub_82000200", "insns": 7},
+        ]}),
+        encoding="utf-8",
+    )
+    store.import_workflow(workflow)
+
+    totals = store.dashboard_state()["totals"]
+    assert totals["unidentified_funcs"] == 2
+    assert totals["funcs"] == 4
+    with store.connect() as con:
+        assert con.execute(
+            "SELECT COUNT(*) FROM func WHERE name='sub_82000100'"
+        ).fetchone()[0] == 0
+
+
+def test_workflow_without_the_table_has_no_bucket(tmp_path):
+    """An older checkout, or one built on a machine with no IDA export."""
+    workflow = _workflow_with_unidentified(tmp_path / "wf")
+    (workflow / "progress" / "unidentified.json").unlink()
+    store = WorkStore(tmp_path / "work.sqlite3")
+    store.migrate()
+    result = store.import_workflow(workflow, reset=True)
+
+    assert result["unidentified"] == 0
+    totals = store.dashboard_state()["totals"]
+    assert totals["funcs"] == 2
+    assert totals["unidentified_funcs"] == 0

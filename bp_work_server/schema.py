@@ -7,6 +7,18 @@ TU_STATUSES = {"todo", "in_progress", "compiled", "done", "blocked"}
 DURABLE_IMPORT_STATUSES = {"done", "blocked"}
 DB_BUSY_TIMEOUT_MS = 30_000
 
+# Functions IDA found in the shipped binary that carry no name, so neither the
+# DWARF file nor the RTTI class that defines every other TU can claim them. They
+# are real code -- ~6% of the executable -- and were absent from the totals
+# entirely: not done, not todo, simply outside the denominator. They live under
+# one synthetic TU so `func.tu_id` still resolves, and that TU is excluded from
+# every *translation unit* count: an unnamed function is not a translation unit,
+# and inflating the TU total with one row per function would be a second lie in
+# the opposite direction. Its functions do count toward the function totals,
+# because the binary is the binary.
+UNIDENTIFIED_SOURCE = "unidentified"
+UNIDENTIFIED_TU_PREFIX = "unidentified:"
+
 
 WORK_SCHEMA = """
 PRAGMA foreign_keys = ON;
