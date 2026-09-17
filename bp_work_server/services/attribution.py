@@ -209,7 +209,10 @@ def attribute_identity(
             return author, profiles.get(author) or login
         if candidate == name:
             return cleaned, profiles.get(cleaned) or login
-    fallback = login or (email.strip() or None)
+    # Deliberately no email fallback: an address is not a display identity, and
+    # an unknown one belongs to someone whose private email must not be published
+    # on the dashboard. An unattributable line is left unattributed instead.
+    fallback = login or None
     return fallback, profiles.get(fallback or "") or login
 
 

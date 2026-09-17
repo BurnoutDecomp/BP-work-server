@@ -70,6 +70,11 @@ def login_from_noreply_email(email: str | None) -> str | None:
     return local.split("+", 1)[-1] or None
 
 
+def _looks_like_email(value: str) -> bool:
+    """Whether a git identity string is an email address rather than a name."""
+    return "@" in value and " " not in value
+
+
 class WorkStore:
     def __init__(self, db_path: str | Path, users_db_path: str | Path | None = None):
         self.db_path = Path(db_path)
@@ -1043,7 +1048,43 @@ class WorkStore:
             return None
         if aliases is None:
             aliases, _profiles = self.actor_maps()
-        return aliases.get(cleaned.lower(), cleaned)
+        known = aliases.get(cleaned.lower())
+        if known:
+            return known
+        # An unaliased email address is not an identity. Surfacing one would both
+        # split a contributor off from their own worker account and publish a
+        # private address on the dashboard, so drop it instead.
+        if _looks_like_email(cleaned):
+            return None
+        return cleaned
+
+    def identity_actor(
+        self,
+        name: str | None,
+        email: str | None,
+        aliases: dict[str, str] | None = None,
+    ) -> str | None:
+        """Resolve a git ``name <email>`` pair to one canonical agent identity.
+
+        The order is what matters: an email (or the GitHub login encoded in a
+        noreply address) is honoured only when it is a *known* alias of a worker,
+        and is otherwise discarded in favour of the commit's author name. Without
+        that precedence a single commit made with an unregistered email -- a stale
+        ``user.email`` in someone's clone -- forks its author into a second agent
+        labelled with their private address. Mirrors
+        ``services.attribution.attribute_identity``.
+        """
+        if aliases is None:
+            aliases, _profiles = self.actor_maps()
+        cleaned_email = str(email or "").strip()
+        for candidate in (login_from_noreply_email(cleaned_email), cleaned_email):
+            cleaned = str(candidate or "").strip()
+            if not cleaned:
+                continue
+            actor = aliases.get(cleaned.lower())
+            if actor:
+                return actor
+        return self.canonical_actor(name, aliases)
 
     def backfilled_event_targets(self) -> dict[str, str | None]:
         """Map each backfilled event's TU id to its destination file path.
@@ -2426,15 +2467,7 @@ class WorkStore:
             return {}, {}, {}, {}
 
         def contributor_actor(contributor: dict[str, Any]) -> str | None:
-            email = str(contributor.get("email") or "").strip()
-            for candidate in (login_from_noreply_email(email), email, contributor.get("name")):
-                cleaned = str(candidate or "").strip()
-                if not cleaned:
-                    continue
-                actor = self.canonical_actor(cleaned, aliases)
-                if actor:
-                    return actor
-            return None
+            return self.identity_actor(contributor.get("name"), contributor.get("email"), aliases)
 
         def primary_actor(contributors: list[dict[str, Any]]) -> str | None:
             best: tuple[int, dict[str, Any]] | None = None
@@ -2503,15 +2536,7 @@ class WorkStore:
     def _profile_contributor_actor(
         self, contributor: dict[str, Any], aliases: dict[str, str]
     ) -> str | None:
-        email = str(contributor.get("email") or "").strip()
-        for candidate in (login_from_noreply_email(email), email, contributor.get("name")):
-            cleaned = str(candidate or "").strip()
-            if not cleaned:
-                continue
-            actor = self.canonical_actor(cleaned, aliases)
-            if actor:
-                return actor
-        return None
+        return self.identity_actor(contributor.get("name"), contributor.get("email"), aliases)
 
     def _profile_file_contributors(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         contributors = payload.get("contributors") or {}

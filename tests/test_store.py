@@ -166,6 +166,57 @@ def test_actor_maps_include_known_git_identity_defaults(tmp_path):
     assert store.canonical_actor("Nathan V.") == "Derneuere"
 
 
+def test_identity_actor_prefers_author_name_over_unknown_email(tmp_path):
+    store = make_store(tmp_path)
+    store.create_worker("Adriwin", github_username="Adriwin06")
+    store.create_worker("Derneuere")
+
+    # A commit made with a personal email that no worker claims must still credit
+    # the author by name -- not fork them into a second agent labelled by address.
+    assert store.identity_actor("Adriwin", "someone.private@example.com") == "Adriwin"
+    assert (
+        store.identity_actor("Adriwin", "76881633+Adriwin06@users.noreply.github.com") == "Adriwin"
+    )
+    # A known email alias still wins over the git name it was registered against.
+    assert store.identity_actor("Niaz", "tigrexspalterlp@gmail.com") == "Derneuere"
+    # With no usable name there is nothing to show, and an address is not a name.
+    assert store.identity_actor("", "someone.private@example.com") is None
+    assert store.canonical_actor("someone.private@example.com") is None
+
+
+def test_dashboard_never_lists_an_email_as_an_agent(tmp_path):
+    store = make_store(tmp_path)
+    store.create_worker("Adriwin", github_username="Adriwin06")
+    payload = {
+        "contributors": {
+            "contributors": [
+                {
+                    "name": "Adriwin",
+                    "email": "76881633+Adriwin06@users.noreply.github.com",
+                    "lines": 40,
+                },
+                {"name": "Adriwin", "email": "someone.private@example.com", "lines": 12},
+            ]
+        }
+    }
+    with store.connect() as con:
+        con.execute("UPDATE tu SET status='done' WHERE id='GameSource/A.cpp'")
+        con.execute(
+            """
+            INSERT INTO attribution_cache(scope, dest_path, function_name, repo_rev,
+                                          payload_json, updated_at)
+            VALUES('file', ?, '', 'rev1', ?, ?)
+            """,
+            ("b5-decomp/src/GameSource/A.cpp", json.dumps(payload), iso()),
+        )
+
+    names = {agent["name"] for agent in store.dashboard_state("rev1")["agents"]}
+
+    assert "someone.private@example.com" not in names
+    assert not any("@" in name for name in names)
+    assert "Adriwin" in names
+
+
 def test_dashboard_hides_lease_housekeeping_events(tmp_path):
     store = make_store(tmp_path)
     with store.connect() as con:
