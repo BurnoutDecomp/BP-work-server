@@ -39,7 +39,7 @@
       href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/app.css?v=27" />
+    <link rel="stylesheet" href="/static/app.css?v=28" />
   </head>
   <body>
     <div class="bp-bg" aria-hidden="true">
@@ -183,51 +183,6 @@
             <div class="chip compiled"><span id="compiledCount">0</span><label>Compiled</label></div>
             <div class="chip done"><span id="doneCount">0</span><label>Done</label></div>
             <div class="chip blocked"><span id="blockedCount">0</span><label>Blocked</label></div>
-          </div>
-        </section>
-
-        <!-- Verified vs Console: the one number nobody declared, with its history and its
-             three evidence tiers. Its own band, so the ring row above stays compact. -->
-        <section class="card verified-panel" id="verifiedCard" aria-label="Verified vs console">
-          <div class="vp-head">
-            <div>
-              <span class="label">Verified vs Console</span>
-              <div class="metric-total" id="verifiedCount">&middot;</div>
-              <p class="vp-intro">Every function of the console image, by what the static audits found when they compared our reconstruction with the console's own code. Rebuilt by CI on every commit; nothing here is declared by hand.</p>
-            </div>
-            <div class="vp-actions" role="group" aria-label="Open the evidence">
-              <button type="button" class="filter" data-open="audit">Glue audit</button>
-              <button type="button" class="filter" data-open="stubs">Stub inventory</button>
-              <button type="button" class="filter" data-open="asm">Instruction shape</button>
-            </div>
-          </div>
-          <div class="vp-grid">
-            <div class="ring big" id="verifiedRing">
-              <svg viewBox="0 0 120 120" aria-hidden="true">
-                <circle class="ring-track" cx="60" cy="60" r="52" />
-                <g class="ring-segments"></g>
-              </svg>
-              <div class="ring-label">
-                <strong id="verifiedPercent">0%</strong>
-                <span>verified</span>
-              </div>
-            </div>
-            <div class="vp-legend">
-              <div class="legend" id="verifiedLegend"></div>
-              <small class="vp-hint">Click a state to open it in Console Evidence.</small>
-            </div>
-            <div class="vp-side">
-              <div class="vp-block">
-                <span class="label">Verified over audited commits</span>
-                <div id="verifiedHistory" class="vp-history"></div>
-                <small id="verifiedTrend" class="metric-note" hidden></small>
-              </div>
-              <div class="vp-block">
-                <span class="label">Instruction shape of the built exe</span>
-                <div id="verifiedShape" class="vp-shape"></div>
-                <small id="verifiedAsm" class="metric-note" hidden></small>
-              </div>
-            </div>
           </div>
         </section>
 
@@ -542,6 +497,6 @@
       </aside>
     </div>
 
-    <script src="/static/app.js?v=23" defer></script>
+    <script src="/static/app.js?v=24" defer></script>
   </body>
 </html>

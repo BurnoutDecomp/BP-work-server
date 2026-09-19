@@ -2803,19 +2803,21 @@ function renderVerifiedHistory(history) {
   if (!host) return;
   clearNode(host);
   const points = (history || []).filter((p) => p.paired != null).slice(-60);
-  const ns = "http://www.w3.org/2000/svg";
-  const W = 320, H = 72, padL = 30, padR = 8, padT = 8, padB = 14;
-  const svg = document.createElementNS(ns, "svg");
-  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  svg.setAttribute("preserveAspectRatio", "none");
+  state.verifiedHistory = history;
   if (points.length < 2) {
-    const t = document.createElementNS(ns, "text");
-    t.setAttribute("x", "0"); t.setAttribute("y", "40"); t.setAttribute("class", "vh-empty");
-    t.textContent = points.length ? "one audited commit so far; the line starts with the next" : "no audited commits yet";
-    svg.appendChild(t);
-    host.appendChild(svg);
+    const p = points[0];
+    host.appendChild(div("muted-text vh-empty", points.length
+      ? `One audited commit so far (b5 ${String(p.commit).slice(0, 10)}: ${Number(p.verified_percent || 0).toFixed(1)}% verified). The line starts with the next one.`
+      : "No audited commits yet."));
     return;
   }
+  // the viewBox is the box's real pixel width: no stretching of text or dots
+  const ns = "http://www.w3.org/2000/svg";
+  const W = Math.max(220, Math.round(host.clientWidth || 320)), H = 72, padL = 30, padR = 8, padT = 8, padB = 14;
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("width", String(W));
+  svg.setAttribute("height", String(H));
   const vals = points.map((p) => Number(p.verified_percent || 0));
   const lo = Math.max(0, Math.floor(Math.min(...vals) - 2));
   const hi = Math.min(100, Math.ceil(Math.max(...vals) + 2));
@@ -3356,5 +3358,10 @@ function initEvidence() {
   for (const btn of document.querySelectorAll("#verifiedCard .vp-actions [data-open]")) {
     btn.addEventListener("click", () => openEvidence(btn.dataset.open));
   }
+  // the history chart is drawn at the box's pixel width: redraw when that changes
+  window.addEventListener("resize", () => {
+    clearTimeout(state.historyResizeTimer);
+    state.historyResizeTimer = setTimeout(() => renderVerifiedHistory(state.verifiedHistory || []), 150);
+  });
   loadEvidenceList(true);
 }
