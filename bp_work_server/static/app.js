@@ -3073,7 +3073,13 @@ function renderVerifiedHistory(history) {
     { key: "no_body", cls: "vh-nobody", area: false },
   ];
   const top = Math.max(1, ...points.map((p) => Math.max(Number(p.paired || 0), Number(p.no_body || 0))));
-  const x = (i) => padL + (i / (points.length - 1)) * (W - padL - padR);
+  // the x axis is TIME (a point per audited day since the backfill; a build day may add
+  // more), so a day nobody audited is a gap, not a step -- index spacing only as a fallback
+  const stamps = points.map((p) => Date.parse(p.imported_at || ""));
+  const timed = stamps.every((t) => Number.isFinite(t)) && stamps[stamps.length - 1] > stamps[0];
+  const t0 = timed ? stamps[0] : 0, tSpan = timed ? stamps[stamps.length - 1] - stamps[0] : 1;
+  const x = (i) => padL + ((timed ? (stamps[i] - t0) / tSpan : i / (points.length - 1)) * (W - padL - padR));
+  const days = timed ? Math.round(tSpan / 86400000) + 1 : points.length;
   const y = (v) => padT + (1 - v / top) * (H - padT - padB);
   for (const sr of series) {
     const d = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(Number(p[sr.key] || 0)).toFixed(1)}`).join(" ");
@@ -3105,12 +3111,13 @@ function renderVerifiedHistory(history) {
   });
   const first = document.createElementNS(ns, "text");
   first.setAttribute("x", padL.toFixed(1)); first.setAttribute("y", (H - 3).toFixed(1)); first.setAttribute("class", "vh-axis");
-  first.textContent = `${String(points[0].commit).slice(0, 7)}${points[0].imported_at ? ` \u00b7 ${String(points[0].imported_at).slice(0, 10)}` : ""}`;
+  first.textContent = points[0].imported_at ? String(points[0].imported_at).slice(0, 10) : String(points[0].commit).slice(0, 7);
   svg.appendChild(first);
   const last = document.createElementNS(ns, "text");
   last.setAttribute("x", (W - padR).toFixed(1)); last.setAttribute("y", (H - 3).toFixed(1)); last.setAttribute("class", "vh-axis");
   last.setAttribute("text-anchor", "end");
-  last.textContent = `${String(points[points.length - 1].commit).slice(0, 7)} \u00b7 ${points.length} commits`;
+  const lastP = points[points.length - 1];
+  last.textContent = `${lastP.imported_at ? String(lastP.imported_at).slice(0, 10) : String(lastP.commit).slice(0, 7)} \u00b7 ${fmtInt(days)} days, ${fmtInt(points.length)} audited`;
   svg.appendChild(last);
   host.appendChild(svg);
   const lg = div("vp-shape-legend");
