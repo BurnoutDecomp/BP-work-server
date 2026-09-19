@@ -1685,6 +1685,7 @@ function detailEntryLabel(entry) {
   if (entry.type === "func") return entry.name;
   if (entry.type === "audit") return `Audit: ${entry.id}`;
   if (entry.type === "stubs") return `Stubs: ${entry.id}`;
+  if (entry.type === "asm") return `Instruction shape: ${entry.id}`;
   return entry.id;
 }
 
@@ -1718,6 +1719,7 @@ function goBackDetail() {
   else if (previous.type === "func") openFunctionDetail(previous.tu, previous.fn, { push: false });
   else if (previous.type === "audit") openAuditFile(previous.id, { push: false });
   else if (previous.type === "stubs") openStubFile(previous.id, { push: false });
+  else if (previous.type === "asm") openAsmFile(previous.id, { push: false });
   else openDetail(previous.id, { push: false });
 }
 
@@ -2506,29 +2508,274 @@ function renderAuditFile(data) {
   facts.appendChild(
     div(
       "audit-meta",
-      "Each function is the reconstructed body (plus the PC-only helpers it calls) compared with the console's pseudocode. A missing case id, event post, callee or body is a difference; missing log strings and uncited data are context.",
+      "Each function is the reconstructed body (plus the PC-only helpers it calls) compared with the console's pseudocode. A missing case id, event post, callee or body is a difference; missing log strings and uncited data are context. Click a function to open its findings.",
     ),
   );
   body.appendChild(facts);
 
-  const list = detailSection(`Functions (${fmtInt((data.items || []).length)})`);
-  if (!data.items || !data.items.length) list.appendChild(div("muted-text", "No findings in this file."));
-  for (const fn of data.items || []) {
-    const row = div("audit-row");
-    const head = div("audit-row-head");
-    head.appendChild(span("dep-name", fn.name));
-    if (fn.weight) head.appendChild(span("pill cat-high", `${fmtInt(fn.weight)} high-signal`));
-    if (fn.flagged) head.appendChild(span("pill todo", "flagged in source"));
-    if (fn.helpers) head.appendChild(span("pill todo", `+${fmtInt(fn.helpers)} helpers`));
-    const where = [];
-    if (fn.addr) where.push(`X360 ${fn.addr}`);
-    if (fn.line) where.push(`line ${fmtInt(fn.line)}`);
-    if (where.length) head.appendChild(span("tu-meta", where.join(" · ")));
-    row.appendChild(head);
-    row.appendChild(findingsList(fn.findings || {}));
-    list.appendChild(row);
+  const items = data.items || [];
+  const list = detailSection(`Functions (${fmtInt(items.length)})`);
+  const filters = [{ key: "high", label: "high-signal", cls: "red", test: (fn) => fn.weight > 0 }];
+  for (const cat of AUDIT_ORDER) {
+    if (items.some((fn) => fn.findings && fn.findings[cat])) {
+      filters.push({ key: cat, label: AUDIT_LABELS[cat] || cat, cls: AUDIT_HIGH.includes(cat) ? "red" : "grey",
+        test: (fn) => Boolean(fn.findings && fn.findings[cat]) });
+    }
   }
+  filters.push({ key: "flagged", label: "flagged in source", cls: "blue", test: (fn) => Boolean(fn.flagged) });
+  list.appendChild(functionBrowser({
+    items,
+    key: (fn) => fn.name,
+    search: (fn) => `${fn.name} ${Object.values(fn.findings || {}).flat().join(" ")}`,
+    filters,
+    sorts: [
+      { key: "weight", label: "most high-signal first", cmp: (a, b) => (b.weight || 0) - (a.weight || 0) || (a.line || 0) - (b.line || 0) },
+      { key: "line", label: "source order", cmp: (a, b) => (a.line || 0) - (b.line || 0) },
+      { key: "name", label: "by name", cmp: (a, b) => a.name.localeCompare(b.name) },
+    ],
+    row: (fn) => {
+      const head = [span("dep-name", fn.name)];
+      if (fn.weight) head.push(span("pill cat-high", `${fmtInt(fn.weight)} high-signal`));
+      if (fn.flagged) head.push(span("pill todo", "flagged in source"));
+      if (fn.helpers) head.push(span("pill todo", `+${fmtInt(fn.helpers)} helpers`));
+      const where = [];
+      if (fn.addr) where.push(`X360 ${fn.addr}`);
+      if (fn.line) where.push(`line ${fmtInt(fn.line)}`);
+      if (where.length) head.push(span("tu-meta", where.join(" \u00b7 ")));
+      return { head, body: findingsList(fn.findings || {}) };
+    },
+    emptyText: "No findings match.",
+  }));
   body.appendChild(list);
+}
+
+function renderStubFile(data) {
+  const body = el("detailBody");
+  body.innerHTML = "";
+  const rollup = data.rollup || {};
+
+  const banner = div("detail-banner");
+  banner.appendChild(span("tag goal-tag", "stub inventory"));
+  if (data.tu_id) banner.appendChild(tuButton(data.tu_id, "tag goal-tag"));
+  body.appendChild(banner);
+
+  const facts = detailSection("Overview");
+  facts.appendChild(kv("File", fileRepoLink(data.file)));
+  facts.appendChild(kv("Stubs", `${fmtInt(rollup.stubs || 0)} (${fmtInt(rollup.high || 0)} high, ${fmtInt(rollup.medium || 0)} medium, ${fmtInt(rollup.low || 0)} low)`));
+  facts.appendChild(kv("Live today", `${fmtInt(rollup.live || 0)} reached by reconstructed code`));
+  facts.appendChild(kv("Console lines", `${fmtInt(rollup.console_lines || 0)} of work behind them`));
+  facts.appendChild(
+    div(
+      "audit-meta",
+      "High: the file or the body says it is a stand-in, or it traps. Medium: a trivial body under a softer marker. Low: a trivial, unmarked body whose console function does real work \u2014 possibly a legitimate empty default. Click a stub for its reason and callers.",
+    ),
+  );
+  body.appendChild(facts);
+
+  const items = data.items || [];
+  const tierRank = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+  const list = detailSection(`Stub bodies (${fmtInt(items.length)})`);
+  list.appendChild(functionBrowser({
+    items,
+    key: (st) => `${st.name}@${st.line}`,
+    search: (st) => `${st.name} ${st.why || ""} ${(st.live_callers || []).join(" ")}`,
+    filters: [
+      { key: "HIGH", label: "high", cls: "red", test: (st) => st.tier === "HIGH" },
+      { key: "MEDIUM", label: "medium", cls: "amber", test: (st) => st.tier === "MEDIUM" },
+      { key: "LOW", label: "low", cls: "grey", test: (st) => st.tier === "LOW" },
+      { key: "live", label: "live today", cls: "blue", test: (st) => (st.live_callers || []).length > 0 },
+    ],
+    sorts: [
+      { key: "tier", label: "tier, then source order", cmp: (a, b) => (tierRank[a.tier] ?? 3) - (tierRank[b.tier] ?? 3) || (a.line || 0) - (b.line || 0) },
+      { key: "console", label: "biggest console body first", cmp: (a, b) => (b.console_lines || 0) - (a.console_lines || 0) },
+      { key: "name", label: "by name", cmp: (a, b) => a.name.localeCompare(b.name) },
+    ],
+    row: (st) => {
+      const head = [span("dep-name", st.name), tierPill(st.tier)];
+      if (st.live_callers && st.live_callers.length) head.push(span("pill live", "live today"));
+      const where = [];
+      if (st.addr) where.push(`X360 ${st.addr}`);
+      if (st.line) where.push(`line ${fmtInt(st.line)}`);
+      if (st.console_lines != null) where.push(`${fmtInt(st.console_lines)} console lines`);
+      if (where.length) head.push(span("tu-meta", where.join(" \u00b7 ")));
+      const detail = div("");
+      if (st.why) detail.appendChild(div("audit-meta", `why: ${st.why}`));
+      if (st.live_callers && st.live_callers.length) detail.appendChild(div("audit-meta", `called by reconstructed code: ${st.live_callers.join(", ")}`));
+      return { head, body: detail.childNodes.length ? detail : null };
+    },
+    emptyText: "No stubs match.",
+  }));
+  body.appendChild(list);
+}
+
+async function openAsmFile(file, options = {}) {
+  setCurrentDetail({ type: "asm", id: file }, options);
+  showDetailOverlay();
+  text("detailTitle", `Instruction shape: ${file}`);
+  el("detailBody").innerHTML = '<p class="muted-text">Loading\u2026</p>';
+  try {
+    renderAsmFile(await fetchJson(`/api/asm/functions?file=${encodeURIComponent(file)}`, 15000));
+  } catch (error) {
+    el("detailBody").innerHTML = "";
+    el("detailBody").appendChild(div("muted-text", `Failed to load: ${error.message}`));
+  }
+}
+
+function renderAsmFile(data) {
+  const body = el("detailBody");
+  body.innerHTML = "";
+  const rollup = data.rollup || {};
+
+  const banner = div("detail-banner");
+  banner.appendChild(span("tag goal-tag", "instruction shape"));
+  if (data.tu_id) banner.appendChild(tuButton(data.tu_id, "tag goal-tag"));
+  body.appendChild(banner);
+
+  const facts = detailSection("Overview");
+  facts.appendChild(kv("File", fileRepoLink(data.file)));
+  facts.appendChild(kv("In the built exe", `${fmtInt(rollup.functions || 0)} functions \u00b7 mean score ${rollup.mean_score != null ? rollup.mean_score : "\u2013"}`));
+  const tiers = div("audit-summary");
+  for (const [key, label, cls] of [["a", "A same shape", "done"], ["b", "B close", "compiled"], ["c", "C diverges", "blocked"], ["t", "T trivial", "todo"], ["flagged", "flagged in source", "todo"]]) {
+    const chip = div(`chip ${cls}`);
+    chip.appendChild(span("", fmtInt(rollup[key] || 0)));
+    const l = document.createElement("label");
+    l.textContent = label;
+    chip.appendChild(l);
+    tiers.appendChild(chip);
+  }
+  facts.appendChild(tiers);
+  facts.appendChild(div("audit-meta",
+    "Each function of the exe CI built against the console's machine code: the named callees, the conditional-branch count, the constants. A tier C is a diff to read, not a verdict: click a function for the callees and constants that exist on one side only."));
+  body.appendChild(facts);
+
+  const items = data.items || [];
+  const tierRank = { C: 0, B: 1, A: 2, T: 3 };
+  const list = detailSection(`Functions (${fmtInt(items.length)})`);
+  list.appendChild(functionBrowser({
+    items,
+    key: (fn) => fn.name,
+    search: (fn) => {
+      const d = fn.diff || {};
+      return `${fn.name} ${(d.calls_only_console || []).join(" ")} ${(d.calls_only_pc || []).join(" ")}`;
+    },
+    filters: [
+      { key: "A", label: "A same shape", cls: "green", test: (fn) => fn.tier === "A" },
+      { key: "B", label: "B close", cls: "amber", test: (fn) => fn.tier === "B" },
+      { key: "C", label: "C diverges", cls: "red", test: (fn) => fn.tier === "C" },
+      { key: "T", label: "T trivial", cls: "grey", test: (fn) => fn.tier === "T" },
+      { key: "flagged", label: "flagged in source", cls: "blue", test: (fn) => Boolean(fn.flags && fn.flags.total) },
+    ],
+    sorts: [
+      { key: "worst", label: "worst score first", cmp: (a, b) => (tierRank[a.tier] ?? 4) - (tierRank[b.tier] ?? 4) || (a.score ?? 101) - (b.score ?? 101) },
+      { key: "size", label: "biggest console body first", cmp: (a, b) => ((b.counts || {}).n || [0])[0] - ((a.counts || {}).n || [0])[0] },
+      { key: "name", label: "by name", cmp: (a, b) => a.name.localeCompare(b.name) },
+    ],
+    row: (fn) => {
+      const head = [span("dep-name", fn.name), asmTierPill(fn.tier)];
+      if (fn.score != null) head.push(span("pill todo", `score ${fn.score}`));
+      if (fn.flags && fn.flags.total) head.push(span("pill todo", `flagged ${fmtInt(fn.flags.total)}`));
+      const c = fn.counts || {};
+      const where = [];
+      if (fn.addr) where.push(`X360 ${fn.addr}`);
+      if (c.n) where.push(`${fmtInt(c.n[0])} console / ${fmtInt(c.n[1])} pc insns`);
+      if (c.cond) where.push(`branches ${fmtInt(c.cond[0])} / ${fmtInt(c.cond[1])}`);
+      if (c.calls) where.push(`calls ${fmtInt(c.calls[0])} / ${fmtInt(c.calls[1])}`);
+      if (where.length) head.push(span("tu-meta", where.join(" \u00b7 ")));
+      const detail = asmDiffList(fn);
+      return { head, body: detail.childNodes.length ? detail : null };
+    },
+    emptyText: "No functions match.",
+  }));
+  body.appendChild(list);
+}
+
+/* ---- function browser: one file's functions in a drawer, filterable, collapsed until clicked ---- */
+function functionBrowser(opts) {
+  const wrap = div("fb");
+  const controls = div("fb-controls");
+  const search = document.createElement("input");
+  search.type = "search";
+  search.className = "search-input";
+  search.placeholder = opts.placeholder || "Filter by function name or content\u2026";
+  search.autocomplete = "off";
+  controls.appendChild(search);
+  const chips = div("fb-chips");
+  controls.appendChild(chips);
+  const tools = div("fb-tools");
+  const sortSel = document.createElement("select");
+  sortSel.className = "fb-sort";
+  sortSel.title = "Sort";
+  for (const so of opts.sorts || []) {
+    const o = document.createElement("option");
+    o.value = so.key;
+    o.textContent = so.label;
+    sortSel.appendChild(o);
+  }
+  if ((opts.sorts || []).length > 1) tools.appendChild(sortSel);
+  const expandBtn = document.createElement("button");
+  expandBtn.type = "button";
+  expandBtn.className = "filter";
+  expandBtn.textContent = "Expand all";
+  const collapseBtn = document.createElement("button");
+  collapseBtn.type = "button";
+  collapseBtn.className = "filter";
+  collapseBtn.textContent = "Collapse all";
+  const count = span("fb-count", "");
+  tools.append(expandBtn, collapseBtn, count);
+  controls.appendChild(tools);
+  const list = div("fb-list");
+  wrap.append(controls, list);
+
+  const st = { filter: "", q: "", sort: ((opts.sorts || [])[0] || {}).key, open: new Set() };
+  const all = opts.items || [];
+  let shown = [];
+
+  function render() {
+    clearNode(list);
+    clearNode(chips);
+    for (const f of [{ key: "", label: "all", cls: "", test: () => true }, ...(opts.filters || [])]) {
+      const n = f.key ? all.filter(f.test).length : all.length;
+      if (f.key && !n) continue;
+      chips.appendChild(evidenceChip(f.label, n, st.filter === f.key, f.cls || "", () => {
+        st.filter = st.filter === f.key ? "" : f.key;
+        render();
+      }));
+    }
+    const q = st.q.toLowerCase();
+    const filt = (opts.filters || []).find((f) => f.key === st.filter);
+    shown = all.filter((it) => (!filt || filt.test(it)) && (!q || (opts.search(it) || "").toLowerCase().includes(q)));
+    const sorter = (opts.sorts || []).find((so) => so.key === st.sort);
+    if (sorter) shown = shown.slice().sort(sorter.cmp);
+    count.textContent = shown.length === all.length ? `${fmtInt(all.length)}` : `${fmtInt(shown.length)} of ${fmtInt(all.length)}`;
+    if (!shown.length) list.appendChild(div("muted-text", opts.emptyText || "Nothing matches."));
+    for (const it of shown) {
+      const key = opts.key(it);
+      const r = opts.row(it);
+      const row = div(`fb-row${st.open.has(key) ? " open" : ""}${r.body ? "" : " no-body"}`);
+      const head = div("fb-head");
+      head.appendChild(span("fb-caret", ""));
+      for (const n of r.head) head.appendChild(n);
+      row.appendChild(head);
+      if (r.body) {
+        const bodyEl = div("fb-body");
+        bodyEl.appendChild(r.body);
+        row.appendChild(bodyEl);
+        head.addEventListener("click", (e) => {
+          if (e.target.closest("a, button")) return;
+          const open = !row.classList.contains("open");
+          row.classList.toggle("open", open);
+          if (open) st.open.add(key); else st.open.delete(key);
+        });
+      }
+      list.appendChild(row);
+    }
+  }
+  search.addEventListener("input", () => { st.q = search.value.trim(); render(); });
+  sortSel.addEventListener("change", () => { st.sort = sortSel.value; render(); });
+  expandBtn.addEventListener("click", () => { for (const it of shown) st.open.add(opts.key(it)); render(); });
+  collapseBtn.addEventListener("click", () => { st.open.clear(); render(); });
+  render();
+  return wrap;
 }
 
 function tierPill(tier) {
@@ -2554,34 +2801,6 @@ function stubRow(stub) {
   return row;
 }
 
-function renderStubFile(data) {
-  const body = el("detailBody");
-  body.innerHTML = "";
-  const rollup = data.rollup || {};
-
-  const banner = div("detail-banner");
-  banner.appendChild(span("tag goal-tag", "stub inventory"));
-  if (data.tu_id) banner.appendChild(tuButton(data.tu_id, "tag goal-tag"));
-  body.appendChild(banner);
-
-  const facts = detailSection("Overview");
-  facts.appendChild(kv("File", fileRepoLink(data.file)));
-  facts.appendChild(kv("Stubs", `${fmtInt(rollup.stubs || 0)} (${fmtInt(rollup.high || 0)} high, ${fmtInt(rollup.medium || 0)} medium, ${fmtInt(rollup.low || 0)} low)`));
-  facts.appendChild(kv("Live today", `${fmtInt(rollup.live || 0)} reached by reconstructed code`));
-  facts.appendChild(kv("Console lines", `${fmtInt(rollup.console_lines || 0)} of work behind them`));
-  facts.appendChild(
-    div(
-      "audit-meta",
-      "High: the file or the body says it is a stand-in, or it traps. Medium: a trivial body under a softer marker. Low: a trivial, unmarked body whose console function does real work — possibly a legitimate empty default.",
-    ),
-  );
-  body.appendChild(facts);
-
-  const list = detailSection(`Stub bodies (${fmtInt((data.items || []).length)})`);
-  if (!data.items || !data.items.length) list.appendChild(div("muted-text", "No stubs in this file."));
-  for (const stub of data.items || []) list.appendChild(stubRow(stub));
-  body.appendChild(list);
-}
 
 function tuAuditSection(d) {
   const audit = d.audit || {};
@@ -3099,6 +3318,12 @@ function asmRow(fn) {
   if (c.calls) where.push(`calls ${fmtInt(c.calls[0])} / ${fmtInt(c.calls[1])}`);
   if (where.length) head.appendChild(span("tu-meta", where.join(" \u00b7 ")));
   row.appendChild(head);
+  const list = asmDiffList(fn);
+  if (list.childNodes.length) row.appendChild(list);
+  return row;
+}
+
+function asmDiffList(fn) {
   const d = fn.diff || {};
   const list = document.createElement("ul");
   list.className = "audit-findings";
@@ -3118,8 +3343,7 @@ function asmRow(fn) {
   if (fn.flags && fn.flags.total) {
     add("flagged PC additions in the body", Object.entries(fn.flags.kinds || {}).map(([k, n]) => `${n} [FLAG ${k}]`), false);
   }
-  if (list.childNodes.length) row.appendChild(list);
-  return row;
+  return list;
 }
 
 async function loadEvidenceList(reset) {
@@ -3127,7 +3351,6 @@ async function loadEvidenceList(reset) {
   if (reset) {
     ev.offset = 0;
     ev.items = [];
-    ev.expanded = {};
   }
   const requestId = ++ev.requestId;
   const path = ev.tab === "audit" ? "/api/audit/files" : ev.tab === "asm" ? "/api/asm/files" : "/api/stubs/files";
@@ -3196,11 +3419,9 @@ function renderEvidenceList() {
       if (item.live) nums.appendChild(span("pill live", `${fmtInt(item.live)} live`));
     }
     head.append(left, nums);
-    const body = div("evidence-file-body");
-    body.hidden = !ev.expanded[item.file];
-    head.addEventListener("click", () => toggleEvidenceFile(item.file, body));
-    card.append(head, body);
-    if (ev.expanded[item.file]) fillEvidenceFile(item.file, body);
+    head.title = "Open every function of this file in the drawer";
+    head.addEventListener("click", () => openEvidenceFile(item.file));
+    card.appendChild(head);
     list.appendChild(card);
   }
   text("evidenceRange", ev.total ? `${fmtInt(ev.items.length)} of ${fmtInt(ev.total)} files` : "—");
@@ -3208,69 +3429,13 @@ function renderEvidenceList() {
   if (more) more.hidden = ev.items.length >= ev.total;
 }
 
-function toggleEvidenceFile(file, body) {
+function openEvidenceFile(file) {
   const ev = state.evidence;
-  const open = !ev.expanded[file];
-  ev.expanded[file] = open;
-  body.hidden = !open;
-  if (open && !body.childNodes.length) fillEvidenceFile(file, body);
+  if (ev.tab === "audit") openAuditFile(file);
+  else if (ev.tab === "asm") openAsmFile(file);
+  else openStubFile(file);
 }
 
-async function fillEvidenceFile(file, body) {
-  const ev = state.evidence;
-  clearNode(body);
-  body.appendChild(div("muted-text", "Loading…"));
-  try {
-    if (ev.tab === "audit") {
-      const data = await fetchJson(`/api/audit/functions?file=${encodeURIComponent(file)}`, 15000);
-      clearNode(body);
-      const tools = div("audit-row-head");
-      tools.appendChild(fileRepoLink(file));
-      if (data.tu_id) tools.appendChild(tuButton(data.tu_id, "pill todo"));
-      body.appendChild(tools);
-      const items = (data.items || []).filter((fn) => !ev.category || (fn.findings && fn.findings[ev.category]));
-      for (const fn of items.slice(0, 60)) {
-        const row = div("audit-row");
-        const head = div("audit-row-head");
-        head.appendChild(span("dep-name", fn.name));
-        if (fn.weight) head.appendChild(span("pill cat-high", `${fmtInt(fn.weight)} high-signal`));
-        if (fn.flagged) head.appendChild(span("pill todo", "flagged in source"));
-        const where = [];
-        if (fn.addr) where.push(`X360 ${fn.addr}`);
-        if (fn.line) where.push(`line ${fmtInt(fn.line)}`);
-        if (where.length) head.appendChild(span("tu-meta", where.join(" · ")));
-        row.appendChild(head);
-        row.appendChild(findingsList(fn.findings || {}));
-        body.appendChild(row);
-      }
-      if (items.length > 60) body.appendChild(div("audit-meta", `${fmtInt(items.length - 60)} more functions in this file.`));
-    } else if (ev.tab === "asm") {
-      const data = await fetchJson(`/api/asm/functions?file=${encodeURIComponent(file)}`, 15000);
-      clearNode(body);
-      const tools = div("audit-row-head");
-      tools.appendChild(fileRepoLink(file));
-      if (data.tu_id) tools.appendChild(tuButton(data.tu_id, "pill todo"));
-      body.appendChild(tools);
-      const items = (data.items || []).filter((fn) =>
-        (!ev.asmTier || fn.tier === ev.asmTier) && (!ev.asmFlagged || (fn.flags && fn.flags.total)));
-      for (const fn of items.slice(0, 60)) body.appendChild(asmRow(fn));
-      if (items.length > 60) body.appendChild(div("audit-meta", `${fmtInt(items.length - 60)} more functions in this file.`));
-    } else {
-      const data = await fetchJson(`/api/stubs?file=${encodeURIComponent(file)}`, 15000);
-      clearNode(body);
-      const tools = div("audit-row-head");
-      tools.appendChild(fileRepoLink(file));
-      if (data.tu_id) tools.appendChild(tuButton(data.tu_id, "pill todo"));
-      body.appendChild(tools);
-      const items = (data.items || []).filter((s) => (!ev.tier || s.tier === ev.tier) && (!ev.live || (s.live_callers || []).length));
-      for (const stub of items.slice(0, 80)) body.appendChild(stubRow(stub));
-      if (items.length > 80) body.appendChild(div("audit-meta", `${fmtInt(items.length - 80)} more stubs in this file.`));
-    }
-  } catch (error) {
-    clearNode(body);
-    body.appendChild(div("muted-text", `Failed to load: ${error.message}`));
-  }
-}
 
 async function loadEvidenceTop() {
   const ev = state.evidence;
@@ -3308,13 +3473,7 @@ async function loadEvidenceTop() {
         const c = item.counts || {};
         name.appendChild(span("top-meta", `${item.file || "(no file)"} \u00b7 ${fmtInt(c.n ? c.n[0] : 0)} console insns`));
         li.appendChild(name);
-        li.addEventListener("click", () => {
-          ev.q = item.file || "";
-          const search = el("evidenceSearch");
-          if (search) search.value = ev.q;
-          ev.expanded = { [item.file]: true };
-          loadEvidenceList(true);
-        });
+        li.addEventListener("click", () => openAsmFile(item.file));
         list.appendChild(li);
       }
     } else {
