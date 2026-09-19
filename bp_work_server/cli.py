@@ -51,6 +51,8 @@ def main() -> None:
     audits_p.add_argument("progress_dir", help="Directory holding the report JSON files.")
     audits_p.add_argument("--imported-at", help="ISO time to stamp the runs with (default: now).")
     audits_p.add_argument("--no-events", action="store_true", help="Log no delta Live Events for these runs.")
+    audits_p.add_argument("--replace-latest", action="store_true",
+                          help="Also replace the per-function tables (default: a history point only).")
 
     warm_p = sub.add_parser(
         "warm-attribution-cache",
@@ -129,7 +131,8 @@ def main() -> None:
 
     if args.cmd == "import-audits":
         counts = store.import_audits_only(
-            args.progress_dir, imported_at=args.imported_at, events=not args.no_events
+            args.progress_dir, imported_at=args.imported_at, events=not args.no_events,
+            history_only=not args.replace_latest,
         )
         print(
             f"imported audits from {args.progress_dir}: "

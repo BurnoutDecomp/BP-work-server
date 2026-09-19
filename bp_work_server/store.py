@@ -367,7 +367,12 @@ class WorkStore:
 
     # ---------------------------------------------------------------- audit layer
     def import_audits_only(
-        self, progress_dir: str | Path, *, imported_at: str | None = None, events: bool = True
+        self,
+        progress_dir: str | Path,
+        *,
+        imported_at: str | None = None,
+        events: bool = True,
+        history_only: bool = True,
     ) -> dict[str, int]:
         """Import just the audit reports found in ``progress_dir`` (funcaudit.json,
         stubs.json, asmaudit.json). For a history backfill: ``imported_at`` stamps the
@@ -378,7 +383,7 @@ class WorkStore:
         stamp = imported_at or iso()
         with self.connect() as con:
             log = self._log if events else (lambda *_args, **_kw: None)
-            return audit.import_audits(con, progress, stamp, log)
+            return audit.import_audits(con, progress, stamp, log, history_only=history_only)
 
     def audit_summary(self) -> dict[str, Any]:
         with self.connect() as con:

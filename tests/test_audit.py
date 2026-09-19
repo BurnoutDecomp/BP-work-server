@@ -336,6 +336,9 @@ def test_backfill_import_sorts_into_history_without_displacing_latest(tmp_path):
 
     after = store.audit_summary()
     assert after["funcaudit"]["commit"] == "cccc3333"          # the current run stays latest
+    # a history point only: the per-function tables still hold the current run
+    assert store.audit_files()["items"][0]["weight"] == 2
+    assert after["funcaudit"]["clean"] == 1
     assert [p["commit"] for p in after["history"]] == ["bbbb2222", "cccc3333"]
     assert after["history"][0]["imported_at"].startswith("2026-08-01")
     if events_before is not None:

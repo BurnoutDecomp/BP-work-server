@@ -183,6 +183,17 @@ CREATE INDEX IF NOT EXISTS ix_audit_run_kind ON audit_run(kind, imported_at);
 Logger = Callable[[sqlite3.Connection, str | None, str, str | None, dict[str, Any]], None]
 
 
+class _NullWriter:
+    """Stands in for the connection when a run is imported as a HISTORY point only:
+    the audit_run row (totals) is written, the per-function tables are left alone."""
+
+    def execute(self, *_args: Any, **_kw: Any) -> None:
+        return None
+
+    def executemany(self, *_args: Any, **_kw: Any) -> None:
+        return None
+
+
 def audit_file_for_dest(dest_path: str | None) -> str | None:
     """A TU destination ("b5-decomp/src/GameSource/X.cpp") as the audit spells the file."""
     if not dest_path:
@@ -210,7 +221,7 @@ def _last_run(con: sqlite3.Connection, kind: str) -> sqlite3.Row | None:
 
 # ------------------------------------------------------------------ import
 def import_audits(
-    con: sqlite3.Connection, progress: Path, now: str, log: Logger
+    con: sqlite3.Connection, progress: Path, now: str, log: Logger, history_only: bool = False
 ) -> dict[str, int]:
     """Import ``progress/funcaudit.json`` and ``progress/stubs.json`` when present.
 
@@ -225,19 +236,19 @@ def import_audits(
     stubs_path = progress / "stubs.json"
     if funcaudit_path.exists():
         data = json.loads(funcaudit_path.read_text(encoding="utf-8"))
-        counts["funcaudit"] = import_funcaudit(con, data, now, log)
+        counts["funcaudit"] = import_funcaudit(con, data, now, log, history_only)
     if stubs_path.exists():
         data = json.loads(stubs_path.read_text(encoding="utf-8"))
-        counts["stubs"] = import_stubs(con, data, now, log)
+        counts["stubs"] = import_stubs(con, data, now, log, history_only)
     asm_path = progress / "asmaudit.json"
     if asm_path.exists():
         data = json.loads(asm_path.read_text(encoding="utf-8"))
-        counts["asm"] = import_asm(con, data, now, log)
+        counts["asm"] = import_asm(con, data, now, log, history_only)
     return counts
 
 
 def import_funcaudit(
-    con: sqlite3.Connection, data: dict[str, Any], now: str, log: Logger
+    con: sqlite3.Connection, data: dict[str, Any], now: str, log: Logger, history_only: bool = False
 ) -> int:
     meta = data.get("meta") or {}
     key = _run_key(meta)
@@ -253,8 +264,9 @@ def import_funcaudit(
         row["file"]: row["weight"] for row in con.execute("SELECT file, weight FROM audit_file")
     }
 
-    con.execute("DELETE FROM audit_finding")
-    con.execute("DELETE FROM audit_file")
+    w: Any = _NullWriter() if history_only else con
+    w.execute("DELETE FROM audit_finding")
+    w.execute("DELETE FROM audit_file")
     rollup: dict[str, dict[str, int]] = {}
     total_weight = 0
     rows = []
@@ -286,14 +298,14 @@ def import_funcaudit(
             col = FILE_COLUMNS.get(cat)
             if col:
                 bucket[col] += len(items)
-    con.executemany(
+    w.executemany(
         """
         INSERT INTO audit_finding(name, addr, file, line, flagged, helpers, weight, findings_json)
         VALUES(?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows,
     )
-    con.executemany(
+    w.executemany(
         """
         INSERT INTO audit_file(file, functions, weight, no_body, missing_case, extra_case,
                                missing_event, missing_callee, missing_assert, missing_string,
@@ -329,7 +341,7 @@ def import_funcaudit(
         """,
         (key, author, meta.get("generated_at"), now, json.dumps(stats, sort_keys=True)),
     )
-    if previous_run is not None:
+    if previous_run is not None and not history_only:
         _log_delta(
             con,
             log,
@@ -352,7 +364,7 @@ def import_funcaudit(
 
 
 def import_stubs(
-    con: sqlite3.Connection, data: dict[str, Any], now: str, log: Logger
+    con: sqlite3.Connection, data: dict[str, Any], now: str, log: Logger, history_only: bool = False
 ) -> int:
     meta = data.get("meta") or {}
     key = _run_key(meta)
@@ -367,8 +379,9 @@ def import_stubs(
     previous_files = {
         row["file"]: row["stubs"] for row in con.execute("SELECT file, stubs FROM stub_file")
     }
-    con.execute("DELETE FROM stub")
-    con.execute("DELETE FROM stub_file")
+    w: Any = _NullWriter() if history_only else con
+    w.execute("DELETE FROM stub")
+    w.execute("DELETE FROM stub_file")
     rollup: dict[str, dict[str, int]] = {}
     rows = []
     for item in rows_in:
@@ -397,14 +410,14 @@ def import_stubs(
         if live:
             b["live"] += 1
         b["console_lines"] += int(console_lines or 0)
-    con.executemany(
+    w.executemany(
         """
         INSERT INTO stub(file, line, name, addr, tier, why, console_lines, callers, live_json)
         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows,
     )
-    con.executemany(
+    w.executemany(
         """
         INSERT INTO stub_file(file, stubs, high, medium, low, live, console_lines)
         VALUES(?, ?, ?, ?, ?, ?, ?)
@@ -427,7 +440,7 @@ def import_stubs(
         """,
         (key, author, meta.get("generated_at"), now, json.dumps(stats, sort_keys=True)),
     )
-    if previous_run is not None:
+    if previous_run is not None and not history_only:
         _log_delta(
             con,
             log,
@@ -483,7 +496,7 @@ def _asm_run_key(meta: dict[str, Any]) -> str:
 
 
 def import_asm(
-    con: sqlite3.Connection, data: dict[str, Any], now: str, log: Logger
+    con: sqlite3.Connection, data: dict[str, Any], now: str, log: Logger, history_only: bool = False
 ) -> int:
     """``progress/asmaudit.json``: one row per function paired in the built exe, keyed by the
     b5-decomp commit the exe was built from. The per-commit delta counts tier C (diverging)
@@ -500,8 +513,9 @@ def import_asm(
     previous_run = _last_run(con, "asm")
     _ensure_asm_columns(con)
     previous_files = {row["file"]: row["c"] for row in con.execute("SELECT file, c FROM asm_file")}
-    con.execute("DELETE FROM asm_function")
-    con.execute("DELETE FROM asm_file")
+    w: Any = _NullWriter() if history_only else con
+    w.execute("DELETE FROM asm_function")
+    w.execute("DELETE FROM asm_file")
     rollup: dict[str, dict[str, Any]] = {}
     rows = []
     for item in results:
@@ -535,14 +549,14 @@ def import_asm(
             b["flagged"] += 1
         if score is not None and tier != "T":
             b["scores"].append(float(score))
-    con.executemany(
+    w.executemany(
         """
         INSERT INTO asm_function(name, addr, file, tier, score, console_n, flagged, row_json)
         VALUES(?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows,
     )
-    con.executemany(
+    w.executemany(
         """
         INSERT INTO asm_file(file, functions, a, b, c, t, flagged, mean_score)
         VALUES(?, ?, ?, ?, ?, ?, ?, ?)
@@ -575,7 +589,7 @@ def import_asm(
         """,
         (key, author, meta.get("generated_at"), now, json.dumps(stats, sort_keys=True)),
     )
-    if previous_run is not None:
+    if previous_run is not None and not history_only:
         before = json.loads(previous_run["stats_json"] or "{}")
         _log_delta(
             con,
