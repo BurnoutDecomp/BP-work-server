@@ -233,6 +233,21 @@ class FacetsResponse(FlexibleModel):
     tu_statuses: list[str] = Field(default_factory=list)
     func_statuses: list[str] = Field(default_factory=list)
     goals: list[str] = Field(default_factory=list)
+    audit_categories: list[str] = Field(default_factory=list)
+    stub_tiers: list[str] = Field(default_factory=list)
+
+
+class AuditSummaryResponse(FlexibleModel):
+    funcaudit: dict[str, Any] = Field(default_factory=dict)
+    stubs: dict[str, Any] = Field(default_factory=dict)
+    history: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AuditFileResponse(FlexibleModel):
+    file: str
+    rollup: dict[str, Any] | None = None
+    tu_id: str | None = None
+    items: list[dict[str, Any]] = Field(default_factory=list)
     owners: list[str] = Field(default_factory=list)
 
 

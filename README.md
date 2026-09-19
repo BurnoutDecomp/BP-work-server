@@ -35,6 +35,17 @@ This repo contains an MVP server:
   synthetic `unidentified:` TU, and are excluded from every *translation unit*
   count, from `next`, and from claiming — an unnamed function is not a TU, and it
   is identified in IDA rather than under a lease.
+- The evidence layer (2026-09-19): every other number on the dashboard is something a
+  person declared. CI runs two static audits against the pinned b5-decomp tree on every
+  commit -- `tools/re/funcaudit.py` (each reconstructed body vs the console's own
+  function: missing bodies, switch case ids, event posts, named callees, asserts,
+  uncited data) and `tools/re/stubaudit.py` (every body that is still a stand-in) --
+  and commits `progress/funcaudit.json` + `progress/stubs.json`. The import loads them
+  (idempotent per commit) into `audit_run` / `audit_finding` / `audit_file` /
+  `stub` / `stub_file`; the dashboard shows the **Verified** ring (bodies the audit
+  cannot fault, over bodies it could pair), the Audit and Stubs explorer tabs with
+  per-file drill-down drawers, the per-TU "Console audit" section, and one Live Event
+  per commit that moved the numbers, blamed on that commit's author.
 - File-tree entries and TU destinations link straight to the file on GitHub.
 - Burnout Paradise themed dashboard (drop a `logo.png` into the static folder).
 - Small stdlib HTTP client for `work.py` integration.

@@ -24,6 +24,12 @@ const state = {
     items: [],
     searchTimer: null,
     requestId: 0,
+    // the evidence tabs (Audit / Stubs) keep their own filters and sorts
+    auditCat: "",
+    auditSort: "weight",
+    stubTier: "",
+    stubLive: false,
+    stubSort: "stubs",
   },
   // Client-side mini-explorers for the Live Events and Next Queue panels:
   // the dashboard payload carries the full lists; we filter/search/page here.
@@ -297,6 +303,7 @@ function render(data) {
       : "";
   }
   text("exeCount", `${fmtInt(totals.linked_tus)} / ${fmtInt(totals.tus)} linked`);
+  renderAudit(data.audit || {});
   text("activeGoal", data.active_goal || "Whole program");
   text("serverTime", fmtTime(data.server_time));
 
@@ -1176,6 +1183,8 @@ async function loadFacets() {
     const f = await fetchJson("/api/facets", 15000);
     fillSelect("filterSource", f.sources, "All sources");
     fillSelect("filterGoal", f.goals, "All goals");
+    fillSelect("filterAuditCat", f.audit_categories, "All findings");
+    fillSelect("filterStubTier", f.stub_tiers, "All tiers");
     // status options swap per tab; remember both sets
     state.explorer.tuStatuses = f.tu_statuses || [];
     state.explorer.funcStatuses = f.func_statuses || [];
@@ -1229,13 +1238,26 @@ function explorerParams() {
     if (ex.goal) p.set("goal", ex.goal);
     p.set("sort", ex.sort);
     p.set("order", ex.order);
+  } else if (ex.tab === "audit") {
+    p.delete("status");
+    if (ex.auditCat) p.set("category", ex.auditCat);
+    p.set("sort", ex.auditSort);
+    p.set("order", ex.order);
+  } else if (ex.tab === "stubs") {
+    p.delete("status");
+    if (ex.stubTier) p.set("tier", ex.stubTier);
+    if (ex.stubLive) p.set("live", "true");
+    p.set("sort", ex.stubSort);
+    p.set("order", ex.order);
   }
   return p;
 }
 
 async function loadExplorer() {
   const ex = state.explorer;
-  const path = ex.tab === "funcs" ? "/api/funcs" : "/api/tus";
+  const path =
+    { funcs: "/api/funcs", audit: "/api/audit/files", stubs: "/api/stubs/files" }[ex.tab] ||
+    "/api/tus";
   const requestId = ++ex.requestId;
   try {
     const data = await fetchJson(`${path}?${explorerParams()}`, 15000);
@@ -1243,6 +1265,8 @@ async function loadExplorer() {
     ex.total = data.total || 0;
     ex.items = data.items || [];
     if (ex.tab === "funcs") renderFuncRows(ex.items);
+    else if (ex.tab === "audit") renderAuditRows(ex.items);
+    else if (ex.tab === "stubs") renderStubRows(ex.items);
     else renderTuRows(ex.items);
     renderExplorerFoot();
   } catch (error) {
@@ -1472,6 +1496,18 @@ function initExplorer() {
     document
       .querySelectorAll(".tus-only")
       .forEach((node) => node.classList.toggle("hidden", ex.tab !== "tus"));
+    document
+      .querySelectorAll(".ledger-only")
+      .forEach((node) => node.classList.toggle("hidden", ex.tab !== "tus" && ex.tab !== "funcs"));
+    document
+      .querySelectorAll(".audit-only")
+      .forEach((node) => node.classList.toggle("hidden", ex.tab !== "audit"));
+    document
+      .querySelectorAll(".stubs-only")
+      .forEach((node) => node.classList.toggle("hidden", ex.tab !== "stubs"));
+    // the evidence tabs rank worst-first by default; the ledger tabs read by name
+    ex.order = ex.tab === "audit" || ex.tab === "stubs" ? "desc" : "asc";
+    el("sortOrder").textContent = ex.order === "asc" ? "↑" : "↓";
     ex.status = "";
     syncStatusOptions();
     resetAndLoad();
@@ -1497,6 +1533,26 @@ function initExplorer() {
   });
   el("sortBy").addEventListener("change", (e) => {
     ex.sort = e.target.value;
+    resetAndLoad();
+  });
+  el("filterAuditCat").addEventListener("change", (e) => {
+    ex.auditCat = e.target.value;
+    resetAndLoad();
+  });
+  el("sortAudit").addEventListener("change", (e) => {
+    ex.auditSort = e.target.value;
+    resetAndLoad();
+  });
+  el("filterStubTier").addEventListener("change", (e) => {
+    ex.stubTier = e.target.value;
+    resetAndLoad();
+  });
+  el("filterStubLive").addEventListener("change", (e) => {
+    ex.stubLive = Boolean(e.target.checked);
+    resetAndLoad();
+  });
+  el("sortStubs").addEventListener("change", (e) => {
+    ex.stubSort = e.target.value;
     resetAndLoad();
   });
   el("sortOrder").addEventListener("click", () => {
@@ -1560,6 +1616,8 @@ function detailEntryLabel(entry) {
   if (entry.type === "profile") return `Profile: ${entry.name}`;
   if (entry.type === "goal") return `Goal: ${entry.id}`;
   if (entry.type === "func") return entry.name;
+  if (entry.type === "audit") return `Audit: ${entry.id}`;
+  if (entry.type === "stubs") return `Stubs: ${entry.id}`;
   return entry.id;
 }
 
@@ -1591,6 +1649,8 @@ function goBackDetail() {
   if (previous.type === "profile") openProfile(previous.name, previous.githubUsername, { push: false });
   else if (previous.type === "goal") openGoalDetail(previous.id, { push: false });
   else if (previous.type === "func") openFunctionDetail(previous.tu, previous.fn, { push: false });
+  else if (previous.type === "audit") openAuditFile(previous.id, { push: false });
+  else if (previous.type === "stubs") openStubFile(previous.id, { push: false });
   else openDetail(previous.id, { push: false });
 }
 
@@ -1754,6 +1814,12 @@ function renderFunctionDetail(tu, fn) {
   body.appendChild(facts);
 
   body.appendChild(contributorSection(fn));
+
+  if (fn.audit_findings && Object.keys(fn.audit_findings).length) {
+    const audit = detailSection(`Console audit (${fmtInt(fn.audit_weight || 0)} high-signal)`);
+    audit.appendChild(findingsList(fn.audit_findings));
+    body.appendChild(audit);
+  }
 
   const related = detailSection("Containing TU");
   const row = div("dep-row clickable");
@@ -2001,6 +2067,8 @@ function renderDetail(d) {
   else d.dependents.forEach((dep) => dependents.appendChild(depRow(dep, dep.status)));
   body.appendChild(dependents);
 
+  body.appendChild(tuAuditSection(d));
+
   // Functions
   const funcs = detailSection(`Functions (${(d.funcs || []).length})`);
   if (!d.funcs || !d.funcs.length) funcs.appendChild(div("muted-text", "No functions recorded."));
@@ -2009,6 +2077,7 @@ function renderDetail(d) {
       const row = div("dep-row clickable");
       row.appendChild(span("dep-name", fn.name));
       row.appendChild(statusPill(fn.status));
+      if (fn.audit_weight) row.appendChild(span("pill cat-high", `${fmtInt(fn.audit_weight)} audit`));
       if (fn.primary_contributor) row.appendChild(actorNode(fn.primary_contributor, fn.primary_contributor_login));
       else if (fn.completed_by) row.appendChild(actorNode(fn.completed_by, fn.completed_by_login));
       row.addEventListener("click", (event) => {
@@ -2211,3 +2280,384 @@ state.downloadTimer = window.setInterval(refreshDownload, 120000);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) refresh();
 });
+
+/* ---------------- Evidence layer: audit + stub inventory ---------------- */
+
+// Categories the audit itself documents as reliable, in the order they are shown.
+// Anything else (log strings, uncited data, the parameter hint) is context, not a count.
+const AUDIT_HIGH = ["NO_BODY", "MISSING_CASE", "EXTRA_CASE", "MISSING_EVENT", "MISSING_CALLEE", "MISSING_ASSERT"];
+const AUDIT_ORDER = [
+  ...AUDIT_HIGH,
+  "MISSING_EVENT?",
+  "MISSING_STRING",
+  "UNCITED_DATA",
+  "FEWER_PARAMS",
+  "INFO_TRUNCATED_CALLEES",
+  "INFO_UNNAMED_CALLEES",
+];
+const AUDIT_LABELS = {
+  NO_BODY: "no body",
+  MISSING_CASE: "missing case ids",
+  EXTRA_CASE: "misfiled case ids",
+  MISSING_EVENT: "missing event posts",
+  "MISSING_EVENT?": "event posts (unsure)",
+  MISSING_CALLEE: "missing callees",
+  MISSING_ASSERT: "missing asserts",
+  MISSING_STRING: "missing strings",
+  UNCITED_DATA: "uncited data",
+  FEWER_PARAMS: "fewer params (hint)",
+  INFO_TRUNCATED_CALLEES: "truncated callee names",
+  INFO_UNNAMED_CALLEES: "unnamed callees",
+};
+
+function auditCatClass(cat) {
+  if (AUDIT_HIGH.includes(cat)) return "cat-high";
+  if (cat === "MISSING_EVENT?" || cat === "MISSING_STRING") return "cat-mid";
+  return "cat-low";
+}
+
+function sortedCats(findings) {
+  return Object.keys(findings || {}).sort((a, b) => {
+    const ia = AUDIT_ORDER.indexOf(a);
+    const ib = AUDIT_ORDER.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+}
+
+function findingsList(findings) {
+  const list = document.createElement("ul");
+  list.className = "audit-findings";
+  for (const cat of sortedCats(findings)) {
+    const items = findings[cat] || [];
+    const li = document.createElement("li");
+    if (AUDIT_HIGH.includes(cat)) li.classList.add("high");
+    li.appendChild(span("audit-cat", `${AUDIT_LABELS[cat] || cat} (${fmtInt(items.length)})`));
+    li.appendChild(span("audit-items", items.join("; ")));
+    list.appendChild(li);
+  }
+  return list;
+}
+
+function numCell(value, title) {
+  const cell = document.createElement("td");
+  const n = Number(value || 0);
+  cell.className = n ? "num-cell" : "num-cell zero";
+  cell.textContent = fmtInt(n);
+  if (title) cell.title = title;
+  return cell;
+}
+
+function fileRepoLink(file) {
+  const a = document.createElement("a");
+  a.href = ghBlobUrl(`src/${file}`);
+  a.target = "_blank";
+  a.rel = "noopener";
+  a.textContent = file;
+  return a;
+}
+
+function verifiedTrend(history) {
+  const points = (history || []).filter((point) => point.paired != null);
+  if (points.length < 2) return null;
+  const last = points[points.length - 1];
+  const prev = points[points.length - 2];
+  const dClean = Number(last.clean || 0) - Number(prev.clean || 0);
+  const dWeight = Number(last.weight || 0) - Number(prev.weight || 0);
+  const parts = [];
+  if (dClean) parts.push(`${dClean > 0 ? "+" : ""}${fmtInt(dClean)} verified`);
+  if (dWeight) parts.push(`${dWeight > 0 ? "+" : ""}${fmtInt(dWeight)} findings`);
+  if (!parts.length) return { text: "unchanged since the previous commit", cls: "" };
+  const good = dClean > 0 || dWeight < 0;
+  return {
+    text: `${parts.join(", ")} since the previous audited commit`,
+    cls: good ? "up" : "down",
+  };
+}
+
+function renderAudit(audit) {
+  const fa = audit.funcaudit || {};
+  const stubs = audit.stubs || {};
+  const paired = Number(fa.paired || 0);
+  const clean = Number(fa.clean || 0);
+  const percent = Number(fa.verified_percent || 0);
+  text("verifiedPercent", `${percent.toFixed(1)}%`);
+  setRing("verifiedRing", percent);
+  const count = el("verifiedCount");
+  const note = el("verifiedNote");
+  const trend = el("verifiedTrend");
+  if (!paired) {
+    if (count) count.textContent = "no audit imported yet";
+    if (note) note.hidden = true;
+    if (trend) trend.hidden = true;
+    return;
+  }
+  if (count) count.textContent = `${fmtInt(clean)} / ${fmtInt(paired)} bodies clean vs the console`;
+  if (note) {
+    const bits = [];
+    if (fa.no_body) bits.push(`${fmtInt(fa.no_body)} named, no body`);
+    if (stubs.live) bits.push(`${fmtInt(stubs.live)} stubs on live paths`);
+    else if (stubs.stubs) bits.push(`${fmtInt(stubs.stubs)} stub bodies`);
+    if (fa.unpaired_no_file) bits.push(`${fmtInt(fa.unpaired_no_file)} not audited (no PC file)`);
+    note.hidden = !bits.length;
+    note.textContent = bits.join(" · ");
+    note.title = fa.commit
+      ? `audited at b5-decomp ${String(fa.commit).slice(0, 12)}${fa.generated_at ? ` (${fmtTime(fa.generated_at)})` : ""}`
+      : "";
+  }
+  if (trend) {
+    const t = verifiedTrend(audit.history);
+    trend.hidden = !t;
+    if (t) {
+      trend.textContent = t.text;
+      trend.className = `metric-note audit-trend ${t.cls}`;
+    }
+  }
+}
+
+function renderAuditRows(items) {
+  setHead(["File", "Findings", "No body", "Case ids", "Event posts", "Callees", "Asserts", "Functions"]);
+  const body = el("explorerBody");
+  clearNode(body);
+  if (!items.length) return emptyRow(body, 8, "No audited files match.");
+  for (const item of items) {
+    const row = document.createElement("tr");
+    row.className = "clickable";
+    const name = document.createElement("td");
+    name.appendChild(div("tu-name", item.file));
+    const meta = [];
+    if (item.missing_string) meta.push(`${fmtInt(item.missing_string)} log strings`);
+    if (item.uncited_data) meta.push(`${fmtInt(item.uncited_data)} uncited data`);
+    if (meta.length) name.appendChild(div("tu-meta", meta.join(" · ")));
+    row.append(
+      name,
+      numCell(item.weight, "high-signal findings: missing bodies, case ids, event posts, callees, asserts"),
+      numCell(item.no_body, "functions the ledger names in this file with no definition anywhere"),
+      numCell(item.missing_case, "switch case ids the console has and the body does not"),
+      numCell(item.missing_event, "event posts the console makes and the body does not"),
+      numCell(item.missing_callee, "named console callees the body never calls"),
+      numCell(item.missing_assert, "console assert expressions absent from the body"),
+      numCell(item.functions, "functions with at least one finding"),
+    );
+    row.addEventListener("click", () => openAuditFile(item.file));
+    body.appendChild(row);
+  }
+}
+
+function renderStubRows(items) {
+  setHead(["File", "Stubs", "High", "Live today", "Console lines"]);
+  const body = el("explorerBody");
+  clearNode(body);
+  if (!items.length) return emptyRow(body, 5, "No files with stubs match.");
+  for (const item of items) {
+    const row = document.createElement("tr");
+    row.className = "clickable";
+    const name = document.createElement("td");
+    name.appendChild(div("tu-name", item.file));
+    const meta = [];
+    if (item.medium) meta.push(`${fmtInt(item.medium)} medium`);
+    if (item.low) meta.push(`${fmtInt(item.low)} low`);
+    if (meta.length) name.appendChild(div("tu-meta", meta.join(" · ")));
+    row.append(
+      name,
+      numCell(item.stubs, "bodies that are still stand-ins"),
+      numCell(item.high, "the file or the body says it is a stand-in, or it traps"),
+      numCell(item.live, "stubs a body we have reconstructed calls right now"),
+      numCell(item.console_lines, "pseudocode lines of the console functions behind these stubs"),
+    );
+    row.addEventListener("click", () => openStubFile(item.file));
+    body.appendChild(row);
+  }
+}
+
+async function openAuditFile(file, options = {}) {
+  setCurrentDetail({ type: "audit", id: file }, options);
+  showDetailOverlay();
+  text("detailTitle", `Audit: ${file}`);
+  el("detailBody").innerHTML = '<p class="muted-text">Loading…</p>';
+  try {
+    renderAuditFile(await fetchJson(`/api/audit/functions?file=${encodeURIComponent(file)}`, 15000));
+  } catch (error) {
+    el("detailBody").innerHTML = "";
+    el("detailBody").appendChild(div("muted-text", `Failed to load: ${error.message}`));
+  }
+}
+
+async function openStubFile(file, options = {}) {
+  setCurrentDetail({ type: "stubs", id: file }, options);
+  showDetailOverlay();
+  text("detailTitle", `Stubs: ${file}`);
+  el("detailBody").innerHTML = '<p class="muted-text">Loading…</p>';
+  try {
+    renderStubFile(await fetchJson(`/api/stubs?file=${encodeURIComponent(file)}`, 15000));
+  } catch (error) {
+    el("detailBody").innerHTML = "";
+    el("detailBody").appendChild(div("muted-text", `Failed to load: ${error.message}`));
+  }
+}
+
+function auditRollupChips(rollup) {
+  const wrap = div("audit-summary");
+  const chips = [
+    ["weight", "Findings", "done"],
+    ["no_body", "No body", "blocked"],
+    ["missing_case", "Case ids", "progress"],
+    ["missing_event", "Event posts", "progress"],
+    ["missing_callee", "Callees", "progress"],
+    ["missing_assert", "Asserts", "todo"],
+  ];
+  for (const [key, label, cls] of chips) {
+    const chip = div(`chip ${cls}`);
+    chip.appendChild(span("", fmtInt(rollup[key] || 0)));
+    const l = document.createElement("label");
+    l.textContent = label;
+    chip.appendChild(l);
+    wrap.appendChild(chip);
+  }
+  return wrap;
+}
+
+function renderAuditFile(data) {
+  const body = el("detailBody");
+  body.innerHTML = "";
+  const rollup = data.rollup || {};
+
+  const banner = div("detail-banner");
+  banner.appendChild(span("tag goal-tag", "console audit"));
+  if (data.tu_id) banner.appendChild(tuButton(data.tu_id, "tag goal-tag"));
+  body.appendChild(banner);
+
+  const facts = detailSection("Overview");
+  facts.appendChild(kv("File", fileRepoLink(data.file)));
+  facts.appendChild(kv("Functions", `${fmtInt(rollup.functions || 0)} with findings`));
+  facts.appendChild(auditRollupChips(rollup));
+  facts.appendChild(
+    div(
+      "audit-meta",
+      "Each function is the reconstructed body (plus the PC-only helpers it calls) compared with the console's pseudocode. A missing case id, event post, callee or body is a difference; missing log strings and uncited data are context.",
+    ),
+  );
+  body.appendChild(facts);
+
+  const list = detailSection(`Functions (${fmtInt((data.items || []).length)})`);
+  if (!data.items || !data.items.length) list.appendChild(div("muted-text", "No findings in this file."));
+  for (const fn of data.items || []) {
+    const row = div("audit-row");
+    const head = div("audit-row-head");
+    head.appendChild(span("dep-name", fn.name));
+    if (fn.weight) head.appendChild(span("pill cat-high", `${fmtInt(fn.weight)} high-signal`));
+    if (fn.flagged) head.appendChild(span("pill todo", "flagged in source"));
+    if (fn.helpers) head.appendChild(span("pill todo", `+${fmtInt(fn.helpers)} helpers`));
+    const where = [];
+    if (fn.addr) where.push(`X360 ${fn.addr}`);
+    if (fn.line) where.push(`line ${fmtInt(fn.line)}`);
+    if (where.length) head.appendChild(span("tu-meta", where.join(" · ")));
+    row.appendChild(head);
+    row.appendChild(findingsList(fn.findings || {}));
+    list.appendChild(row);
+  }
+  body.appendChild(list);
+}
+
+function tierPill(tier) {
+  return span(`pill tier-${tier}`, String(tier || "").toLowerCase());
+}
+
+function stubRow(stub) {
+  const row = div("audit-row");
+  const head = div("audit-row-head");
+  head.appendChild(span("dep-name", stub.name));
+  head.appendChild(tierPill(stub.tier));
+  if (stub.live_callers && stub.live_callers.length) head.appendChild(span("pill live", "live today"));
+  const where = [];
+  if (stub.addr) where.push(`X360 ${stub.addr}`);
+  if (stub.line) where.push(`line ${fmtInt(stub.line)}`);
+  if (stub.console_lines != null) where.push(`${fmtInt(stub.console_lines)} console lines`);
+  if (where.length) head.appendChild(span("tu-meta", where.join(" · ")));
+  row.appendChild(head);
+  if (stub.why) row.appendChild(div("audit-meta", `why: ${stub.why}`));
+  if (stub.live_callers && stub.live_callers.length) {
+    row.appendChild(div("audit-meta", `called by reconstructed code: ${stub.live_callers.join(", ")}`));
+  }
+  return row;
+}
+
+function renderStubFile(data) {
+  const body = el("detailBody");
+  body.innerHTML = "";
+  const rollup = data.rollup || {};
+
+  const banner = div("detail-banner");
+  banner.appendChild(span("tag goal-tag", "stub inventory"));
+  if (data.tu_id) banner.appendChild(tuButton(data.tu_id, "tag goal-tag"));
+  body.appendChild(banner);
+
+  const facts = detailSection("Overview");
+  facts.appendChild(kv("File", fileRepoLink(data.file)));
+  facts.appendChild(kv("Stubs", `${fmtInt(rollup.stubs || 0)} (${fmtInt(rollup.high || 0)} high, ${fmtInt(rollup.medium || 0)} medium, ${fmtInt(rollup.low || 0)} low)`));
+  facts.appendChild(kv("Live today", `${fmtInt(rollup.live || 0)} reached by reconstructed code`));
+  facts.appendChild(kv("Console lines", `${fmtInt(rollup.console_lines || 0)} of work behind them`));
+  facts.appendChild(
+    div(
+      "audit-meta",
+      "High: the file or the body says it is a stand-in, or it traps. Medium: a trivial body under a softer marker. Low: a trivial, unmarked body whose console function does real work — possibly a legitimate empty default.",
+    ),
+  );
+  body.appendChild(facts);
+
+  const list = detailSection(`Stub bodies (${fmtInt((data.items || []).length)})`);
+  if (!data.items || !data.items.length) list.appendChild(div("muted-text", "No stubs in this file."));
+  for (const stub of data.items || []) list.appendChild(stubRow(stub));
+  body.appendChild(list);
+}
+
+function tuAuditSection(d) {
+  const audit = d.audit || {};
+  const rollup = audit.rollup;
+  const stubs = audit.stubs || [];
+  const funcs = audit.funcs || {};
+  const section = detailSection("Console audit");
+  if (!rollup && !Object.keys(funcs).length && !stubs.length) {
+    section.appendChild(
+      div("muted-text", audit.file ? "Nothing the audit can name differs in this file." : "No audit data for this TU."),
+    );
+    return section;
+  }
+  if (rollup) {
+    section.appendChild(auditRollupChips(rollup));
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "filter";
+    open.textContent = "Open file audit";
+    open.addEventListener("click", () => openAuditFile(audit.file));
+    section.appendChild(open);
+  }
+  const names = Object.keys(funcs).sort((a, b) => (funcs[b].weight || 0) - (funcs[a].weight || 0));
+  for (const name of names.slice(0, 40)) {
+    const fnAudit = funcs[name];
+    const row = div("audit-row");
+    const head = div("audit-row-head");
+    head.appendChild(span("dep-name", name));
+    if (fnAudit.weight) head.appendChild(span("pill cat-high", `${fmtInt(fnAudit.weight)} high-signal`));
+    if (fnAudit.flagged) head.appendChild(span("pill todo", "flagged"));
+    row.appendChild(head);
+    row.appendChild(findingsList(fnAudit.findings || {}));
+    section.appendChild(row);
+  }
+  if (names.length > 40) section.appendChild(div("audit-meta", `${fmtInt(names.length - 40)} more functions in the file audit.`));
+  if (stubs.length) {
+    const sub = div("detail-section-title");
+    sub.textContent = `Stubs in this file (${fmtInt(stubs.length)})`;
+    sub.style.marginTop = "14px";
+    section.appendChild(sub);
+    for (const stub of stubs.slice(0, 40)) section.appendChild(stubRow(stub));
+    if (stubs.length > 40) {
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "filter";
+      open.textContent = `All ${fmtInt(stubs.length)} stubs`;
+      open.addEventListener("click", () => openStubFile(audit.file));
+      section.appendChild(open);
+    }
+  }
+  return section;
+}

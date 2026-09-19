@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from bp_work_server.audit import SCHEMA as AUDIT_SCHEMA
+
 TU_STATUSES = {"todo", "in_progress", "compiled", "done", "blocked"}
 # Only these durable statuses are seeded from the workflow snapshot. The transient
 # work states (in_progress/compiled), owners, and leases are born on the server and
@@ -127,7 +129,7 @@ CREATE INDEX IF NOT EXISTS ix_event_tu_action ON event(tu_id, action, id);
 CREATE INDEX IF NOT EXISTS ix_attribution_cache_lookup
   ON attribution_cache(scope, dest_path, function_name);
 CREATE INDEX IF NOT EXISTS ix_build_created ON build(created_at);
-"""
+""" + AUDIT_SCHEMA
 
 
 USERS_SCHEMA = """

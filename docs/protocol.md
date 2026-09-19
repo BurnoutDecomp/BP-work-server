@@ -279,6 +279,44 @@ Server-sent events stream used by the dashboard. It emits `work-event` messages
 when new events are available and periodic `tick` messages so browsers refresh
 even when a lease expiry changes state without a user action.
 
+### `GET /api/audit/summary`
+
+The evidence layer's totals: `funcaudit` (the latest glue audit: `paired`, `clean`,
+`no_body`, `unpaired_no_file`, `weight` = high-signal findings, `verified_percent`,
+`commit`, `author`, `generated_at`, per-category counts), `stubs` (the latest stub
+inventory: `stubs`, `high`, `medium`, `low`, `live`, `console_lines`, `files`) and
+`history` (one point per audited b5-decomp commit, oldest first). Read-only, no auth.
+
+### `GET /api/audit/files?q=&category=&sort=weight&order=desc&limit=50&offset=0`
+
+Per-file rollup of the latest glue audit (`file`, `functions`, `weight`, `no_body`,
+`missing_case`, `extra_case`, `missing_event`, `missing_callee`, `missing_assert`,
+`missing_string`, `uncited_data`). `category` keeps files with at least one item of that
+category (`NO_BODY`, `MISSING_CASE`, `EXTRA_CASE`, `MISSING_EVENT`, `MISSING_CALLEE`,
+`MISSING_ASSERT`, `MISSING_STRING`, `UNCITED_DATA`).
+
+### `GET /api/audit/functions?file=...`
+
+Every function with findings in one file: `name`, `addr` (X360), `line`, `flagged`,
+`helpers`, `weight`, `findings` (category -> items), plus the file's `rollup` and the
+`tu_id` whose destination is that file, when there is one.
+
+### `GET /api/stubs/files?q=&tier=&live=false&sort=stubs&order=desc&limit=50&offset=0`
+
+Per-file rollup of the latest stub inventory (`stubs`, `high`, `medium`, `low`, `live`,
+`console_lines`). `live=true` keeps files with at least one stub a reconstructed body calls.
+
+### `GET /api/stubs?file=...`
+
+Every stub body in one file: `name`, `addr`, `line`, `tier`, `why`, `console_lines`,
+`callers`, `live_callers`, plus the file's `rollup` and `tu_id`.
+
+Both audits are produced by CI (`BP-Decomp_Workflow/.github/workflows/reconcile-status.yml`)
+from `tools/re/funcaudit.py` / `tools/re/stubaudit.py` and read here from
+`progress/funcaudit.json` / `progress/stubs.json` on every sync/import. `GET /api/tu`
+carries the same data for one TU under `audit`, and `GET /dashboard/state` carries the
+summary under `audit`.
+
 ### `GET /dashboard/state`
 
 Dashboard-optimized summary. It returns aggregate progress, active agents,

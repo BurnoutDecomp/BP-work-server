@@ -7,6 +7,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from bp_work_server.decomp import DecompRepo
 from bp_work_server.dependencies import get_store
 from bp_work_server.models import (
+    AuditFileResponse,
+    AuditSummaryResponse,
     DashboardStateResponse,
     FacetsResponse,
     GoalDetailResponse,
@@ -42,6 +44,75 @@ async def dashboard_state(
 @router.get("/api/facets", response_model=FacetsResponse)
 def facets(store: WorkStore = Depends(get_store)) -> dict:
     return store.facets()
+
+
+# ---- the evidence layer: CI's per-commit glue audit + stub inventory ----
+@router.get("/api/audit/summary", response_model=AuditSummaryResponse)
+async def audit_summary(store: WorkStore = Depends(get_store)) -> dict:
+    return await asyncio.to_thread(store.audit_summary)
+
+
+@router.get("/api/audit/files", response_model=SearchResponse)
+async def audit_files(
+    q: str | None = Query(None),
+    category: str | None = Query(None),
+    sort: str = Query(
+        "weight",
+        pattern="^(weight|functions|no_body|missing_case|missing_event|missing_callee|missing_assert|file)$",
+    ),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    store: WorkStore = Depends(get_store),
+) -> dict:
+    return await asyncio.to_thread(
+        store.audit_files,
+        q=q,
+        category=category,
+        sort=sort,
+        order=order,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/api/audit/functions", response_model=AuditFileResponse)
+async def audit_functions(
+    file: str = Query(..., min_length=1),
+    store: WorkStore = Depends(get_store),
+) -> dict:
+    return await asyncio.to_thread(store.audit_functions, file)
+
+
+@router.get("/api/stubs/files", response_model=SearchResponse)
+async def stub_files(
+    q: str | None = Query(None),
+    tier: str | None = Query(None, pattern="^(HIGH|MEDIUM|LOW|high|medium|low)$"),
+    live: bool = Query(False),
+    sort: str = Query("stubs", pattern="^(stubs|high|live|console_lines|file)$"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    store: WorkStore = Depends(get_store),
+) -> dict:
+    return await asyncio.to_thread(
+        store.stub_files,
+        q=q,
+        tier=tier,
+        live_only=live,
+        sort=sort,
+        order=order,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/api/stubs", response_model=AuditFileResponse)
+async def stubs(
+    file: str = Query(..., min_length=1),
+    store: WorkStore = Depends(get_store),
+) -> dict:
+    return await asyncio.to_thread(store.stubs, file)
 
 
 @router.get("/api/goal", response_model=GoalDetailResponse)

@@ -39,7 +39,7 @@
       href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/app.css?v=21" />
+    <link rel="stylesheet" href="/static/app.css?v=22" />
   </head>
   <body>
     <div class="bp-bg" aria-hidden="true">
@@ -174,6 +174,28 @@
             </div>
           </article>
 
+          <article
+            class="card metric ring-card verified-card"
+            title="Functions whose reconstructed body differs in nothing the static glue audit can name from the console's own function: switch case ids, event posts, named callees, asserts and cited data. Rebuilt by CI on every commit from tools/re/funcaudit.py. The one number here that nobody declared."
+          >
+            <div class="ring" id="verifiedRing" style="--p: 0">
+              <svg viewBox="0 0 120 120" aria-hidden="true">
+                <circle class="ring-track" cx="60" cy="60" r="52" />
+                <circle class="ring-fill verified" cx="60" cy="60" r="52" />
+              </svg>
+              <div class="ring-label">
+                <strong id="verifiedPercent">0%</strong>
+                <span>Verified</span>
+              </div>
+            </div>
+            <div class="metric-body">
+              <span class="label">Verified vs Console</span>
+              <small id="verifiedCount">no audit yet</small>
+              <small id="verifiedNote" class="metric-note" hidden></small>
+              <small id="verifiedTrend" class="metric-note" hidden></small>
+            </div>
+          </article>
+
           <article class="card metric goal-card">
             <span class="label">Active Goal</span>
             <strong id="activeGoal">Whole program</strong>
@@ -193,6 +215,8 @@
             <div class="explorer-tabs" id="explorerTabs">
               <button class="tab active" data-tab="tus">Translation Units</button>
               <button class="tab" data-tab="funcs">Functions</button>
+              <button class="tab" data-tab="audit" title="Per file: what the console's functions do that the reconstructed bodies do not (tools/re/funcaudit.py, rebuilt on every commit)">Audit</button>
+              <button class="tab" data-tab="stubs" title="Per file: bodies that are still stand-ins (tools/re/stubaudit.py, rebuilt on every commit)">Stubs</button>
             </div>
             <span id="explorerCount" class="badge">0 results</span>
           </div>
@@ -205,7 +229,30 @@
               placeholder="Search by name, source, or path…"
               autocomplete="off"
             />
-            <select id="filterStatus" class="filter"><option value="">All statuses</option></select>
+            <select id="filterStatus" class="filter ledger-only"><option value="">All statuses</option></select>
+            <select id="filterAuditCat" class="filter audit-only hidden"><option value="">All findings</option></select>
+            <select id="sortAudit" class="filter audit-only hidden">
+              <option value="weight" selected>Sort: Findings</option>
+              <option value="no_body">Sort: No body</option>
+              <option value="missing_case">Sort: Case ids</option>
+              <option value="missing_event">Sort: Event posts</option>
+              <option value="missing_callee">Sort: Callees</option>
+              <option value="missing_assert">Sort: Asserts</option>
+              <option value="functions">Sort: Functions</option>
+              <option value="file">Sort: File</option>
+            </select>
+            <select id="filterStubTier" class="filter stubs-only hidden"><option value="">All tiers</option></select>
+            <label class="filter check stubs-only hidden" for="filterStubLive">
+              <input type="checkbox" id="filterStubLive" />
+              <span>Live today only</span>
+            </label>
+            <select id="sortStubs" class="filter stubs-only hidden">
+              <option value="stubs" selected>Sort: Stubs</option>
+              <option value="high">Sort: High tier</option>
+              <option value="live">Sort: Live</option>
+              <option value="console_lines">Sort: Console lines</option>
+              <option value="file">Sort: File</option>
+            </select>
             <select id="filterSource" class="filter tus-only"><option value="">All sources</option></select>
             <select id="filterGoal" class="filter tus-only"><option value="">All goals</option></select>
             <select id="sortBy" class="filter tus-only">
@@ -412,6 +459,6 @@
       </aside>
     </div>
 
-    <script src="/static/app.js?v=14" defer></script>
+    <script src="/static/app.js?v=15" defer></script>
   </body>
 </html>

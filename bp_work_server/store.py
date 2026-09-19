@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 
+from bp_work_server import audit
 from bp_work_server.build_link import is_linked, parse_build_sources
 from bp_work_server.models import ClaimResponse, NextTu, StatusCounts, TuRecord
 from bp_work_server.schema import (
@@ -340,6 +341,9 @@ class WorkStore:
             dep_count = self._restore_deps(con, deps)
             goal_count = self._restore_goals(con, goals)
             linked_count = self._restore_linked(con, workflow_root)
+            # The evidence layer: CI's per-commit glue audit and stub inventory. Optional,
+            # idempotent per commit, and the one number on the dashboard nobody declared.
+            audit_counts = audit.import_audits(con, progress, iso(), self._log)
             self._log(con, "server", "import", None, {"workflow_root": str(workflow_root)})
             return {
                 "tus": len(tu_index),
@@ -349,7 +353,30 @@ class WorkStore:
                 "status_rows": status_rows,
                 "linked": linked_count,
                 "unidentified": unidentified_count,
+                "audit_findings": audit_counts.get("funcaudit", 0),
+                "stubs": audit_counts.get("stubs", 0),
             }
+
+    # ---------------------------------------------------------------- audit layer
+    def audit_summary(self) -> dict[str, Any]:
+        with self.connect() as con:
+            return audit.summary(con)
+
+    def audit_files(self, **kwargs: Any) -> dict[str, Any]:
+        with self.connect() as con:
+            return audit.files(con, **kwargs)
+
+    def audit_functions(self, file: str) -> dict[str, Any]:
+        with self.connect() as con:
+            return audit.functions(con, file)
+
+    def stub_files(self, **kwargs: Any) -> dict[str, Any]:
+        with self.connect() as con:
+            return audit.stub_files(con, **kwargs)
+
+    def stubs(self, file: str) -> dict[str, Any]:
+        with self.connect() as con:
+            return audit.stubs(con, file)
 
     def _restore_unidentified(
         self,
@@ -1239,6 +1266,7 @@ class WorkStore:
                 if actor:
                     completed_funcs_by_agent[actor] += row["completed"]
             attribution_cache_coverage = self._attribution_cache_coverage(con, attribution_repo_rev)
+            audit_block = audit.summary(con, history_limit=60)
             counts_repo_rev = self._attribution_counts_rev(
                 con, attribution_repo_rev, attribution_cache_coverage
             )
@@ -1404,6 +1432,7 @@ class WorkStore:
                 },
                 "agents": agents,
                 "attribution_cache": attribution_cache_coverage,
+                "audit": audit_block,
                 "actor_profiles": profiles,
                 "active_work": active_work,
                 "blocked": blocked,
@@ -1440,6 +1469,8 @@ class WorkStore:
                 "sources": sources,
                 "func_statuses": func_statuses,
                 "goals": goals,
+                "audit_categories": list(audit.FILE_COLUMNS),
+                "stub_tiers": list(audit.STUB_TIERS),
             }
 
     def goal_detail(self, name: str) -> dict[str, Any]:
@@ -1701,6 +1732,16 @@ class WorkStore:
                     "SELECT goal_name FROM goal_tu WHERE tu_id=? ORDER BY goal_name", (tu_id,)
                 )
             ]
+            # The evidence layer for this TU: what the console does that these bodies do
+            # not, and which of its bodies are still stand-ins.
+            detail["audit"] = audit.tu_audit(
+                con, row["dest_path"], [f["name"] for f in detail["funcs"]]
+            )
+            for func in detail["funcs"]:
+                found = detail["audit"]["funcs"].get(func["name"])
+                if found:
+                    func["audit_weight"] = found["weight"]
+                    func["audit_findings"] = found["findings"]
             self._enrich_tu_items(con, [detail])
             aliases, _profiles = self.actor_maps()
             self._canonicalize_item_actors([detail], aliases)

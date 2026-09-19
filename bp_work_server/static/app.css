@@ -656,7 +656,7 @@ h2::before {
 /* ---------- Headline metrics ---------- */
 .metrics {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1.4fr;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1.4fr;
   gap: 20px;
   min-width: 0;
 }
@@ -714,6 +714,12 @@ h2::before {
 .ring-fill.exe {
   stroke: var(--blue);
   filter: drop-shadow(0 0 6px rgba(87, 168, 224, 0.5));
+}
+
+/* green — the evidence ring: bodies the static audit cannot fault against the console */
+.ring-fill.verified {
+  stroke: var(--green);
+  filter: drop-shadow(0 0 6px rgba(111, 207, 87, 0.5));
 }
 
 .ring-label {
@@ -1527,14 +1533,14 @@ html::-webkit-scrollbar-corner,
 }
 
 /* ---------- Responsive ---------- */
-/* Four cards across only survive on a wide viewport: below that the three rings
-   keep a full row of their own and the goal card drops underneath. */
-@media (max-width: 1280px) {
+/* Five cards across only survive on a wide viewport: below that the four rings
+   keep two rows of two and the goal card drops underneath. */
+@media (max-width: 1400px) {
   .metrics {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
   }
   .goal-card {
-    grid-column: span 3;
+    grid-column: span 4;
   }
   .ring {
     width: 104px;
@@ -1549,8 +1555,6 @@ html::-webkit-scrollbar-corner,
   .metrics {
     grid-template-columns: 1fr 1fr;
   }
-  /* odd one out of the three rings — spans the row rather than leaving a hole */
-  .exe-card,
   .goal-card {
     grid-column: span 2;
   }
@@ -1566,7 +1570,6 @@ html::-webkit-scrollbar-corner,
   .metrics {
     grid-template-columns: 1fr;
   }
-  .exe-card,
   .goal-card {
     grid-column: auto;
   }
@@ -2411,4 +2414,118 @@ html::-webkit-scrollbar-corner,
   .explorer {
     margin: 0 0 18px;
   }
+}
+
+/* ---------- Evidence layer: audit + stub inventory ---------- */
+.filter.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.filter.check input {
+  accent-color: var(--red-bright);
+  margin: 0;
+}
+.audit-trend.up {
+  color: var(--green);
+}
+.audit-trend.down {
+  color: var(--red-bright);
+}
+.num-cell {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.num-cell.zero {
+  color: var(--faint);
+}
+.pill.cat-high {
+  color: #ffc2c2;
+  background: rgba(236, 28, 36, 0.22);
+}
+.pill.cat-mid {
+  color: #ffe6a3;
+  background: rgba(227, 165, 44, 0.2);
+}
+.pill.cat-low {
+  color: var(--muted);
+  background: rgba(157, 145, 130, 0.16);
+}
+.pill.tier-HIGH {
+  color: #ffc2c2;
+  background: rgba(236, 28, 36, 0.22);
+}
+.pill.tier-MEDIUM {
+  color: #ffe6a3;
+  background: rgba(227, 165, 44, 0.2);
+}
+.pill.tier-LOW {
+  color: var(--muted);
+  background: rgba(157, 145, 130, 0.16);
+}
+.pill.live {
+  color: #cfe6ff;
+  background: rgba(87, 168, 224, 0.2);
+}
+.audit-row {
+  display: grid;
+  gap: 6px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.audit-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.audit-row-head .dep-name {
+  flex: 1 1 200px;
+  word-break: break-all;
+}
+.audit-findings {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.audit-findings li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12.5px;
+  padding-left: 8px;
+  border-left: 2px solid var(--line);
+}
+.audit-findings li.high {
+  border-left-color: var(--red-bright);
+}
+.audit-findings .audit-cat {
+  flex: none;
+  min-width: 118px;
+  font-family: var(--font-head);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+}
+.audit-findings .audit-items {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  word-break: break-word;
+}
+.audit-meta {
+  color: var(--faint);
+  font-size: 12px;
+}
+.audit-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0 10px;
+}
+.audit-summary .chip {
+  min-width: 96px;
 }
