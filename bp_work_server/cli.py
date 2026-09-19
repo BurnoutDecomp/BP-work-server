@@ -212,7 +212,19 @@ def main() -> None:
             os.environ["BP_WORK_USERS_DB"] = str(args.users_db)
         configure_logging()
         app = create_app(store)
-        uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)
+        # The dashboard keeps an SSE stream (/events/stream) open per viewer;
+        # uvicorn's default graceful shutdown waits for every connection to
+        # close, so with one browser open a restart hung until systemd's
+        # 90 s stop timeout SIGKILLed the process and the site showed the
+        # "Deploying" page for the whole wait. Close stragglers after 5 s
+        # instead; EventSource reconnects on its own.
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            reload=args.reload,
+            timeout_graceful_shutdown=5,
+        )
         return
 
     parser.error(f"unknown command: {args.cmd}")
