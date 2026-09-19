@@ -36,16 +36,28 @@ This repo contains an MVP server:
   count, from `next`, and from claiming — an unnamed function is not a TU, and it
   is identified in IDA rather than under a lease.
 - The evidence layer (2026-09-19): every other number on the dashboard is something a
-  person declared. CI runs two static audits against the pinned b5-decomp tree on every
-  commit -- `tools/re/funcaudit.py` (each reconstructed body vs the console's own
-  function: missing bodies, switch case ids, event posts, named callees, asserts,
-  uncited data) and `tools/re/stubaudit.py` (every body that is still a stand-in) --
-  and commits `progress/funcaudit.json` + `progress/stubs.json`. The import loads them
-  (idempotent per commit) into `audit_run` / `audit_finding` / `audit_file` /
-  `stub` / `stub_file`; the dashboard shows the **Verified** ring (bodies the audit
-  cannot fault, over bodies it could pair), the Audit and Stubs explorer tabs with
-  per-file drill-down drawers, the per-TU "Console audit" section, and one Live Event
-  per commit that moved the numbers, blamed on that commit's author.
+  person declared. Three static audits from the workflow repo measure the tree against
+  the console itself: `tools/re/funcaudit.py` (each reconstructed body vs the console's
+  own function: missing bodies, switch case ids, event posts, named callees, asserts,
+  uncited data) and `tools/re/stubaudit.py` (every body that is still a stand-in) run on
+  every b5-decomp commit; `tools/re/asmaudit.py` (each function of the *built exe* vs the
+  console's machine code: callees, branch counts, constants, tiers A/B/C/T, `[FLAG PC]`
+  markers counted) runs on every published build. The import loads
+  `progress/funcaudit.json`, `stubs.json` and `asmaudit.json` (idempotent per commit /
+  per build) into `audit_run`, `audit_finding` / `audit_file`, `stub` / `stub_file`,
+  `asm_function` / `asm_file`. The dashboard's **Verified vs Console** panel draws the
+  ring over all functions (clean, high-signal, context-only, no body, not audited, not
+  comparable, unidentified), the verified-percent history, the instruction-shape tier
+  bar, a facts row, and the three evidence tabs (glue audit, stub inventory,
+  instruction shape) with per-file drawers that list every function, filterable and
+  sortable. The per-TU drawer carries its "Console audit"; one Live Event per commit or
+  build that moved the numbers is blamed on the b5-decomp author.
+- Downloads: every build keeps the exe-only bundle CI uploaded beside the merged zip; the
+  Download button is a chooser (full game, or the exe/DLL update for anyone who already
+  has the assets, with a note on whether the assets changed). Downloads count unique
+  addresses per day; each address has a daily quota per kind (`BP_DL_FULL_PER_DAY`,
+  `BP_DL_UPDATE_PER_DAY`), and with `BP_DOWNLOADS_ACCEL` set nginx streams the file
+  from an internal location so the multi-GB body never passes through Python.
 - File-tree entries and TU destinations link straight to the file on GitHub.
 - Burnout Paradise themed dashboard (drop a `logo.png` into the static folder).
 - Small stdlib HTTP client for `work.py` integration.
