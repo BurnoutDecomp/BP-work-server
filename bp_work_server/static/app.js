@@ -901,11 +901,13 @@ function renderDownloadMenu() {
   if (!menu || !b) return;
   clearNode(menu);
   const previous = (state.builds || []).find((x) => x.id !== b.id);
-  const assetsNote = b.assets_changed === false && previous
-    ? `Game assets unchanged since build ${previous.commit_short || previous.id}${previous.built_at ? ` (${relTime(previous.built_at)})` : ""}: if you already have the game folder, the update is all you need.`
-    : b.assets_changed === true
-      ? "The game assets changed in this build: take the full game unless you know which files moved."
-      : "First published build: take the full game.";
+  const assetsNote = !b.update_url
+    ? "This build predates the exe-only update; the next published build will offer one."
+    : b.assets_changed === false && previous
+      ? `Game assets unchanged since build ${previous.commit_short || previous.id}${previous.built_at ? ` (${relTime(previous.built_at)})` : ""}: if you already have the game folder, the update is all you need.`
+      : b.assets_changed === true
+        ? "The game assets changed in this build: take the full game unless you know which files moved."
+        : "First published build: take the full game.";
   menu.appendChild(downloadOption(
     "Full game", fmtBytes(b.size_bytes),
     "Everything: the exe, its DLLs and every game asset. For a first install, or when the assets changed.",
