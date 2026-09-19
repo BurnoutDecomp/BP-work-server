@@ -2995,8 +2995,39 @@ function renderAudit(audit) {
     }
     renderShapeBar(audit.asm || {});
   }
+  renderVerifiedFacts(audit);
   state.evidence.summary = audit;
   renderEvidenceSummary();
+}
+
+// The panel's top right: which commit the audits are from, and the few totals the
+// legend and the tier bar do not already say. Each opens its evidence view.
+function renderVerifiedFacts(audit) {
+  const host = el("verifiedFacts");
+  if (!host) return;
+  clearNode(host);
+  const fa = audit.funcaudit || {};
+  const st = audit.stubs || {};
+  const asm = audit.asm || {};
+  if (fa.commit) {
+    const b = span("badge", `b5-decomp ${String(fa.commit).slice(0, 10)} \u00b7 ${relTime(fa.generated_at || fa.imported_at)}`);
+    b.title = fa.generated_at ? `audited ${fmtTime(fa.generated_at)}` : "";
+    host.appendChild(b);
+  }
+  const fact = (n, label, title, onClick) => {
+    const c = document.createElement("button");
+    c.type = "button";
+    c.className = "vp-fact";
+    c.appendChild(span("n", fmtInt(n)));
+    c.appendChild(span("l", label));
+    if (title) c.title = title;
+    c.addEventListener("click", onClick);
+    host.appendChild(c);
+  };
+  if (fa.files) fact(fa.files, "files with findings", "Files with at least one function the glue audit flagged. Opens the glue audit.", () => openEvidence("audit"));
+  if (st.stubs) fact(st.stubs, "stub bodies", `${fmtInt(st.live || 0)} on live paths. Opens the stub inventory.`, () => openEvidence("stubs"));
+  if (asm.paired_in_exe) fact(asm.paired_in_exe, "in the built exe", "Named functions with a symbol in the exe CI built. Opens the instruction shape.", () => openEvidence("asm"));
+  if (asm.flagged) fact(asm.flagged, "flagged in source", "Functions whose body carries [FLAG PC ...] markers. Opens the instruction shape, flagged only.", () => { openEvidence("asm"); state.evidence.asmFlagged = true; loadEvidenceList(true); renderEvidenceSummary(); });
 }
 
 /* ---- the Verified vs Console band: history chart, shape bar, click-through ---- */
@@ -3158,16 +3189,12 @@ function renderEvidenceSummary() {
     meta.title = fa.generated_at ? `audited ${fmtTime(fa.generated_at)}` : "";
   }
   const intro = el("evidenceIntro");
-  const tiles = el("evidenceTiles");
   const chips = el("evidenceChips");
-  if (!intro || !tiles || !chips) return;
-  clearNode(tiles);
+  if (!intro || !chips) return;
   clearNode(chips);
   if (ev.tab === "audit") {
     intro.textContent =
       "Every reconstructed body (plus the PC-only helpers it calls) compared with the console's own pseudocode, per file. A missing switch case id, event post, callee or body is a difference the console's code has and ours does not; missing log strings and uncited data symbols are context. Rebuilt by CI on every commit — nothing here is declared by hand.";
-    // the ring's legend above already carries these numbers; only what it does not say
-    tiles.appendChild(evidenceTile("files with findings", Number(fa.files || 0), "todo"));
     const cats = fa.categories || {};
     for (const [key, label, color, catKey] of EVIDENCE_AUDIT_CHIPS) {
       const count = catKey ? (cats[catKey] ? cats[catKey].functions : 0) : null;
@@ -3188,10 +3215,6 @@ function renderEvidenceSummary() {
     }
     intro.textContent =
       "The exe CI built, function by function, against the console's own machine code: the same named callees, the same number of conditional branches, the same constants. Byte-matching is impossible across the x64 widening, so this is shape, not identity \u2014 tier A is the same shape, C diverges, and a divergence is a diff to read (which callees and constants exist on one side only), not a verdict. Recomputed on every published build.";
-    // the tier bar above already carries A/B/C/T; only what it does not say
-    tiles.appendChild(evidenceTile("in the built exe", Number(asm.paired_in_exe || 0), "progress"));
-    tiles.appendChild(evidenceTile("flagged in source", Number(asm.flagged || 0), "todo"));
-    tiles.appendChild(evidenceTile("named, not in the exe", Number(asm.not_in_exe || 0), "todo"));
     for (const [key, label, color, count] of [
       ["", "all tiers", "", null],
       ["A", "same shape", "green", asm.A],
@@ -3215,11 +3238,6 @@ function renderEvidenceSummary() {
   } else {
     intro.textContent =
       "Every body in the tree that is still a stand-in, per file. High: the file or the body says so, or it traps. Medium: a trivial body under a softer marker. Low: a trivial, unmarked body whose console function does real work — possibly a legitimate empty default. \"Live today\" means a body we have reconstructed calls the stub right now.";
-    tiles.appendChild(evidenceTile("stub bodies", Number(st.stubs || 0), "todo"));
-    tiles.appendChild(evidenceTile("high tier", Number(st.high || 0), "blocked"));
-    tiles.appendChild(evidenceTile("on live paths", Number(st.live || 0), "progress"));
-    tiles.appendChild(evidenceTile("console lines behind them", Number(st.console_lines || 0), "compiled"));
-    tiles.appendChild(evidenceTile("files", Number(st.files || 0), "todo"));
     for (const [key, label, color, count] of [
       ["", "all tiers", "", null],
       ["HIGH", "high", "red", st.high],
