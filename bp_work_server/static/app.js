@@ -3049,7 +3049,7 @@ function renderVerifiedHistory(history) {
   const host = el("verifiedHistory");
   if (!host) return;
   clearNode(host);
-  const points = (history || []).filter((p) => p.paired != null).slice(-60);
+  const points = (history || []).filter((p) => p.paired != null).slice(-180);
   state.verifiedHistory = history;
   if (points.length < 2) {
     const p = points[0];

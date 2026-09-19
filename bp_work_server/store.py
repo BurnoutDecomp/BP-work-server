@@ -1352,7 +1352,7 @@ class WorkStore:
                 if actor:
                     completed_funcs_by_agent[actor] += row["completed"]
             attribution_cache_coverage = self._attribution_cache_coverage(con, attribution_repo_rev)
-            audit_block = audit.summary(con, history_limit=60)
+            audit_block = audit.summary(con, history_limit=180)
             counts_repo_rev = self._attribution_counts_rev(
                 con, attribution_repo_rev, attribution_cache_coverage
             )
