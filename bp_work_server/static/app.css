@@ -1806,7 +1806,8 @@ html::-webkit-scrollbar-corner,
 
 .explorer-tabs .tab:hover {
   color: var(--text);
-  border-color: var(--red);
+  /* no hard border on a brushed shape: just brighten the plate */
+  filter: brightness(1.28);
 }
 
 .explorer-tabs .tab.active {
@@ -2726,7 +2727,11 @@ html::-webkit-scrollbar-corner,
 }
 .evidence-chip:hover {
   color: var(--text);
-  border-color: var(--red);
+  background: var(--surface-hover);
+}
+.evidence-chip.on:hover {
+  background: url("/static/img/ui/banner-red.png") no-repeat center / 100% 100%;
+  filter: brightness(1.12);
 }
 .evidence-chip.on {
   color: #fff;
