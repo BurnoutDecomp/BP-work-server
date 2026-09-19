@@ -82,7 +82,7 @@ STUB_TIERS = ("HIGH", "MEDIUM", "LOW")
 # but not in the exe) is counted in the run's stats and never stored per row.
 ASM_TIERS = ("A", "B", "C", "T")
 ASM_FILE_SORTS = {"c": "c", "a": "a", "b": "b", "t": "t", "functions": "functions",
-                  "mean_score": "mean_score", "file": "file"}
+                  "mean_score": "mean_score", "file": "file", "flagged": "flagged"}
 SRC_PREFIX = "b5-decomp/src/"
 HISTORY_LIMIT = 120
 DELTA_LIST_LIMIT = 5
@@ -156,6 +156,7 @@ CREATE TABLE IF NOT EXISTS asm_function(
   tier TEXT NOT NULL,
   score REAL,
   console_n INTEGER NOT NULL DEFAULT 0,
+  flagged INTEGER NOT NULL DEFAULT 0,
   row_json TEXT NOT NULL DEFAULT '{}'
 );
 
@@ -166,6 +167,7 @@ CREATE TABLE IF NOT EXISTS asm_file(
   b INTEGER NOT NULL DEFAULT 0,
   c INTEGER NOT NULL DEFAULT 0,
   t INTEGER NOT NULL DEFAULT 0,
+  flagged INTEGER NOT NULL DEFAULT 0,
   mean_score REAL NOT NULL DEFAULT 0
 );
 
@@ -440,6 +442,32 @@ def import_stubs(
     return len(rows)
 
 
+def _ensure_asm_columns(con: sqlite3.Connection) -> None:
+    """The asm tables are rebuilt on every import, so a schema change is a drop + recreate:
+    a database created before the `flagged` column simply loses nothing."""
+    cols = {row[1] for row in con.execute("PRAGMA table_info(asm_function)")}
+    if "flagged" in cols:
+        return
+    con.execute("DROP TABLE IF EXISTS asm_function")
+    con.execute("DROP TABLE IF EXISTS asm_file")
+    start = SCHEMA.index("CREATE TABLE IF NOT EXISTS asm_function(")
+    end = SCHEMA.index("CREATE INDEX IF NOT EXISTS ix_audit_finding_file")
+    con.executescript(SCHEMA[start:end])
+
+
+def _ensure_asm_columns(con: sqlite3.Connection) -> None:
+    """The asm tables are rebuilt on every import, so a schema change is a drop + recreate:
+    a database created before the `flagged` column simply loses nothing."""
+    cols = {row[1] for row in con.execute("PRAGMA table_info(asm_function)")}
+    if "flagged" in cols:
+        return
+    con.execute("DROP TABLE IF EXISTS asm_function")
+    con.execute("DROP TABLE IF EXISTS asm_file")
+    start = SCHEMA.index("CREATE TABLE IF NOT EXISTS asm_function(")
+    end = SCHEMA.index("CREATE INDEX IF NOT EXISTS ix_audit_finding_file")
+    con.executescript(SCHEMA[start:end])
+
+
 def _asm_run_key(meta: dict[str, Any]) -> str:
     return str(meta.get("b5_commit") or meta.get("exe_commit") or meta.get("generated_at") or "")
 
@@ -460,6 +488,7 @@ def import_asm(
         return 0
     results = data.get("results") or []
     previous_run = _last_run(con, "asm")
+    _ensure_asm_columns(con)
     previous_files = {row["file"]: row["c"] for row in con.execute("SELECT file, c FROM asm_file")}
     con.execute("DELETE FROM asm_function")
     con.execute("DELETE FROM asm_file")
@@ -473,6 +502,10 @@ def import_asm(
         score = item.get("score")
         counts = item.get("counts") or {}
         console_n = int(((counts.get("n") or [0, 0])[0]) or 0)
+        # `[FLAG PC ...]` markers inside the body: PC additions that compile in and are meant
+        # to differ from the console. Carried as a count so a divergence they explain reads as
+        # known; never subtracted from the score.
+        flagged = int(((item.get("flags") or {}).get("total")) or 0)
         rows.append(
             (
                 item.get("name") or "",
@@ -481,25 +514,28 @@ def import_asm(
                 tier,
                 float(score) if score is not None else None,
                 console_n,
+                flagged,
                 json.dumps(item, separators=(",", ":")),
             )
         )
-        b = rollup.setdefault(file, {"functions": 0, "a": 0, "b": 0, "c": 0, "t": 0, "scores": []})
+        b = rollup.setdefault(file, {"functions": 0, "a": 0, "b": 0, "c": 0, "t": 0, "flagged": 0, "scores": []})
         b["functions"] += 1
         b[tier.lower()] += 1
+        if flagged:
+            b["flagged"] += 1
         if score is not None and tier != "T":
             b["scores"].append(float(score))
     con.executemany(
         """
-        INSERT INTO asm_function(name, addr, file, tier, score, console_n, row_json)
-        VALUES(?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO asm_function(name, addr, file, tier, score, console_n, flagged, row_json)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows,
     )
     con.executemany(
         """
-        INSERT INTO asm_file(file, functions, a, b, c, t, mean_score)
-        VALUES(?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO asm_file(file, functions, a, b, c, t, flagged, mean_score)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -509,6 +545,7 @@ def import_asm(
                 b["b"],
                 b["c"],
                 b["t"],
+                b["flagged"],
                 round(sum(b["scores"]) / len(b["scores"]), 1) if b["scores"] else 0.0,
             )
             for file, b in rollup.items()
@@ -516,6 +553,7 @@ def import_asm(
     )
     stats = dict(data.get("stats") or {})
     stats["files"] = len(rollup)
+    stats["flagged"] = sum(b["flagged"] for b in rollup.values())
     stats["exe_commit"] = meta.get("exe_commit")
     stats["exe_mtime"] = meta.get("exe_mtime")
     stats["toolchain"] = meta.get("toolchain")
@@ -895,6 +933,7 @@ def asm_files(
     *,
     q: str | None = None,
     tier: str | None = None,
+    flagged_only: bool = False,
     sort: str = "c",
     order: str = "desc",
     limit: int = 50,
@@ -908,6 +947,8 @@ def asm_files(
     tier_col = (tier or "").lower()
     if tier_col in ("a", "b", "c", "t"):
         clauses.append(f"{tier_col} > 0")
+    if flagged_only:
+        clauses.append("flagged > 0")
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     sort_col = ASM_FILE_SORTS.get(sort, "c")
     direction = "ASC" if order == "asc" else "DESC"

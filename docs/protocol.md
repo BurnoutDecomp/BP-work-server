@@ -390,7 +390,9 @@ when present (idempotent per build commit) and logs one `asm` event per build th
 tier-C count, blamed on the b5-decomp author of the commit the exe was built from.
 
 - `GET /api/audit/summary` carries `asm` (latest run stats) and `asm_*` history points.
-- `GET /api/asm/files?q=&tier=&sort=c|a|b|t|functions|mean_score|file&order=&limit=&offset=`
+- `GET /api/asm/files?q=&tier=&flagged=&sort=c|a|b|t|functions|mean_score|file|flagged&order=&limit=&offset=`
+  -- `flagged=true` keeps files with functions whose body carries `[FLAG PC ...]` markers (PC
+  additions that compile in and are meant to differ; each row's `flags` lists them by kind).
 - `GET /api/asm/functions?file=` -- every paired function in the file with its score, counts, diff and notes.
 - `GET /api/asm/top?tier=C&limit=` -- the largest console bodies in a tier.
 - `GET /api/tu` carries `audit.asm` (per function) and `audit.asm_rollup`.

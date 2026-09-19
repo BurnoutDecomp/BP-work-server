@@ -130,14 +130,16 @@ async def stub_top(
 async def asm_files(
     q: str | None = Query(None),
     tier: str | None = Query(None, pattern="^(A|B|C|T|a|b|c|t)$"),
-    sort: str = Query("c", pattern="^(c|a|b|t|functions|mean_score|file)$"),
+    flagged: bool = Query(False),
+    sort: str = Query("c", pattern="^(c|a|b|t|functions|mean_score|file|flagged)$"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     store: WorkStore = Depends(get_store),
 ) -> dict:
     return await asyncio.to_thread(
-        store.asm_files, q=q, tier=tier, sort=sort, order=order, limit=limit, offset=offset
+        store.asm_files, q=q, tier=tier, flagged_only=flagged, sort=sort, order=order,
+        limit=limit, offset=offset,
     )
 
 

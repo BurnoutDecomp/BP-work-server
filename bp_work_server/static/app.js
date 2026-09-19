@@ -33,6 +33,7 @@ const state = {
     tier: "",
     live: false,
     asmTier: "",
+    asmFlagged: false,
     offset: 0,
     limit: 25,
     total: 0,
@@ -2749,6 +2750,7 @@ function renderEvidenceSummary() {
     tiles.appendChild(evidenceTile("B \u00b7 close", Number(asm.B || 0), "compiled"));
     tiles.appendChild(evidenceTile("C \u00b7 diverges", Number(asm.C || 0), "blocked"));
     tiles.appendChild(evidenceTile("T \u00b7 trivial", Number(asm.T || 0), "todo"));
+    tiles.appendChild(evidenceTile("flagged in source", Number(asm.flagged || 0), "todo"));
     tiles.appendChild(evidenceTile("named, not in the exe", Number(asm.not_in_exe || 0), "todo"));
     for (const [key, label, color, count] of [
       ["", "all tiers", "", null],
@@ -2763,6 +2765,13 @@ function renderEvidenceSummary() {
         renderEvidenceSummary();
       }));
     }
+    const flaggedChip = evidenceChip("flagged in source only", asm.flagged, ev.asmFlagged, "blue", () => {
+      ev.asmFlagged = !ev.asmFlagged;
+      loadEvidenceList(true);
+      renderEvidenceSummary();
+    });
+    flaggedChip.title = "Functions whose body carries [FLAG PC ...] markers: bring-up gates, boot gates, witnesses, diagnostics. They compile into the exe and are meant to differ from the console; the score does not discount them, this only says which divergences are known.";
+    chips.appendChild(flaggedChip);
   } else {
     intro.textContent =
       "Every body in the tree that is still a stand-in, per file. High: the file or the body says so, or it traps. Medium: a trivial body under a softer marker. Low: a trivial, unmarked body whose console function does real work — possibly a legitimate empty default. \"Live today\" means a body we have reconstructed calls the stub right now.";
@@ -2822,7 +2831,8 @@ function evidenceParams(reset) {
     p.set("sort", "weight");
   } else if (ev.tab === "asm") {
     if (ev.asmTier) p.set("tier", ev.asmTier);
-    p.set("sort", ev.asmTier ? ev.asmTier.toLowerCase() : "c");
+    if (ev.asmFlagged) p.set("flagged", "true");
+    p.set("sort", ev.asmFlagged ? "flagged" : ev.asmTier ? ev.asmTier.toLowerCase() : "c");
   } else {
     if (ev.tier) p.set("tier", ev.tier);
     if (ev.live) p.set("live", "true");
@@ -2845,6 +2855,12 @@ function asmRow(fn) {
   head.appendChild(span("dep-name", fn.name));
   head.appendChild(asmTierPill(fn.tier));
   if (fn.score != null) head.appendChild(span("pill todo", `score ${fn.score}`));
+  if (fn.flags && fn.flags.total) {
+    const kinds = Object.entries(fn.flags.kinds || {}).map(([k, n]) => `${n} ${k}`).join(", ");
+    const pill = span("pill todo", `flagged ${fmtInt(fn.flags.total)}`);
+    pill.title = `[FLAG] markers in the source body: ${kinds}. PC additions that compile in and are meant to differ from the console; the score does not discount them.`;
+    head.appendChild(pill);
+  }
   const c = fn.counts || {};
   const where = [];
   if (fn.addr) where.push(`X360 ${fn.addr}`);
@@ -2868,7 +2884,10 @@ function asmRow(fn) {
   add(`callees only in our exe (${fmtInt(d.calls_only_pc_n || 0)})`, d.calls_only_pc, false);
   add("constants only on the console", d.imm_only_console, true);
   add("constants only in our exe", d.imm_only_pc, false);
-  if (fn.notes && fn.notes.length) add("notes", fn.notes, false);
+  if (fn.notes && fn.notes.length) add("notes", fn.notes.filter((n) => !n.startsWith("flagged in source")), false);
+  if (fn.flags && fn.flags.total) {
+    add("flagged PC additions in the body", Object.entries(fn.flags.kinds || {}).map(([k, n]) => `${n} [FLAG ${k}]`), false);
+  }
   if (list.childNodes.length) row.appendChild(list);
   return row;
 }
@@ -2935,6 +2954,7 @@ function renderEvidenceList() {
       if (item.b) nums.appendChild(span("pill compiled", `${fmtInt(item.b)} B`));
       if (item.c) nums.appendChild(span("pill blocked", `${fmtInt(item.c)} C`));
       if (item.t) nums.appendChild(span("pill todo", `${fmtInt(item.t)} T`));
+      if (item.flagged) nums.appendChild(span("pill live", `${fmtInt(item.flagged)} flagged`));
     } else {
       const meta = [];
       if (item.console_lines) meta.push(`${fmtInt(item.console_lines)} console lines behind them`);
@@ -3001,7 +3021,8 @@ async function fillEvidenceFile(file, body) {
       tools.appendChild(fileRepoLink(file));
       if (data.tu_id) tools.appendChild(tuButton(data.tu_id, "pill todo"));
       body.appendChild(tools);
-      const items = (data.items || []).filter((fn) => !ev.asmTier || fn.tier === ev.asmTier);
+      const items = (data.items || []).filter((fn) =>
+        (!ev.asmTier || fn.tier === ev.asmTier) && (!ev.asmFlagged || (fn.flags && fn.flags.total)));
       for (const fn of items.slice(0, 60)) body.appendChild(asmRow(fn));
       if (items.length > 60) body.appendChild(div("audit-meta", `${fmtInt(items.length - 60)} more functions in this file.`));
     } else {

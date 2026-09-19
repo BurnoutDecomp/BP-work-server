@@ -250,7 +250,8 @@ def _asm_workflow(tmp_path, commit="aaaa1111"):
                      "diff": {"calls_only_console": ["BrnWorld::RemoveRivals", "BrnWorld::Tick"],
                               "calls_only_pc": [], "calls_only_console_n": 2, "calls_only_pc_n": 0,
                               "imm_only_console": [39], "imm_only_pc": [64]},
-                     "notes": []},
+                     "flags": {"total": 3, "kinds": {"PC boot gate": 2, "PC witness": 1}},
+                     "notes": ["flagged in source: 2 PC boot gate, 1 PC witness"]},
                     {"name": "BrnWorld::A::Stop", "addr": "0x82000018", "file": "GameSource/World/A.cpp",
                      "pc_va": "0x140001200", "tier": "A", "score": 90.0,
                      "components": {"calls": 1.0, "cond": 1.0, "imm": 0.5, "ind": None},
@@ -294,11 +295,15 @@ def test_asm_import_summary_files_functions_and_top(tmp_path):
     assert files["items"][0]["c"] == 1 and files["items"][0]["a"] == 1
     assert files["items"][0]["mean_score"] == 65.0
     assert [i["file"] for i in store.asm_files(tier="T")["items"]] == ["GameSource/World/B.cpp"]
+    assert files["items"][0]["flagged"] == 1
+    assert [i["file"] for i in store.asm_files(flagged_only=True)["items"]] == ["GameSource/World/A.cpp"]
+    assert summary["asm"]["flagged"] == 1
 
     functions = store.asm_functions("GameSource/World/A.cpp")
     assert functions["tu_id"] == "GameSource/World/A.cpp"
     assert [f["tier"] for f in functions["items"]] == ["C", "A"]
     assert functions["items"][0]["diff"]["calls_only_console"] == ["BrnWorld::RemoveRivals", "BrnWorld::Tick"]
+    assert functions["items"][0]["flags"]["kinds"] == {"PC boot gate": 2, "PC witness": 1}
     assert functions["items"][1]["notes"][0].startswith("folded")
 
     assert [t["name"] for t in store.asm_top("C")] == ["BrnWorld::A::Run"]
@@ -308,6 +313,7 @@ def test_asm_import_summary_files_functions_and_top(tmp_path):
 
     client = TestClient(create_app(store))
     assert client.get("/api/asm/files").json()["total"] == 2
+    assert client.get("/api/asm/files", params={"flagged": "true"}).json()["total"] == 1
     assert client.get("/api/asm/top", params={"tier": "C"}).json()["items"][0]["name"] == "BrnWorld::A::Run"
     assert client.get("/api/asm/functions", params={"file": "GameSource/World/A.cpp"}).json()["items"][0]["score"] == 40.0
     assert "asm_tiers" in client.get("/api/facets").json()
