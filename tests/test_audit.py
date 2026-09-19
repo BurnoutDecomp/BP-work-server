@@ -285,7 +285,7 @@ def test_asm_import_summary_files_functions_and_top(tmp_path):
     assert summary["asm"]["A"] == 1
     assert summary["asm"]["shape_percent"] == 50.0
     assert summary["asm"]["files"] == 2
-    assert summary["asm"]["commit"] == "aaaa1111"
+    assert summary["asm"]["commit"] == "aaaa1111@eeee2222"   # keyed per build: <b5>@<exe>
     assert summary["history"][-1]["asm_a"] == 1
     assert summary["history"][-1]["asm_shape_percent"] == 50.0
 

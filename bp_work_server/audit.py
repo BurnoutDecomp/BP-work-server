@@ -218,6 +218,9 @@ def import_audits(
     history never carries duplicate points and no phantom delta is ever logged.
     """
     counts = {"funcaudit": 0, "stubs": 0, "asm": 0}
+    # before any early return: a database from before the `flagged` column must still
+    # serve the asm queries (the tables are rebuilt by the next real import anyway)
+    _ensure_asm_columns(con)
     funcaudit_path = progress / "funcaudit.json"
     stubs_path = progress / "stubs.json"
     if funcaudit_path.exists():
@@ -469,7 +472,14 @@ def _ensure_asm_columns(con: sqlite3.Connection) -> None:
 
 
 def _asm_run_key(meta: dict[str, Any]) -> str:
-    return str(meta.get("b5_commit") or meta.get("exe_commit") or meta.get("generated_at") or "")
+    """One b5-decomp commit can be built several times (daily builds, a workflow-repo
+    change), so a run is keyed by both: `<b5>@<exe>`. The b5 hash comes first so a short
+    prefix still names the tree the exe was built from."""
+    b5 = str(meta.get("b5_commit") or "")
+    exe = str(meta.get("exe_commit") or "")
+    if b5 and exe:
+        return f"{b5}@{exe[:12]}"
+    return b5 or exe or str(meta.get("generated_at") or "")
 
 
 def import_asm(
