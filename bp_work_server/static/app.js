@@ -3054,49 +3054,58 @@ function renderVerifiedHistory(history) {
   if (points.length < 2) {
     const p = points[0];
     host.appendChild(div("muted-text vh-empty", points.length
-      ? `One audited commit so far (b5 ${String(p.commit).slice(0, 10)}: ${Number(p.verified_percent || 0).toFixed(1)}% verified). The line starts with the next one.`
+      ? `One audited commit so far (b5 ${String(p.commit).slice(0, 10)}: ${fmtInt(p.clean)} clean of ${fmtInt(p.paired)} paired). The lines start with the next one.`
       : "No audited commits yet."));
     return;
   }
-  // the viewBox is the box's real pixel width: no stretching of text or dots
+  // Three COUNTS, not a ratio: a ratio falls every time a new body is written (it starts
+  // with findings), which reads as regress when it is the opposite. Grey = bodies the audit
+  // could pair, green = of those, clean; red = named functions still without a body.
   const ns = "http://www.w3.org/2000/svg";
-  const W = Math.max(220, Math.round(host.clientWidth || 320)), H = 72, padL = 30, padR = 8, padT = 8, padB = 14;
+  const W = Math.max(220, Math.round(host.clientWidth || 320)), H = 96, padL = 40, padR = 8, padT = 6, padB = 14;
   const svg = document.createElementNS(ns, "svg");
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.setAttribute("width", String(W));
   svg.setAttribute("height", String(H));
-  const vals = points.map((p) => Number(p.verified_percent || 0));
-  const lo = Math.max(0, Math.floor(Math.min(...vals) - 2));
-  const hi = Math.min(100, Math.ceil(Math.max(...vals) + 2));
+  const series = [
+    { key: "paired", cls: "vh-paired", area: true },
+    { key: "clean", cls: "vh-clean", area: true },
+    { key: "no_body", cls: "vh-nobody", area: false },
+  ];
+  const top = Math.max(1, ...points.map((p) => Math.max(Number(p.paired || 0), Number(p.no_body || 0))));
   const x = (i) => padL + (i / (points.length - 1)) * (W - padL - padR);
-  const y = (v) => padT + (1 - (v - lo) / Math.max(1, hi - lo)) * (H - padT - padB);
-  const path = vals.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-  const area = document.createElementNS(ns, "path");
-  area.setAttribute("class", "vh-area");
-  area.setAttribute("d", `${path} L${x(points.length - 1).toFixed(1)},${(H - padB).toFixed(1)} L${x(0).toFixed(1)},${(H - padB).toFixed(1)} Z`);
-  svg.appendChild(area);
-  const line = document.createElementNS(ns, "path");
-  line.setAttribute("class", "vh-line");
-  line.setAttribute("d", path);
-  svg.appendChild(line);
-  for (const [v, label] of [[hi, `${hi}%`], [lo, `${lo}%`]]) {
+  const y = (v) => padT + (1 - v / top) * (H - padT - padB);
+  for (const sr of series) {
+    const d = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(Number(p[sr.key] || 0)).toFixed(1)}`).join(" ");
+    if (sr.area) {
+      const a = document.createElementNS(ns, "path");
+      a.setAttribute("class", `${sr.cls}-area`);
+      a.setAttribute("d", `${d} L${x(points.length - 1).toFixed(1)},${(H - padB).toFixed(1)} L${x(0).toFixed(1)},${(H - padB).toFixed(1)} Z`);
+      svg.appendChild(a);
+    }
+    const l = document.createElementNS(ns, "path");
+    l.setAttribute("class", `vh-line ${sr.cls}`);
+    l.setAttribute("d", d);
+    svg.appendChild(l);
+  }
+  for (const [v, label] of [[top, fmtInt(top)], [0, "0"]]) {
     const t = document.createElementNS(ns, "text");
-    t.setAttribute("x", "0"); t.setAttribute("y", (y(v) + 3).toFixed(1)); t.setAttribute("class", "vh-axis");
+    t.setAttribute("x", "0"); t.setAttribute("y", (y(v) + (v ? 3 : 0)).toFixed(1)); t.setAttribute("class", "vh-axis");
     t.textContent = label;
     svg.appendChild(t);
   }
   points.forEach((p, i) => {
     const c = document.createElementNS(ns, "circle");
     c.setAttribute("class", "vh-dot");
-    c.setAttribute("cx", x(i).toFixed(1)); c.setAttribute("cy", y(vals[i]).toFixed(1)); c.setAttribute("r", "2.2");
+    c.setAttribute("cx", x(i).toFixed(1)); c.setAttribute("cy", y(Number(p.clean || 0)).toFixed(1)); c.setAttribute("r", "2");
     const title = document.createElementNS(ns, "title");
-    title.textContent = `${String(p.commit).slice(0, 10)}: ${vals[i].toFixed(1)}% verified, ${fmtInt(p.clean)} clean of ${fmtInt(p.paired)}, ${fmtInt(p.weight)} high-signal findings${p.imported_at ? ` \u00b7 ${fmtTime(p.imported_at)}` : ""}`;
+    title.textContent = `${String(p.commit).slice(0, 10)}${p.imported_at ? ` \u00b7 ${String(p.imported_at).slice(0, 10)}` : ""}: ${fmtInt(p.clean)} clean of ${fmtInt(p.paired)} paired (${Number(p.verified_percent || 0).toFixed(1)}%), ${fmtInt(p.no_body)} named with no body, ${fmtInt(p.weight)} high-signal findings`;
     c.appendChild(title);
     svg.appendChild(c);
   });
   const first = document.createElementNS(ns, "text");
   first.setAttribute("x", padL.toFixed(1)); first.setAttribute("y", (H - 3).toFixed(1)); first.setAttribute("class", "vh-axis");
-  first.textContent = String(points[0].commit).slice(0, 7);
+  first.textContent = `${String(points[0].commit).slice(0, 7)}${points[0].imported_at ? ` \u00b7 ${String(points[0].imported_at).slice(0, 10)}` : ""}`;
   svg.appendChild(first);
   const last = document.createElementNS(ns, "text");
   last.setAttribute("x", (W - padR).toFixed(1)); last.setAttribute("y", (H - 3).toFixed(1)); last.setAttribute("class", "vh-axis");
@@ -3104,6 +3113,19 @@ function renderVerifiedHistory(history) {
   last.textContent = `${String(points[points.length - 1].commit).slice(0, 7)} \u00b7 ${points.length} commits`;
   svg.appendChild(last);
   host.appendChild(svg);
+  const lg = div("vp-shape-legend");
+  const a = points[0], b = points[points.length - 1];
+  for (const [cls, label, va, vb] of [
+    ["vh-sw-paired", "paired bodies", a.paired, b.paired],
+    ["vh-sw-clean", "clean", a.clean, b.clean],
+    ["vh-sw-nobody", "named, no body", a.no_body, b.no_body],
+  ]) {
+    const item = span("", "");
+    item.appendChild(span(`vh-sw ${cls}`, ""));
+    item.appendChild(document.createTextNode(` ${label} ${fmtInt(va)} \u2192 ${fmtInt(vb)}`));
+    lg.appendChild(item);
+  }
+  host.appendChild(lg);
 }
 
 function renderShapeBar(asm) {

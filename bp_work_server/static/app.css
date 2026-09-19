@@ -3247,3 +3247,36 @@ html::-webkit-scrollbar-corner,
     justify-self: start;
   }
 }
+
+/* ---- verified history: three counts ---- */
+.vp-history .vh-paired-area {
+  fill: rgba(157, 145, 130, 0.14);
+}
+.vp-history .vh-clean-area {
+  fill: rgba(111, 207, 87, 0.22);
+}
+.vp-history .vh-line.vh-paired {
+  stroke: var(--muted);
+  stroke-width: 1.5;
+}
+.vp-history .vh-line.vh-clean {
+  stroke: var(--green);
+}
+.vp-history .vh-line.vh-nobody {
+  stroke: var(--red-bright);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 2;
+}
+.vp-history .vp-shape-legend {
+  margin-top: 4px;
+}
+.vh-sw {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  vertical-align: -1px;
+  clip-path: polygon(2px 0, 100% 0, calc(100% - 2px) 100%, 0 100%);
+}
+.vh-sw-paired { background: var(--muted); }
+.vh-sw-clean { background: var(--green); }
+.vh-sw-nobody { background: var(--red-bright); }
