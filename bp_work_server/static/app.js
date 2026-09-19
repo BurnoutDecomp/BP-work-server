@@ -1413,8 +1413,9 @@ function goToPage(page) {
   loadExplorer();
 }
 
-function renderPageButtons(currentPage, totalPages) {
-  const root = el("pageButtons");
+function renderPageButtons(currentPage, totalPages, rootId = "pageButtons", onPage = goToPage) {
+  const root = el(rootId);
+  if (!root) return;
   clearNode(root);
   const pages = new Set([1, totalPages]);
   for (let page = currentPage - 1; page <= currentPage + 1; page += 1) {
@@ -1428,7 +1429,7 @@ function renderPageButtons(currentPage, totalPages) {
     btn.className = "filter page-btn";
     btn.textContent = page;
     btn.disabled = page === currentPage;
-    btn.addEventListener("click", () => goToPage(page));
+    btn.addEventListener("click", () => onPage(page));
     root.appendChild(btn);
     prev = page;
   }
@@ -3165,15 +3166,8 @@ function renderEvidenceSummary() {
   if (ev.tab === "audit") {
     intro.textContent =
       "Every reconstructed body (plus the PC-only helpers it calls) compared with the console's own pseudocode, per file. A missing switch case id, event post, callee or body is a difference the console's code has and ours does not; missing log strings and uncited data symbols are context. Rebuilt by CI on every commit — nothing here is declared by hand.";
-    const seg = audit.segments || {};
-    tiles.appendChild(evidenceTile("paired with the console", Number(fa.paired || 0), "progress"));
-    tiles.appendChild(evidenceTile("clean", Number(fa.clean || 0), "done"));
-    tiles.appendChild(evidenceTile("high-signal findings", Number(seg.high || 0), "blocked"));
-    tiles.appendChild(evidenceTile("named, no body", Number(seg.no_body || 0), "blocked"));
+    // the ring's legend above already carries these numbers; only what it does not say
     tiles.appendChild(evidenceTile("files with findings", Number(fa.files || 0), "todo"));
-    tiles.appendChild(evidenceTile("not audited (no PC file)", Number(fa.unpaired_no_file || 0), "todo"));
-    const spark = evidenceSparkline(audit.history || []);
-    if (spark) tiles.after(spark);
     const cats = fa.categories || {};
     for (const [key, label, color, catKey] of EVIDENCE_AUDIT_CHIPS) {
       const count = catKey ? (cats[catKey] ? cats[catKey].functions : 0) : null;
@@ -3194,11 +3188,8 @@ function renderEvidenceSummary() {
     }
     intro.textContent =
       "The exe CI built, function by function, against the console's own machine code: the same named callees, the same number of conditional branches, the same constants. Byte-matching is impossible across the x64 widening, so this is shape, not identity \u2014 tier A is the same shape, C diverges, and a divergence is a diff to read (which callees and constants exist on one side only), not a verdict. Recomputed on every published build.";
+    // the tier bar above already carries A/B/C/T; only what it does not say
     tiles.appendChild(evidenceTile("in the built exe", Number(asm.paired_in_exe || 0), "progress"));
-    tiles.appendChild(evidenceTile("A \u00b7 same shape", Number(asm.A || 0), "done"));
-    tiles.appendChild(evidenceTile("B \u00b7 close", Number(asm.B || 0), "compiled"));
-    tiles.appendChild(evidenceTile("C \u00b7 diverges", Number(asm.C || 0), "blocked"));
-    tiles.appendChild(evidenceTile("T \u00b7 trivial", Number(asm.T || 0), "todo"));
     tiles.appendChild(evidenceTile("flagged in source", Number(asm.flagged || 0), "todo"));
     tiles.appendChild(evidenceTile("named, not in the exe", Number(asm.not_in_exe || 0), "todo"));
     for (const [key, label, color, count] of [
@@ -3247,8 +3238,6 @@ function renderEvidenceSummary() {
       renderEvidenceSummary();
     }));
   }
-  const old = document.querySelector(".evidence-spark");
-  if (old && ev.tab !== "audit") old.remove();
 }
 
 function evidenceSparkline(history) {
@@ -3358,9 +3347,9 @@ async function loadEvidenceList(reset) {
     const data = await fetchJson(`${path}?${evidenceParams(reset)}`, 15000);
     if (requestId !== ev.requestId) return;
     ev.total = data.total || 0;
-    ev.items = reset ? data.items || [] : ev.items.concat(data.items || []);
-    ev.offset = ev.items.length;
+    ev.items = data.items || [];
     renderEvidenceList();
+    renderEvidenceFoot();
   } catch (error) {
     if (requestId !== ev.requestId) return;
     const list = el("evidenceList");
@@ -3424,9 +3413,41 @@ function renderEvidenceList() {
     card.appendChild(head);
     list.appendChild(card);
   }
-  text("evidenceRange", ev.total ? `${fmtInt(ev.items.length)} of ${fmtInt(ev.total)} files` : "—");
-  const more = el("evidenceMore");
-  if (more) more.hidden = ev.items.length >= ev.total;
+}
+
+function renderEvidenceFoot() {
+  const ev = state.evidence;
+  const from = ev.total === 0 ? 0 : ev.offset + 1;
+  const to = Math.min(ev.offset + ev.limit, ev.total);
+  const totalPages = Math.max(1, Math.ceil(ev.total / ev.limit));
+  const currentPage = Math.min(totalPages, Math.floor(ev.offset / ev.limit) + 1);
+  text("evidenceRange", ev.total ? `${fmtInt(from)}-${fmtInt(to)} of ${fmtInt(ev.total)} files` : "no files");
+  text("evPageStatus", `Page ${fmtInt(currentPage)} of ${fmtInt(totalPages)}`);
+  const prev = el("evPagePrev");
+  const next = el("evPageNext");
+  if (prev) prev.disabled = ev.offset <= 0;
+  if (next) next.disabled = ev.offset + ev.limit >= ev.total;
+  const jump = el("evPageJump");
+  if (jump) {
+    jump.max = totalPages;
+    jump.value = currentPage;
+  }
+  renderPageButtons(currentPage, totalPages, "evPageButtons", goToEvidencePage);
+}
+
+function goToEvidencePage(page) {
+  const ev = state.evidence;
+  const totalPages = Math.max(1, Math.ceil(ev.total / ev.limit));
+  const nextPage = Math.max(1, Math.min(totalPages, Number(page) || 1));
+  const nextOffset = (nextPage - 1) * ev.limit;
+  if (nextOffset === ev.offset) {
+    renderEvidenceFoot();
+    return;
+  }
+  ev.offset = nextOffset;
+  loadEvidenceList(false);
+  const list = el("evidenceList");
+  if (list) list.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function openEvidenceFile(file) {
@@ -3513,7 +3534,12 @@ function initEvidence() {
     clearTimeout(ev.searchTimer);
     ev.searchTimer = setTimeout(() => loadEvidenceList(true), 250);
   });
-  el("evidenceMore").addEventListener("click", () => loadEvidenceList(false));
+  el("evPagePrev").addEventListener("click", () => goToEvidencePage(Math.floor(state.evidence.offset / state.evidence.limit)));
+  el("evPageNext").addEventListener("click", () => goToEvidencePage(Math.floor(state.evidence.offset / state.evidence.limit) + 2));
+  el("evPageJump").addEventListener("change", (e) => goToEvidencePage(e.target.value));
+  el("evPageJump").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") goToEvidencePage(e.target.value);
+  });
   for (const btn of document.querySelectorAll("#verifiedCard .vp-actions [data-open]")) {
     btn.addEventListener("click", () => openEvidence(btn.dataset.open));
   }

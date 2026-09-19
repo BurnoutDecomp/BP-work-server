@@ -39,7 +39,7 @@
       href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/app.css?v=31" />
+    <link rel="stylesheet" href="/static/app.css?v=32" />
   </head>
   <body>
     <div class="bp-bg" aria-hidden="true">
@@ -195,11 +195,6 @@
               <div class="metric-total" id="verifiedCount">&middot;</div>
               <p class="vp-intro">Every function of the console image, by what the static audits found when they compared our reconstruction with the console's own code. Rebuilt by CI on every commit; nothing here is declared by hand.</p>
             </div>
-            <div class="vp-actions" role="group" aria-label="Open the evidence">
-              <button type="button" class="filter" data-open="audit">Glue audit</button>
-              <button type="button" class="filter" data-open="stubs">Stub inventory</button>
-              <button type="button" class="filter" data-open="asm">Instruction shape</button>
-            </div>
           </div>
           <div class="vp-grid">
             <div class="ring big" id="verifiedRing">
@@ -229,48 +224,57 @@
               </div>
             </div>
           </div>
+
+          <!-- Console evidence: the three tiers, browsable per file, in the same panel -->
+          <div class="vp-evidence" id="evidence" aria-label="Console evidence">
+            <div class="vp-evidence-head">
+              <div class="explorer-tabs" id="evidenceTabs">
+                <button class="tab active" data-tab="audit" title="Every reconstructed body compared with the console's own function">Glue audit</button>
+                <button class="tab" data-tab="stubs" title="Every body that is still a stand-in">Stub inventory</button>
+                <button class="tab" data-tab="asm" title="The exe CI built, function by function, against the console's own machine code">Instruction shape</button>
+              </div>
+              <span id="evidenceMeta" class="badge">no audit yet</span>
+            </div>
+            <div class="evidence-body">
+              <p id="evidenceIntro" class="evidence-intro"></p>
+              <div id="evidenceTiles" class="evidence-tiles"></div>
+              <div class="evidence-controls">
+                <input
+                  type="search"
+                  id="evidenceSearch"
+                  class="search-input"
+                  placeholder="Filter by file path&hellip;"
+                  autocomplete="off"
+                />
+                <div id="evidenceChips" class="evidence-chips" role="group" aria-label="Filter"></div>
+              </div>
+              <div class="evidence-grid">
+                <div class="evidence-main">
+                  <div id="evidenceList" class="evidence-list"></div>
+                  <div class="evidence-foot">
+                    <span id="evidenceRange" class="muted-text">&mdash;</span>
+                    <div class="pager">
+                      <button id="evPagePrev" class="filter" type="button">Prev</button>
+                      <div id="evPageButtons" class="page-buttons" aria-label="Pages"></div>
+                      <button id="evPageNext" class="filter" type="button">Next</button>
+                      <span id="evPageStatus" class="page-status">Page 1 of 1</span>
+                      <label class="page-jump">
+                        <span>Jump</span>
+                        <input id="evPageJump" type="number" min="1" value="1" />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+                <aside class="evidence-side">
+                  <h3 id="evidenceTopTitle">Largest switch gaps</h3>
+                  <p id="evidenceTopNote" class="evidence-side-note"></p>
+                  <ol id="evidenceTop" class="evidence-top"></ol>
+                </aside>
+              </div>
+            </div>
+          </div>
         </section>
 
-        <!-- Console evidence: the per-commit glue audit and stub inventory, browsable -->
-        <section class="card evidence" id="evidence" aria-label="Console evidence">
-          <div class="panel-head">
-            <h2>Console Evidence</h2>
-            <div class="explorer-tabs" id="evidenceTabs">
-              <button class="tab active" data-tab="audit" title="Every reconstructed body compared with the console's own function">Glue audit</button>
-              <button class="tab" data-tab="stubs" title="Every body that is still a stand-in">Stub inventory</button>
-              <button class="tab" data-tab="asm" title="The exe CI built, function by function, against the console's own machine code">Instruction shape</button>
-            </div>
-            <span id="evidenceMeta" class="badge">no audit yet</span>
-          </div>
-          <div class="evidence-body">
-            <p id="evidenceIntro" class="evidence-intro"></p>
-            <div id="evidenceTiles" class="evidence-tiles"></div>
-            <div class="evidence-controls">
-              <input
-                type="search"
-                id="evidenceSearch"
-                class="search-input"
-                placeholder="Filter by file path…"
-                autocomplete="off"
-              />
-              <div id="evidenceChips" class="evidence-chips" role="group" aria-label="Filter"></div>
-            </div>
-            <div class="evidence-grid">
-              <div class="evidence-main">
-                <div id="evidenceList" class="evidence-list"></div>
-                <div class="evidence-foot">
-                  <span id="evidenceRange" class="muted-text">—</span>
-                  <button id="evidenceMore" class="filter" type="button">Show more</button>
-                </div>
-              </div>
-              <aside class="evidence-side">
-                <h3 id="evidenceTopTitle">Largest switch gaps</h3>
-                <p id="evidenceTopNote" class="evidence-side-note"></p>
-                <ol id="evidenceTop" class="evidence-top"></ol>
-              </aside>
-            </div>
-          </div>
-        </section>
 
         <!-- Explorer: search/browse every TU and function -->
         <section class="card explorer" aria-label="Explorer">
@@ -497,6 +501,6 @@
       </aside>
     </div>
 
-    <script src="/static/app.js?v=25" defer></script>
+    <script src="/static/app.js?v=26" defer></script>
   </body>
 </html>

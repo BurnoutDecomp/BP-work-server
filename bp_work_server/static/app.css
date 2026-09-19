@@ -3177,3 +3177,25 @@ html::-webkit-scrollbar-corner,
 .fb-body .audit-findings {
   margin-top: 8px;
 }
+
+/* ---- the evidence browser inside the Verified panel ---- */
+.vp-evidence {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.vp-evidence-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.vp-evidence .evidence-body {
+  padding: 0;
+}
+.vp-evidence .evidence-foot {
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
