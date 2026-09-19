@@ -317,3 +317,28 @@ def test_asm_import_summary_files_functions_and_top(tmp_path):
     assert client.get("/api/asm/top", params={"tier": "C"}).json()["items"][0]["name"] == "BrnWorld::A::Run"
     assert client.get("/api/asm/functions", params={"file": "GameSource/World/A.cpp"}).json()["items"][0]["score"] == 40.0
     assert "asm_tiers" in client.get("/api/facets").json()
+
+
+
+def test_backfill_import_sorts_into_history_without_displacing_latest(tmp_path):
+    store = WorkStore(tmp_path / "work.sqlite3")
+    store.migrate()
+    store.import_workflow(_workflow(tmp_path, commit="cccc3333"))   # today's run
+    before = store.audit_summary()
+    assert before["funcaudit"]["commit"] == "cccc3333"
+    events_before = len(store.recent_events(limit=100)) if hasattr(store, "recent_events") else None
+
+    older = _workflow(tmp_path, commit="bbbb2222", weight_variant=1)
+    counts = store.import_audits_only(
+        older / "progress", imported_at="2026-08-01T12:00:00+00:00", events=False
+    )
+    assert counts["funcaudit"] == 2 and counts["stubs"] == 2
+
+    after = store.audit_summary()
+    assert after["funcaudit"]["commit"] == "cccc3333"          # the current run stays latest
+    assert [p["commit"] for p in after["history"]] == ["bbbb2222", "cccc3333"]
+    assert after["history"][0]["imported_at"].startswith("2026-08-01")
+    if events_before is not None:
+        assert len(store.recent_events(limit=100)) == events_before   # no delta events logged
+    # a second backfill of the same commit is a no-op
+    assert store.import_audits_only(older / "progress", imported_at="2026-08-01T12:00:00+00:00", events=False)["funcaudit"] == 0

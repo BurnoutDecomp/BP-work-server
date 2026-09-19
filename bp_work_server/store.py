@@ -366,6 +366,20 @@ class WorkStore:
             }
 
     # ---------------------------------------------------------------- audit layer
+    def import_audits_only(
+        self, progress_dir: str | Path, *, imported_at: str | None = None, events: bool = True
+    ) -> dict[str, int]:
+        """Import just the audit reports found in ``progress_dir`` (funcaudit.json,
+        stubs.json, asmaudit.json). For a history backfill: ``imported_at`` stamps the
+        run with the commit's own date so it sorts into the timeline where it belongs
+        and never displaces the current run as "latest"; ``events=False`` logs no delta
+        Live Events for it."""
+        progress = Path(progress_dir)
+        stamp = imported_at or iso()
+        with self.connect() as con:
+            log = self._log if events else (lambda *_args, **_kw: None)
+            return audit.import_audits(con, progress, stamp, log)
+
     def audit_summary(self) -> dict[str, Any]:
         with self.connect() as con:
             return audit.summary(con)

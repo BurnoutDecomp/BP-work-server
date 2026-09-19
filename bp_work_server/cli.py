@@ -43,6 +43,15 @@ def main() -> None:
     import_p.add_argument("workflow_root", help="Path to BP-Decomp_Workflow.")
     import_p.add_argument("--reset", action="store_true", help="Clear existing server data first.")
 
+    audits_p = sub.add_parser(
+        "import-audits",
+        help="Import only the audit reports (funcaudit.json / stubs.json / asmaudit.json) from a directory; "
+             "for backfilling the history with runs made against older commits.",
+    )
+    audits_p.add_argument("progress_dir", help="Directory holding the report JSON files.")
+    audits_p.add_argument("--imported-at", help="ISO time to stamp the runs with (default: now).")
+    audits_p.add_argument("--no-events", action="store_true", help="Log no delta Live Events for these runs.")
+
     warm_p = sub.add_parser(
         "warm-attribution-cache",
         help="Precompute local-git surviving-line attribution for reviewed work.",
@@ -115,6 +124,17 @@ def main() -> None:
             f"{result['tus']} TUs, {result['funcs']} funcs, {result['deps']} deps, "
             f"{result['goals']} goals ({result['status_rows']} status rows), "
             f"{result['linked']} TUs linked into the exe"
+        )
+        return
+
+    if args.cmd == "import-audits":
+        counts = store.import_audits_only(
+            args.progress_dir, imported_at=args.imported_at, events=not args.no_events
+        )
+        print(
+            f"imported audits from {args.progress_dir}: "
+            f"{counts.get('funcaudit', 0)} findings, {counts.get('stubs', 0)} stubs, "
+            f"{counts.get('asm', 0)} shape rows (0 = already imported or absent)"
         )
         return
 
