@@ -3014,20 +3014,22 @@ function renderVerifiedFacts(audit) {
     b.title = fa.generated_at ? `audited ${fmtTime(fa.generated_at)}` : "";
     host.appendChild(b);
   }
-  const fact = (n, label, title, onClick) => {
+  const fact = (n, label, title, cls, onClick) => {
     const c = document.createElement("button");
     c.type = "button";
-    c.className = "vp-fact";
-    c.appendChild(span("n", fmtInt(n)));
-    c.appendChild(span("l", label));
+    c.className = `chip ${cls}`;
+    c.appendChild(span("", fmtInt(n)));
+    const l = document.createElement("label");
+    l.textContent = label;
+    c.appendChild(l);
     if (title) c.title = title;
     c.addEventListener("click", onClick);
     host.appendChild(c);
   };
-  if (fa.files) fact(fa.files, "files with findings", "Files with at least one function the glue audit flagged. Opens the glue audit.", () => openEvidence("audit"));
-  if (st.stubs) fact(st.stubs, "stub bodies", `${fmtInt(st.live || 0)} on live paths. Opens the stub inventory.`, () => openEvidence("stubs"));
-  if (asm.paired_in_exe) fact(asm.paired_in_exe, "in the built exe", "Named functions with a symbol in the exe CI built. Opens the instruction shape.", () => openEvidence("asm"));
-  if (asm.flagged) fact(asm.flagged, "flagged in source", "Functions whose body carries [FLAG PC ...] markers. Opens the instruction shape, flagged only.", () => { openEvidence("asm"); state.evidence.asmFlagged = true; loadEvidenceList(true); renderEvidenceSummary(); });
+  if (fa.files) fact(fa.files, "files with findings", "Files with at least one function the glue audit flagged. Opens the glue audit.", "blocked", () => openEvidence("audit"));
+  if (st.stubs) fact(st.stubs, "stub bodies", `${fmtInt(st.live || 0)} on live paths. Opens the stub inventory.`, "compiled", () => openEvidence("stubs"));
+  if (asm.paired_in_exe) fact(asm.paired_in_exe, "in the built exe", "Named functions with a symbol in the exe CI built. Opens the instruction shape.", "progress", () => openEvidence("asm"));
+  if (asm.flagged) fact(asm.flagged, "flagged in source", "Functions whose body carries [FLAG PC ...] markers. Opens the instruction shape, flagged only.", "todo", () => { openEvidence("asm"); state.evidence.asmFlagged = true; loadEvidenceList(true); renderEvidenceSummary(); });
 }
 
 /* ---- the Verified vs Console band: history chart, shape bar, click-through ---- */

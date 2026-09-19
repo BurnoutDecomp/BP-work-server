@@ -3200,53 +3200,45 @@ html::-webkit-scrollbar-corner,
   gap: 10px 16px;
 }
 
-/* ---- Verified panel: the facts row at the top right ---- */
+/* ---- Verified panel: the facts row at the top right (same plates as the goal strip) ---- */
 .vp-facts {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  align-items: stretch;
-  gap: 8px;
-  max-width: 560px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(118px, 1fr));
+  gap: 10px;
+  align-content: start;
+  width: min(100%, 560px);
   flex-shrink: 0;
 }
 .vp-facts .badge {
-  align-self: center;
+  grid-column: 1 / -1;
+  justify-self: end;
+  margin-bottom: 2px;
 }
-.vp-fact {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 104px;
-  padding: 8px 12px 7px;
-  background: var(--surface-2);
-  border: 1px solid var(--line-soft);
-  border-top: 2px solid var(--line);
-  color: var(--text);
+.vp-facts .chip {
   font: inherit;
+  color: inherit;
   text-align: left;
   cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
 }
-.vp-fact:hover {
+.vp-facts .chip:hover {
   background: var(--surface-hover);
-  border-top-color: var(--gold);
 }
-.vp-fact .n {
+.vp-facts .chip span {
   font-family: var(--font-display);
-  font-size: 20px;
-  line-height: 1.05;
+  font-size: 22px;
   transform: skewX(-8deg);
-  transform-origin: left;
 }
-.vp-fact .l {
-  font-size: 10px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+@media (max-width: 1150px) {
+  .vp-facts {
+    width: 100%;
+  }
 }
 @media (max-width: 820px) {
   .vp-facts {
-    justify-content: flex-start;
-    max-width: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .vp-facts .badge {
+    justify-self: start;
   }
 }
