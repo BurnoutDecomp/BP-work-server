@@ -34,8 +34,16 @@ def cached_dashboard_state(
     store: WorkStore,
     attribution_repo_rev: str | None = None,
 ) -> dict:
+    return build_dashboard_state(request.app, store, attribution_repo_rev=attribution_repo_rev)
+
+
+def build_dashboard_state(
+    app: Any,
+    store: WorkStore,
+    attribution_repo_rev: str | None = None,
+) -> dict:
     now = time.monotonic()
-    cache = request.app.state.dashboard_cache
+    cache = app.state.dashboard_cache
     data = cache.get("data")
     if (
         data is not None
@@ -43,7 +51,7 @@ def cached_dashboard_state(
         and now < cache["expires_at"]
     ):
         return data
-    with request.app.state.dashboard_cache_lock:
+    with app.state.dashboard_cache_lock:
         now = time.monotonic()
         data = cache.get("data")
         if (
@@ -59,6 +67,25 @@ def cached_dashboard_state(
         cache["expires_at"] = now + DASHBOARD_CACHE_TTL
         log.debug("dashboard_state built in %.3fs", time.perf_counter() - started)
         return data
+
+
+async def warm_dashboard_state(app: Any, store: WorkStore) -> None:
+    """Build the first dashboard state right after startup.
+
+    The first build of a fresh process pays the per-agent contribution parse
+    (seconds on a quiet box, ~15 s on a loaded one); every later build within
+    the same process is memoised. Without this, the first visitor after every
+    deploy watched the page time out once before it recovered.
+    """
+    try:
+        repo_rev = await repo_revision(app.state.decomp)
+        started = time.perf_counter()
+        await asyncio.to_thread(build_dashboard_state, app, store, repo_rev)
+        log.info("dashboard state warmed at startup in %.1fs", time.perf_counter() - started)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.exception("dashboard state warm-up failed; the first request will build it")
 
 
 def invalidate_dashboard_cache(request: Request) -> None:

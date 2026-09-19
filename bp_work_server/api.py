@@ -17,6 +17,7 @@ from bp_work_server.dependencies import auth_required
 from bp_work_server.github import GitHubClient
 from bp_work_server.routes import admin, dashboard, downloads, events, github, static, work
 from bp_work_server.routes.static import static_dir
+from bp_work_server.services.dashboard import warm_dashboard_state
 from bp_work_server.store import WorkStore
 from bp_work_server.sync import sync_workflow_repo
 
@@ -44,16 +45,20 @@ def default_users_db_path() -> Path:
 def create_app(store: WorkStore | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        app.state.dashboard_warm_task = asyncio.create_task(
+            warm_dashboard_state(app, app.state.store)
+        )
         try:
             yield
         finally:
-            warm_task = getattr(app.state, "attribution_warm_task", None)
-            if warm_task and not warm_task.done():
-                warm_task.cancel()
-                try:
-                    await warm_task
-                except asyncio.CancelledError:
-                    pass
+            for name in ("dashboard_warm_task", "attribution_warm_task"):
+                warm_task = getattr(app.state, name, None)
+                if warm_task and not warm_task.done():
+                    warm_task.cancel()
+                    try:
+                        await warm_task
+                    except asyncio.CancelledError:
+                        pass
             await app.state.github.aclose()
 
     app = FastAPI(

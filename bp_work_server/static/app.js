@@ -276,7 +276,9 @@ async function refresh() {
   if (state.dashboardInFlight) return;
   state.dashboardInFlight = true;
   try {
-    render(await fetchJson("/dashboard/state", 15000));
+    // 45 s: a fresh process builds its first state in seconds on a quiet box and
+    // ~15 s on a loaded one (it is warmed at startup, but a visitor can beat it).
+    render(await fetchJson("/dashboard/state", 45000));
     setConnection("online", "Live");
   } catch (error) {
     setConnection("offline", "Disconnected");
