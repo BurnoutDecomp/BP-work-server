@@ -2669,6 +2669,7 @@ function setDonut(id, segments, percent, totalText) {
       circle.setAttribute("cy", "60");
       circle.setAttribute("r", "52");
       circle.setAttribute("class", `ring-seg seg-${seg.color}${index === 0 ? " lead" : ""}`);
+      circle.dataset.index = String(index);
       // a hairline gap between arcs so the states read as separate
       const gap = segments.length > 1 && len > 2 ? 1.2 : 0;
       circle.setAttribute("stroke-dasharray", `${Math.max(0, len - gap)} ${RING_CIRCUMFERENCE - Math.max(0, len - gap)}`);
@@ -2687,7 +2688,7 @@ function setDonut(id, segments, percent, totalText) {
   const legend = el(`${id}Legend`);
   if (legend) {
     clearNode(legend);
-    for (const seg of segments) {
+    segments.forEach((seg, index) => {
       const value = Math.max(0, Number(seg.value || 0));
       const row = div("legend-row");
       row.appendChild(span(`sw sw-${seg.color}`));
@@ -2695,9 +2696,24 @@ function setDonut(id, segments, percent, totalText) {
       if (seg.title) label.title = seg.title;
       row.appendChild(label);
       row.appendChild(span("lg-n", fmtInt(value)));
-      row.appendChild(span("lg-pct", total ? `${((value / total) * 100).toFixed(1)}%` : "—"));
+      row.appendChild(span("lg-pct", total ? `${((value / total) * 100).toFixed(1)}%` : "\u2013"));
+      if (seg.onClick) {
+        row.addEventListener("click", seg.onClick);
+        row.setAttribute("role", "button");
+        row.tabIndex = 0;
+        row.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); seg.onClick(); } });
+      }
+      // hovering a legend row lights its arc, and the other way round
+      const arc = () => ring.querySelector(`.ring-seg[data-index="${index}"]`);
+      row.addEventListener("mouseenter", () => { const a = arc(); if (a) a.classList.add("hot"); });
+      row.addEventListener("mouseleave", () => { const a = arc(); if (a) a.classList.remove("hot"); });
+      const a = arc();
+      if (a) {
+        a.addEventListener("mouseenter", () => row.classList.add("hot"));
+        a.addEventListener("mouseleave", () => row.classList.remove("hot"));
+      }
       legend.appendChild(row);
-    }
+    });
   }
 }
 
@@ -2717,21 +2733,27 @@ function renderAudit(audit) {
   } else {
     setDonut("verified", [
       { label: "clean", value: seg.clean, color: "green",
-        title: "Nothing the static audit can name differs: case ids, event posts, callees, asserts, cited data." },
+        title: "Nothing the static audit can name differs: case ids, event posts, callees, asserts, cited data. Click: the glue audit.",
+        onClick: () => openEvidence("audit") },
       { label: "high-signal findings", value: seg.high, color: "red",
-        title: "A missing case id, event post, callee or assert the console has and the body does not." },
+        title: "A missing case id, event post, callee or assert the console has and the body does not. Click: files by findings.",
+        onClick: () => openEvidence("audit", { category: "MISSING_CASE" }) },
       { label: "context-only findings", value: seg.soft, color: "amber",
-        title: "Only log strings, uncited data symbols or the parameter hint differ." },
+        title: "Only log strings, uncited data symbols or the parameter hint differ. Click: missing log strings.",
+        onClick: () => openEvidence("audit", { category: "MISSING_STRING" }) },
       { label: "named, no body", value: seg.no_body, color: "crimson",
-        title: "The ledger names a PC file for the function but no definition exists anywhere." },
+        title: "The ledger names a PC file for the function but no definition exists anywhere. Click: the no-body list.",
+        onClick: () => openEvidence("audit", { category: "NO_BODY" }) },
       { label: "not audited", value: seg.unpaired, color: "dim",
-        title: "Console functions with no known PC file; not compared." },
+        title: "Console functions with no known PC file; not compared. Click: the stub inventory (the bodies that do exist but are stand-ins).",
+        onClick: () => openEvidence("stubs") },
       { label: "not comparable by name", value: notComparable, color: "dim",
         title: "Named functions the audit skips: template instantiations, operators and compiler-generated bodies." },
       { label: "not yet identified", value: ft.unidentified, color: "dim",
         title: "Functions of the console image that have no name in the ledger yet." },
     ], fa.verified_percent, `${fmtInt(clean)} / ${fmtInt(paired)} comparable bodies` +
-      (ft.funcs ? ` · of ${fmtInt(ft.funcs)} functions` : ""));
+      (ft.funcs ? ` \u00b7 of ${fmtInt(ft.funcs)} functions` : ""));
+    renderVerifiedHistory(audit.history || []);
     if (trend) {
       const t = verifiedTrend(audit.history);
       trend.hidden = !t;
@@ -2747,12 +2769,124 @@ function renderAudit(audit) {
     const scoreable = Number(asm.scoreable || 0);
     asmNote.hidden = !scoreable;
     if (scoreable) {
-      asmNote.textContent = `instruction shape of the built exe: ${fmtInt(asm.A)} of ${fmtInt(scoreable)} same shape (${asm.shape_percent}%)`;
+      asmNote.textContent = `${fmtInt(asm.A)} of ${fmtInt(scoreable)} scoreable functions have the console's shape (${asm.shape_percent}%)` +
+        (asm.commit ? ` \u00b7 build of b5 ${String(asm.commit).slice(0, 10)}` : "");
       asmNote.title = "tools/re/asmaudit.py on every published build: the exe's callees, branch counts and constants against the console's machine code";
     }
+    renderShapeBar(audit.asm || {});
   }
   state.evidence.summary = audit;
   renderEvidenceSummary();
+}
+
+/* ---- the Verified vs Console band: history chart, shape bar, click-through ---- */
+
+function openEvidence(tab, opts = {}) {
+  const ev = state.evidence;
+  ev.category = opts.category || "";
+  ev.asmTier = opts.asmTier || "";
+  ev.asmFlagged = false;
+  ev.tier = opts.tier || "";
+  ev.live = false;
+  ev.q = "";
+  const search = el("evidenceSearch");
+  if (search) search.value = "";
+  const tabs = el("evidenceTabs");
+  const btn = tabs && tabs.querySelector(`.tab[data-tab="${tab}"]`);
+  if (btn) btn.click();       // initEvidence's handler: sets the tab, re-renders, reloads
+  const section = el("evidence");
+  if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderVerifiedHistory(history) {
+  const host = el("verifiedHistory");
+  if (!host) return;
+  clearNode(host);
+  const points = (history || []).filter((p) => p.paired != null).slice(-60);
+  const ns = "http://www.w3.org/2000/svg";
+  const W = 320, H = 72, padL = 30, padR = 8, padT = 8, padB = 14;
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  if (points.length < 2) {
+    const t = document.createElementNS(ns, "text");
+    t.setAttribute("x", "0"); t.setAttribute("y", "40"); t.setAttribute("class", "vh-empty");
+    t.textContent = points.length ? "one audited commit so far; the line starts with the next" : "no audited commits yet";
+    svg.appendChild(t);
+    host.appendChild(svg);
+    return;
+  }
+  const vals = points.map((p) => Number(p.verified_percent || 0));
+  const lo = Math.max(0, Math.floor(Math.min(...vals) - 2));
+  const hi = Math.min(100, Math.ceil(Math.max(...vals) + 2));
+  const x = (i) => padL + (i / (points.length - 1)) * (W - padL - padR);
+  const y = (v) => padT + (1 - (v - lo) / Math.max(1, hi - lo)) * (H - padT - padB);
+  const path = vals.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const area = document.createElementNS(ns, "path");
+  area.setAttribute("class", "vh-area");
+  area.setAttribute("d", `${path} L${x(points.length - 1).toFixed(1)},${(H - padB).toFixed(1)} L${x(0).toFixed(1)},${(H - padB).toFixed(1)} Z`);
+  svg.appendChild(area);
+  const line = document.createElementNS(ns, "path");
+  line.setAttribute("class", "vh-line");
+  line.setAttribute("d", path);
+  svg.appendChild(line);
+  for (const [v, label] of [[hi, `${hi}%`], [lo, `${lo}%`]]) {
+    const t = document.createElementNS(ns, "text");
+    t.setAttribute("x", "0"); t.setAttribute("y", (y(v) + 3).toFixed(1)); t.setAttribute("class", "vh-axis");
+    t.textContent = label;
+    svg.appendChild(t);
+  }
+  points.forEach((p, i) => {
+    const c = document.createElementNS(ns, "circle");
+    c.setAttribute("class", "vh-dot");
+    c.setAttribute("cx", x(i).toFixed(1)); c.setAttribute("cy", y(vals[i]).toFixed(1)); c.setAttribute("r", "2.2");
+    const title = document.createElementNS(ns, "title");
+    title.textContent = `${String(p.commit).slice(0, 10)}: ${vals[i].toFixed(1)}% verified, ${fmtInt(p.clean)} clean of ${fmtInt(p.paired)}, ${fmtInt(p.weight)} high-signal findings${p.imported_at ? ` \u00b7 ${fmtTime(p.imported_at)}` : ""}`;
+    c.appendChild(title);
+    svg.appendChild(c);
+  });
+  const first = document.createElementNS(ns, "text");
+  first.setAttribute("x", padL.toFixed(1)); first.setAttribute("y", (H - 3).toFixed(1)); first.setAttribute("class", "vh-axis");
+  first.textContent = String(points[0].commit).slice(0, 7);
+  svg.appendChild(first);
+  const last = document.createElementNS(ns, "text");
+  last.setAttribute("x", (W - padR).toFixed(1)); last.setAttribute("y", (H - 3).toFixed(1)); last.setAttribute("class", "vh-axis");
+  last.setAttribute("text-anchor", "end");
+  last.textContent = `${String(points[points.length - 1].commit).slice(0, 7)} \u00b7 ${points.length} commits`;
+  svg.appendChild(last);
+  host.appendChild(svg);
+}
+
+function renderShapeBar(asm) {
+  const host = el("verifiedShape");
+  if (!host) return;
+  clearNode(host);
+  const legend = host.parentNode.querySelector(".vp-shape-legend");
+  if (legend) legend.remove();
+  const tiers = [["A", "same shape", Number(asm.A || 0)], ["B", "close", Number(asm.B || 0)],
+                 ["C", "diverges", Number(asm.C || 0)], ["T", "trivial", Number(asm.T || 0)]];
+  const total = tiers.reduce((n, t) => n + t[2], 0);
+  if (!total) {
+    host.appendChild(span("", ""));
+    return;
+  }
+  for (const [tier, label, n] of tiers) {
+    const part = span(`sh-${tier}`);
+    part.style.width = `${(n / total) * 100}%`;
+    part.title = `${tier} ${label}: ${fmtInt(n)} (${((n / total) * 100).toFixed(1)}%)`;
+    part.addEventListener("click", () => openEvidence("asm", { asmTier: tier }));
+    host.appendChild(part);
+  }
+  const lg = div("vp-shape-legend");
+  for (const [tier, label, n] of tiers) {
+    const item = span("", "");
+    const b = document.createElement("b");
+    b.textContent = `${tier} `;
+    item.appendChild(b);
+    item.appendChild(document.createTextNode(`${label} ${fmtInt(n)}`));
+    lg.appendChild(item);
+  }
+  host.after(lg);
 }
 
 /* ---------------- Console Evidence section ---------------- */
@@ -3219,12 +3353,8 @@ function initEvidence() {
     ev.searchTimer = setTimeout(() => loadEvidenceList(true), 250);
   });
   el("evidenceMore").addEventListener("click", () => loadEvidenceList(false));
-  const card = el("verifiedCard");
-  if (card) {
-    card.addEventListener("click", () => {
-      const section = el("evidence");
-      if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+  for (const btn of document.querySelectorAll("#verifiedCard .vp-actions [data-open]")) {
+    btn.addEventListener("click", () => openEvidence(btn.dataset.open));
   }
   loadEvidenceList(true);
 }
