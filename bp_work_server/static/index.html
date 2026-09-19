@@ -39,7 +39,7 @@
       href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/app.css?v=24" />
+    <link rel="stylesheet" href="/static/app.css?v=25" />
   </head>
   <body>
     <div class="bp-bg" aria-hidden="true">
@@ -70,11 +70,13 @@
                Options: dv-asphalt · dv-streak · dv-skyline · dv-tireburn · dv-torn
                · dv-split (or remove the class for the plain red/gold default). -->
           <div id="downloadGroup" class="download-group dv-tireburn" hidden>
-            <a
+            <button
               id="downloadBuild"
               class="download-build"
-              href="/download/latest"
+              type="button"
               title="Download the latest build"
+              aria-haspopup="true"
+              aria-expanded="false"
             >
               <svg class="download-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -84,7 +86,8 @@
                 <strong>Download build</strong>
                 <small id="downloadMeta">latest</small>
               </span>
-            </a>
+            </button>
+            <div id="downloadMenu" class="download-menu" role="menu" hidden></div>
             <span id="downloadCount" class="badge download-badge" title="Total downloads" hidden>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"
                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -468,6 +471,6 @@
       </aside>
     </div>
 
-    <script src="/static/app.js?v=20" defer></script>
+    <script src="/static/app.js?v=21" defer></script>
   </body>
 </html>

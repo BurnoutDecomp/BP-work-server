@@ -823,7 +823,7 @@ function setDownloadCount(n) {
   }
   const num = chip.querySelector(".dc-num");
   if (num) num.textContent = fmtInt(n);
-  chip.title = `${fmtInt(n)} download${n === 1 ? "" : "s"}`;
+  chip.title = `${fmtInt(n)} downloader${n === 1 ? "" : "s"} (unique addresses per day; the full game and the update each count once)`;
   chip.hidden = false;
 }
 
@@ -840,29 +840,114 @@ async function refreshDownload() {
       return;
     }
     state.latestBuild = latest;
-    // Point at the stable per-build URL so browsers cache/resume the right zip.
-    link.href = latest.download_url || "/download/latest";
+    state.builds = data.builds || [];
     const parts = [];
     if (latest.commit_short) parts.push(latest.commit_short);
     if (latest.built_at) parts.push(relTime(latest.built_at));
     if (latest.size_bytes) parts.push(fmtBytes(latest.size_bytes));
     text("downloadMeta", parts.join(" · ") || "latest");
-    link.title = `Download build ${latest.commit_short || latest.commit_sha} (${fmtBytes(latest.size_bytes)})`;
+    link.title = `Download build ${latest.commit_short || latest.commit_sha}: full game (${fmtBytes(latest.size_bytes)})` +
+      (latest.update_url ? ` or the exe-only update (${fmtBytes(latest.bundle_size)})` : "");
     setDownloadCount(latest.downloads || 0);
     group.hidden = false;
+    if (!el("downloadMenu").hidden) renderDownloadMenu();
   } catch (error) {
     // No builds published yet (or endpoint unavailable): keep the button hidden.
     group.hidden = true;
   }
 }
 
-// Optimistic bump when the user actually starts a download; the server counts it too,
-// and the next refresh reconciles to the authoritative number.
-function onDownloadClick() {
-  if (!state.latestBuild) return;
-  const next = (state.latestBuild.downloads || 0) + 1;
-  state.latestBuild.downloads = next;
-  setDownloadCount(next);
+// The button opens a chooser: the full game (assets + exe) or the exe-only update for
+// anyone who already has the game folder. The server says whether the assets changed
+// since the previous build, which is what decides between the two.
+function onDownloadClick(e) {
+  e.preventDefault();
+  const menu = el("downloadMenu");
+  if (!menu || !state.latestBuild) return;
+  if (menu.hidden) {
+    renderDownloadMenu();
+    menu.hidden = false;
+    el("downloadBuild").setAttribute("aria-expanded", "true");
+  } else {
+    closeDownloadMenu();
+  }
+}
+
+function closeDownloadMenu() {
+  const menu = el("downloadMenu");
+  if (!menu) return;
+  menu.hidden = true;
+  const btn = el("downloadBuild");
+  if (btn) btn.setAttribute("aria-expanded", "false");
+}
+
+function downloadOption(title, size, note, onPick) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "dl-opt";
+  b.setAttribute("role", "menuitem");
+  b.appendChild(document.createElement("strong")).textContent = title;
+  b.appendChild(span("dl-size", size));
+  const small = document.createElement("small");
+  small.textContent = note;
+  b.appendChild(small);
+  b.addEventListener("click", onPick);
+  return b;
+}
+
+function renderDownloadMenu() {
+  const menu = el("downloadMenu");
+  const b = state.latestBuild;
+  if (!menu || !b) return;
+  clearNode(menu);
+  const previous = (state.builds || []).find((x) => x.id !== b.id);
+  const assetsNote = b.assets_changed === false && previous
+    ? `Game assets unchanged since build ${previous.commit_short || previous.id}${previous.built_at ? ` (${relTime(previous.built_at)})` : ""}: if you already have the game folder, the update is all you need.`
+    : b.assets_changed === true
+      ? "The game assets changed in this build: take the full game unless you know which files moved."
+      : "First published build: take the full game.";
+  menu.appendChild(downloadOption(
+    "Full game", fmtBytes(b.size_bytes),
+    "Everything: the exe, its DLLs and every game asset. For a first install, or when the assets changed.",
+    () => startDownload(b.download_url || "/download/latest", "full"),
+  ));
+  if (b.update_url) {
+    menu.appendChild(downloadOption(
+      "Update only", fmtBytes(b.bundle_size),
+      "Burnout_PC.exe, its DLLs and the .cgsmap. Drop them over an existing game folder.",
+      () => startDownload(b.update_url, "update"),
+    ));
+  }
+  const note = div(`dl-note${b.assets_changed ? " warn" : ""}`, assetsNote);
+  note.id = "downloadNote";
+  menu.appendChild(note);
+}
+
+// Ask first (HEAD is never counted), then navigate. A 429 means this address spent
+// today's allowance for that kind; the menu says so instead of opening a JSON page.
+async function startDownload(url, kind) {
+  const note = el("downloadNote");
+  try {
+    const probe = await fetch(url, { method: "HEAD", cache: "no-store" });
+    if (probe.status === 429) {
+      if (note) {
+        note.className = "dl-note warn";
+        note.textContent = kind === "full"
+          ? "This address has used today's full-game downloads (3 per day). The exe-only update has a larger allowance; the full game is back tomorrow."
+          : "This address has used today's update downloads. Back tomorrow.";
+      }
+      return;
+    }
+    if (!probe.ok) {
+      if (note) { note.className = "dl-note warn"; note.textContent = `Download unavailable (HTTP ${probe.status}).`; }
+      return;
+    }
+  } catch (_) {
+    /* the probe is a courtesy: fall through and let the browser try */
+  }
+  closeDownloadMenu();
+  window.location.href = url;
+  window.setTimeout(refreshDownload, 4000);
 }
 
 /* ---------------- Build contents preview ---------------- */
@@ -1563,8 +1648,15 @@ function initExplorer() {
   }
   const downloadLink = el("downloadBuild");
   if (downloadLink) downloadLink.addEventListener("click", onDownloadClick);
+  document.addEventListener("click", (e) => {
+    const group = el("downloadGroup");
+    if (group && !group.contains(e.target)) closeDownloadMenu();
+  });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeDetail();
+    if (e.key === "Escape") {
+      closeDetail();
+      closeDownloadMenu();
+    }
   });
 
   loadFacets();

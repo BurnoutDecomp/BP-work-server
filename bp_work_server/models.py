@@ -186,6 +186,13 @@ class BuildInfo(BaseModel):
     downloads: int = 0
     notes: str | None = None
     download_url: str
+    # the exe-only bundle (exe + DLLs + cgsmap) for players who already have the assets
+    bundle_filename: str | None = None
+    bundle_size: int = 0
+    bundle_sha256: str | None = None
+    update_url: str | None = None
+    # None when there is no earlier build to compare with
+    assets_changed: bool | None = None
 
 
 class BuildListResponse(BaseModel):

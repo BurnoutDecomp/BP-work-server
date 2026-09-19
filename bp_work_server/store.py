@@ -149,6 +149,13 @@ class WorkStore:
             build_cols = {r["name"] for r in con.execute("PRAGMA table_info(build)")}
             if build_cols and "downloads" not in build_cols:
                 con.execute("ALTER TABLE build ADD COLUMN downloads INTEGER NOT NULL DEFAULT 0")
+            for col, decl in (
+                ("bundle_filename", "TEXT"),
+                ("bundle_size", "INTEGER NOT NULL DEFAULT 0"),
+                ("bundle_sha256", "TEXT"),
+            ):
+                if build_cols and col not in build_cols:
+                    con.execute(f"ALTER TABLE build ADD COLUMN {col} {decl}")
             tu_cols = {r["name"] for r in con.execute("PRAGMA table_info(tu)")}
             if "linked" not in tu_cols:
                 # Stays 0 until the next workflow import parses the build script.
@@ -924,6 +931,45 @@ class WorkStore:
                 "SELECT * FROM build ORDER BY id DESC LIMIT ?", (max(1, limit),)
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def set_build_bundle(
+        self, build_id: int, filename: str | None, size_bytes: int, sha256: str | None
+    ) -> None:
+        """Record the exe-only bundle (exe + DLLs + cgsmap) that came with a build."""
+        with self.connect() as con:
+            con.execute(
+                "UPDATE build SET bundle_filename=?, bundle_size=?, bundle_sha256=? WHERE id=?",
+                (filename, int(size_bytes or 0), sha256, build_id),
+            )
+
+    def record_download(
+        self, *, ip: str, day: str, build_id: int, kind: str
+    ) -> tuple[bool, int]:
+        """Count a download start. Returns (first start of this build+kind by this address
+        today, this address's starts of this kind today across all builds). Only a first
+        start bumps ``build.downloads`` -- the public number counts downloaders, not clicks."""
+        with self.connect() as con:
+            row = con.execute(
+                "SELECT hits FROM download_hit WHERE ip=? AND day=? AND build_id=? AND kind=?",
+                (ip, day, build_id, kind),
+            ).fetchone()
+            first = row is None
+            if first:
+                con.execute(
+                    "INSERT INTO download_hit(ip, day, build_id, kind, hits) VALUES(?, ?, ?, ?, 1)",
+                    (ip, day, build_id, kind),
+                )
+                con.execute("UPDATE build SET downloads = downloads + 1 WHERE id=?", (build_id,))
+            else:
+                con.execute(
+                    "UPDATE download_hit SET hits = hits + 1 WHERE ip=? AND day=? AND build_id=? AND kind=?",
+                    (ip, day, build_id, kind),
+                )
+            total = con.execute(
+                "SELECT COALESCE(SUM(hits), 0) FROM download_hit WHERE ip=? AND day=? AND kind=?",
+                (ip, day, kind),
+            ).fetchone()[0]
+        return first, int(total)
 
     def increment_build_downloads(self, build_id: int) -> int | None:
         """Bump a build's download counter and return the new total (None if unknown)."""

@@ -113,7 +113,22 @@ CREATE TABLE IF NOT EXISTS build(
   built_at TEXT NOT NULL,
   created_at TEXT NOT NULL,
   downloads INTEGER NOT NULL DEFAULT 0,
-  notes TEXT
+  notes TEXT,
+  bundle_filename TEXT,
+  bundle_size INTEGER NOT NULL DEFAULT 0,
+  bundle_sha256 TEXT
+);
+
+-- One row per (address, UTC day, build, kind): the per-address daily quota and the
+-- unique-downloader count behind ``build.downloads`` (a fresh start from an address that
+-- already started this build today is a retry, not another download).
+CREATE TABLE IF NOT EXISTS download_hit(
+  ip TEXT NOT NULL,
+  day TEXT NOT NULL,
+  build_id INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  hits INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(ip, day, build_id, kind)
 );
 
 CREATE INDEX IF NOT EXISTS ix_tu_status ON tu(status);

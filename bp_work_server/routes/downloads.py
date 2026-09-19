@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import hashlib
 import logging
 import os
@@ -10,7 +11,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from bp_work_server.dependencies import get_store, invalidate_dashboard_cache, require_admin_worker
 from bp_work_server.models import (
@@ -36,6 +37,43 @@ def downloads_dir() -> Path:
     d = Path(os.environ.get("BP_DOWNLOADS_DIR", "data/downloads"))
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+# ---- Download quotas + counting ----------------------------------------------
+#
+# The public counter counts DOWNLOADERS: the first start of a build (per kind) by an
+# address on a UTC day. Every start counts against that address's daily quota per kind,
+# so one machine cannot pull the 5 GB zip a hundred times. The client address comes from
+# Cloudflare (CF-Connecting-IP), else the proxy's X-Forwarded-For / X-Real-IP, else the
+# socket -- the app only ever listens behind nginx on localhost, so the headers are
+# trusted. Limits: BP_DL_FULL_PER_DAY (default 3), BP_DL_UPDATE_PER_DAY (default 30).
+#
+# Transfer: with BP_DOWNLOADS_ACCEL set (e.g. "/_dl/"), the response only carries an
+# X-Accel-Redirect and nginx streams the file from its internal location -- ranges,
+# resumes and the 5 GB body never pass through Python. Unset (dev/tests): FileResponse.
+KIND_FULL = "full"
+KIND_UPDATE = "update"
+
+
+def _quota(kind: str) -> int:
+    key = "BP_DL_FULL_PER_DAY" if kind == KIND_FULL else "BP_DL_UPDATE_PER_DAY"
+    default = 3 if kind == KIND_FULL else 30
+    try:
+        return max(1, int(os.environ.get(key, str(default))))
+    except ValueError:
+        return default
+
+
+def _client_ip(request: Request) -> str:
+    for header in ("cf-connecting-ip", "x-forwarded-for", "x-real-ip"):
+        value = request.headers.get(header)
+        if value:
+            return value.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _utc_day() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).date().isoformat()
 
 
 def _keep_builds() -> int:
@@ -124,13 +162,23 @@ def _safe_slug(value: str | None, fallback: str) -> str:
     return slug or fallback
 
 
-def _build_info(row: dict) -> BuildInfo:
-    return BuildInfo(download_url=f"/download/{row['id']}", **row)
+def _build_info(row: dict, previous: dict | None = None) -> BuildInfo:
+    """``previous`` is the build published just before this one: ``assets_changed`` says
+    whether its asset manifest differs, i.e. whether the exe-only update is enough."""
+    changed = None
+    if previous is not None:
+        changed = (previous.get("asset_manifest_hash") or "") != (row.get("asset_manifest_hash") or "")
+    return BuildInfo(
+        download_url=f"/download/{row['id']}",
+        update_url=f"/download/{row['id']}/update" if row.get("bundle_filename") else None,
+        assets_changed=changed,
+        **row,
+    )
 
 
-def _friendly_name(row: dict) -> str:
+def _friendly_name(row: dict, kind: str = KIND_FULL) -> str:
     tag = _safe_slug(row.get("commit_short") or row.get("commit_sha"), "build")
-    return f"burnout-paradise-{tag}.zip"
+    return f"burnout-paradise-{tag}{'-update' if kind == KIND_UPDATE else ''}.zip"
 
 
 @router.post("/admin/builds", response_model=BuildInfo, status_code=status.HTTP_201_CREATED)
@@ -155,6 +203,7 @@ async def upload_build(
     builds off disk. Called with an admin ``X-Work-Token``.
     """
     dest = downloads_dir()
+    previous = store.latest_build()
     tmp = dest / f".incoming-{_safe_slug(commit_short or commit_sha, 'build')}.part"
     bundle_hasher = hashlib.sha256()
     bundle_size = 0
@@ -195,11 +244,15 @@ async def upload_build(
             tmp.unlink(missing_ok=True)
             assembled.unlink(missing_ok=True)
             raise
-        tmp.unlink(missing_ok=True)
+        # keep the exe-only bundle too: the "update" download for players who have the assets
+        bundle_sha256 = bundle_hasher.hexdigest()
+        bundle_filename = f"exe-{_safe_slug(commit_short or commit_sha, 'build')}-{bundle_sha256[:12]}.zip"
+        tmp.replace(dest / bundle_filename)
         source = assembled
     else:
-        # No asset merge configured: publish the uploaded bundle as-is.
+        # No asset merge configured: publish the uploaded bundle as-is; it IS the update too.
         sha256, size = bundle_hasher.hexdigest(), bundle_size
+        bundle_sha256, bundle_filename = sha256, None
         source = tmp
 
     # Content-addressed name: identical bytes reuse the same file; a re-publish of the
@@ -219,28 +272,34 @@ async def upload_build(
         built_at=built_at,
         notes=notes,
     )
+    store.set_build_bundle(row["id"], bundle_filename or filename, bundle_size, bundle_sha256)
+    row = store.get_build(row["id"]) or row
 
     # Drop older builds from disk (keep the newest BP_KEEP_BUILDS). A file is only
     # unlinked when no surviving row still points at it (content-addressed sharing).
     pruned = store.prune_builds(_keep_builds())
     if pruned:
-        live = {r["filename"] for r in store.list_builds(limit=_keep_builds() + len(pruned))}
+        survivors = store.list_builds(limit=_keep_builds() + len(pruned))
+        live = {r["filename"] for r in survivors} | {r.get("bundle_filename") for r in survivors}
         for stale in pruned:
-            name = Path(stale["filename"]).name
-            if name not in live:
-                (dest / name).unlink(missing_ok=True)
+            for name in (stale.get("filename"), stale.get("bundle_filename")):
+                if name and Path(name).name not in live:
+                    (dest / Path(name).name).unlink(missing_ok=True)
 
     invalidate_dashboard_cache(request)
     log.info(
         "published build id=%s commit=%s size=%s assets=%s",
         row["id"], row["commit_short"], size, asset_manifest_hash,
     )
-    return _build_info(row)
+    return _build_info(row, previous)
 
 
 @router.get("/api/builds", response_model=BuildListResponse)
 def list_builds(store: WorkStore = Depends(get_store)) -> BuildListResponse:
-    builds = [_build_info(r) for r in store.list_builds(limit=20)]
+    rows = store.list_builds(limit=21)
+    builds = [
+        _build_info(r, rows[i + 1] if i + 1 < len(rows) else None) for i, r in enumerate(rows[:20])
+    ]
     return BuildListResponse(latest=builds[0] if builds else None, builds=builds)
 
 
@@ -290,29 +349,79 @@ def _is_fresh_download(request: Request) -> bool:
     return not rng or rng.replace(" ", "").startswith("bytes=0-")
 
 
-def _serve(request: Request, store: WorkStore, row: dict | None) -> FileResponse:
+def _serve(request: Request, store: WorkStore, row: dict | None, kind: str = KIND_FULL) -> Response:
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no build available")
-    path = downloads_dir() / Path(row["filename"]).name
+    name = row.get("bundle_filename") if kind == KIND_UPDATE else row["filename"]
+    if not name:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "this build has no exe-only bundle")
+    path = downloads_dir() / Path(name).name
     if not path.is_file():
         # DB row survived but the file was pruned/lost; treat as gone rather than 500.
         raise HTTPException(status.HTTP_404_NOT_FOUND, "build artifact is no longer on disk")
-    if _is_fresh_download(request):
-        store.increment_build_downloads(row["id"])
-    return FileResponse(
-        path,
-        media_type="application/zip",
-        filename=_friendly_name(row),
-    )
+    # HEAD is the page asking "may I?" before it navigates: never counted, but refused
+    # the same way once the quota is spent.
+    if request.method != "HEAD" and _is_fresh_download(request):
+        _first, today = store.record_download(
+            ip=_client_ip(request), day=_utc_day(), build_id=row["id"], kind=kind
+        )
+        if today > _quota(kind):
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                f"download limit reached: {_quota(kind)} {kind} download(s) per address per day; "
+                + ("the exe-only update has its own, larger allowance" if kind == KIND_FULL
+                   else "try again tomorrow"),
+                headers={"Retry-After": "86400"},
+            )
+    elif request.method == "HEAD":
+        if _quota_spent(store, request, kind):
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "download limit reached",
+                                headers={"Retry-After": "86400"})
+    friendly = _friendly_name(row, kind)
+    accel = os.environ.get("BP_DOWNLOADS_ACCEL")
+    if accel:
+        # nginx streams it from its internal location (ranges/resumes included); Python
+        # only answers with the headers.
+        return Response(
+            status_code=200,
+            headers={
+                "X-Accel-Redirect": accel.rstrip("/") + "/" + path.name,
+                "Content-Type": "application/zip",
+                "Content-Disposition": f'attachment; filename="{friendly}"',
+                "Cache-Control": "no-store",
+            },
+        )
+    return FileResponse(path, media_type="application/zip", filename=friendly)
 
 
-@router.get("/download/latest")
-def download_latest(request: Request, store: WorkStore = Depends(get_store)) -> FileResponse:
+def _quota_spent(store: WorkStore, request: Request, kind: str) -> bool:
+    with store.connect() as con:
+        total = con.execute(
+            "SELECT COALESCE(SUM(hits), 0) FROM download_hit WHERE ip=? AND day=? AND kind=?",
+            (_client_ip(request), _utc_day(), kind),
+        ).fetchone()[0]
+    return int(total) >= _quota(kind)
+
+
+@router.api_route("/download/latest", methods=["GET", "HEAD"])  # HEAD: the page asks before it navigates
+def download_latest(request: Request, store: WorkStore = Depends(get_store)) -> Response:
     return _serve(request, store, store.latest_build())
 
 
-@router.get("/download/{build_id}")
+@router.api_route("/download/latest/update", methods=["GET", "HEAD"])  # HEAD: the page asks before it navigates
+def download_latest_update(request: Request, store: WorkStore = Depends(get_store)) -> Response:
+    return _serve(request, store, store.latest_build(), KIND_UPDATE)
+
+
+@router.api_route("/download/{build_id}/update", methods=["GET", "HEAD"])  # HEAD: the page asks before it navigates
+def download_build_update(
+    build_id: int, request: Request, store: WorkStore = Depends(get_store)
+) -> Response:
+    return _serve(request, store, store.get_build(build_id), KIND_UPDATE)
+
+
+@router.api_route("/download/{build_id}", methods=["GET", "HEAD"])  # HEAD: the page asks before it navigates
 def download_build(
     build_id: int, request: Request, store: WorkStore = Depends(get_store)
-) -> FileResponse:
+) -> Response:
     return _serve(request, store, store.get_build(build_id))

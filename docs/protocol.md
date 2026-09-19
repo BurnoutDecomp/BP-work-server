@@ -396,3 +396,21 @@ tier-C count, blamed on the b5-decomp author of the commit the exe was built fro
 - `GET /api/asm/functions?file=` -- every paired function in the file with its score, counts, diff and notes.
 - `GET /api/asm/top?tier=C&limit=` -- the largest console bodies in a tier.
 - `GET /api/tu` carries `audit.asm` (per function) and `audit.asm_rollup`.
+
+## Downloads: full game, exe-only update, quotas, nginx offload
+
+Every published build has two artifacts: the full zip (assets merged with the exe) and the
+exe-only bundle CI uploaded (`Burnout_PC.exe`, its DLLs, the `.cgsmap`), kept beside it as
+`exe-<commit>-<sha12>.zip`. `BuildInfo` carries `update_url`, `bundle_size`, `bundle_sha256`
+and `assets_changed` (asset manifest differs from the previous build; `null` for the first).
+
+- `GET /download/latest`, `/download/{id}` -- the full game.
+- `GET /download/latest/update`, `/download/{id}/update` -- the exe-only bundle.
+- `downloads` counts downloaders: the first fresh start (no Range, or `bytes=0-`) of a build
+  and kind by an address on a UTC day. Every start counts against the address's daily quota
+  per kind: `BP_DL_FULL_PER_DAY` (3) and `BP_DL_UPDATE_PER_DAY` (30); beyond it the server
+  answers 429 with `Retry-After: 86400`. HEAD is never counted and answers 429 once the quota
+  is spent, so the page can ask before navigating. The address is `CF-Connecting-IP`, else
+  the first `X-Forwarded-For`, else `X-Real-IP`, else the socket.
+- `BP_DOWNLOADS_ACCEL=/_dl/`: the response carries only `X-Accel-Redirect: /_dl/<file>` and
+  nginx streams the file from an `internal` location aliased to the downloads directory.

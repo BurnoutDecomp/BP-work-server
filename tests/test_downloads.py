@@ -104,19 +104,99 @@ def test_download_increments_counter(tmp_path, monkeypatch):
 
     assert client.get("/api/builds").json()["latest"]["downloads"] == 0
 
-    # a fresh GET (no Range) counts
-    client.get("/download/latest")
+    # a fresh GET (no Range) counts -- once per address per build per day
+    client.get("/download/latest", headers={"X-Forwarded-For": "10.0.0.1"})
     assert client.get("/api/builds").json()["latest"]["downloads"] == 1
-    client.get(f"/download/{bid}")
+    client.get(f"/download/{bid}", headers={"X-Forwarded-For": "10.0.0.1"})
+    assert client.get("/api/builds").json()["latest"]["downloads"] == 1   # same downloader
+    client.get(f"/download/{bid}", headers={"X-Forwarded-For": "10.0.0.2"})
     assert client.get("/api/builds").json()["latest"]["downloads"] == 2
 
-    # a mid-file range request (resume/segment) does NOT double-count
-    client.get(f"/download/{bid}", headers={"Range": "bytes=5-9"})
+    # a mid-file range request (resume/segment) does NOT count
+    client.get(f"/download/{bid}", headers={"Range": "bytes=5-9", "X-Forwarded-For": "10.0.0.3"})
     assert client.get("/api/builds").json()["latest"]["downloads"] == 2
 
     # a range starting at 0 (how some browsers begin) counts as a fresh start
-    client.get(f"/download/{bid}", headers={"Range": "bytes=0-9"})
+    client.get(f"/download/{bid}", headers={"Range": "bytes=0-9", "X-Forwarded-For": "10.0.0.3"})
     assert client.get("/api/builds").json()["latest"]["downloads"] == 3
+
+    # HEAD is the page's "may I?" probe: never counted
+    client.head(f"/download/{bid}", headers={"X-Forwarded-For": "10.0.0.4"})
+    assert client.get("/api/builds").json()["latest"]["downloads"] == 3
+
+
+def test_daily_quota_per_address_and_kind(tmp_path, monkeypatch):
+    monkeypatch.setenv("BP_DL_FULL_PER_DAY", "2")
+    client, admin, _ = client_with_downloads(tmp_path, monkeypatch)
+    bid = upload(client, admin["token"], make_zip()).json()["id"]
+    ip = {"X-Forwarded-For": "203.0.113.9"}
+    assert client.get(f"/download/{bid}", headers=ip).status_code == 200
+    assert client.get(f"/download/{bid}", headers=ip).status_code == 200
+    refused = client.get(f"/download/{bid}", headers=ip)
+    assert refused.status_code == 429
+    assert "limit" in refused.json()["detail"]
+    assert refused.headers["Retry-After"] == "86400"
+    # the probe says no too, another address is fine, and the update kind has its own quota
+    assert client.head(f"/download/{bid}", headers=ip).status_code == 429
+    assert client.get(f"/download/{bid}", headers={"X-Forwarded-For": "203.0.113.10"}).status_code == 200
+    assert client.get(f"/download/{bid}/update", headers=ip).status_code == 200
+    # Cloudflare's header wins over the proxy chain
+    assert client.get(f"/download/{bid}", headers={"CF-Connecting-IP": "203.0.113.9",
+                                                    "X-Forwarded-For": "198.51.100.1"}).status_code == 429
+
+
+def test_update_bundle_is_the_exe_only_zip(tmp_path, monkeypatch):
+    """In merge mode the exe-only bundle CI uploaded stays downloadable as the update,
+    and each build says whether the assets changed since the previous one."""
+    import bp_work_server.routes.downloads as dl
+
+    monkeypatch.setenv("BP_ASSET_RCLONE_REMOTE", "gdrive:")
+    monkeypatch.setenv("BP_ASSETS_DIR", str(tmp_path / "assets"))
+    assets = {"LANGUAGE.bin": b"lang"}
+
+    def fake_rclone(remote, dest):
+        dest.mkdir(parents=True, exist_ok=True)
+        for name, data in assets.items():
+            (dest / name).write_bytes(data)
+
+    monkeypatch.setattr(dl, "_run_rclone", fake_rclone)
+    client, admin, _ = client_with_downloads(tmp_path, monkeypatch)
+
+    def bundle(marker):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("Burnout_PC.exe", marker)
+        return buf.getvalue()
+
+    first = upload(client, admin["token"], bundle(b"exe-1"), commit="1" * 40).json()
+    assert first["update_url"] == f"/download/{first['id']}/update"
+    assert first["bundle_size"] == len(bundle(b"exe-1"))
+    assert first["assets_changed"] is None          # nothing to compare with
+    up = client.get(first["update_url"])
+    assert up.status_code == 200 and up.content == bundle(b"exe-1")
+    assert "update.zip" in up.headers["content-disposition"]
+    full = client.get(first["download_url"])
+    with zipfile.ZipFile(io.BytesIO(full.content)) as zf:
+        assert set(zf.namelist()) == {"Burnout_PC.exe", "LANGUAGE.bin"}
+
+    second = upload(client, admin["token"], bundle(b"exe-2"), commit="2" * 40).json()
+    assert second["assets_changed"] is False        # same assets: the update is enough
+    assets["NEW.bin"] = b"new"
+    third = upload(client, admin["token"], bundle(b"exe-3"), commit="3" * 40).json()
+    assert third["assets_changed"] is True
+    listing = client.get("/api/builds").json()
+    assert [b["assets_changed"] for b in listing["builds"]] == [True, False, None]
+
+
+def test_accel_redirect_hands_the_file_to_nginx(tmp_path, monkeypatch):
+    monkeypatch.setenv("BP_DOWNLOADS_ACCEL", "/_dl/")
+    client, admin, _ = client_with_downloads(tmp_path, monkeypatch)
+    body = upload(client, admin["token"], make_zip()).json()
+    resp = client.get(body["download_url"])
+    assert resp.status_code == 200
+    assert resp.headers["X-Accel-Redirect"] == "/_dl/" + body["filename"]
+    assert resp.headers["Content-Disposition"].endswith('.zip"')
+    assert resp.content == b""
 
 
 def test_build_contents_lists_zip(tmp_path, monkeypatch):

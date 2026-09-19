@@ -2835,3 +2835,65 @@ html::-webkit-scrollbar-corner,
   background: linear-gradient(180deg, var(--green), rgba(111, 207, 87, 0.35));
   clip-path: polygon(2px 0, 100% 0, calc(100% - 2px) 100%, 0 100%);
 }
+
+/* ---- download chooser: full game vs exe-only update ---- */
+.download-group {
+  position: relative;
+}
+.download-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  min-width: 340px;
+  max-width: min(92vw, 420px);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+  padding: 6px;
+}
+.download-menu[hidden] {
+  display: none;
+}
+.download-menu .dl-opt {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  align-items: baseline;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.download-menu .dl-opt:hover,
+.download-menu .dl-opt:focus-visible {
+  background: var(--surface-hover);
+  outline: none;
+}
+.download-menu .dl-opt strong {
+  font-family: var(--font-display, inherit);
+  letter-spacing: 0.02em;
+}
+.download-menu .dl-opt .dl-size {
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.download-menu .dl-opt small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  line-height: 1.3;
+}
+.download-menu .dl-note {
+  padding: 8px 12px 6px;
+  color: var(--muted);
+  font-size: 12px;
+  border-top: 1px solid var(--line-soft);
+}
+.download-menu .dl-note.warn {
+  color: var(--gold);
+}
