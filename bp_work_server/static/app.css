@@ -878,10 +878,17 @@ small {
 .goal-strip strong {
   display: block;
   margin-top: 4px;
-  font-size: 24px;
+  font-size: 26px;
   line-height: 1.05;
   color: var(--text);
   overflow-wrap: anywhere;
+  /* the display face the old goal card had: the strip lost it in the round-2 rename */
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  transform: skewX(-8deg);
+  transform-origin: left;
 }
 
 .status-grid {
