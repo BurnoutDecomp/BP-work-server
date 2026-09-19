@@ -2428,13 +2428,17 @@ function verifiedTrend(history) {
   const prev = points[points.length - 2];
   const dClean = Number(last.clean || 0) - Number(prev.clean || 0);
   const dWeight = Number(last.weight || 0) - Number(prev.weight || 0);
+  // plain words, not signed deltas: "-2 findings" reads as a negative count
   const parts = [];
-  if (dClean) parts.push(`${dClean > 0 ? "+" : ""}${fmtInt(dClean)} verified`);
-  if (dWeight) parts.push(`${dWeight > 0 ? "+" : ""}${fmtInt(dWeight)} findings`);
-  if (!parts.length) return { text: "unchanged since the previous commit", cls: "" };
+  if (dClean > 0) parts.push(`${fmtInt(dClean)} more clean ${dClean === 1 ? "body" : "bodies"}`);
+  if (dClean < 0) parts.push(`${fmtInt(-dClean)} fewer clean ${dClean === -1 ? "body" : "bodies"}`);
+  if (dWeight < 0) parts.push(`${fmtInt(-dWeight)} ${dWeight === -1 ? "finding" : "findings"} resolved`);
+  if (dWeight > 0) parts.push(`${fmtInt(dWeight)} new ${dWeight === 1 ? "finding" : "findings"}`);
+  const since = prev.imported_at ? `since ${String(prev.imported_at).slice(0, 10)}` : "since the previous audited commit";
+  if (!parts.length) return { text: `unchanged ${since}`, cls: "" };
   const good = dClean > 0 || dWeight < 0;
   return {
-    text: `${parts.join(", ")} since the previous audited commit`,
+    text: `${parts.join(", ")} ${since}`,
     cls: good ? "up" : "down",
   };
 }
