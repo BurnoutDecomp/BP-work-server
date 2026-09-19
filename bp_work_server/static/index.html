@@ -39,7 +39,7 @@
       href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/app.css?v=35" />
+    <link rel="stylesheet" href="/static/app.css?v=36" />
   </head>
   <body>
     <div class="bp-bg" aria-hidden="true">
@@ -134,6 +134,7 @@
               <span class="label">Translation Units</span>
               <div class="metric-total" id="tuCount">—</div>
               <div class="legend" id="tuLegend"></div>
+              <small class="metric-note">active goal · <span id="activeGoal">Whole program</span></small>
             </div>
           </article>
           <article class="card metric ring-card" title="Every function in the shipped X360 binary, including the ones IDA found but nobody has named yet. Those carry no DWARF file and no RTTI class, so they belong to no translation unit — but they are still code that has to be written.">
@@ -172,19 +173,6 @@
           </article>
         </section>
 
-        <section class="card goal-strip" aria-label="Active goal">
-          <div class="goal-strip-title">
-            <span class="label">Active Goal</span>
-            <strong id="activeGoal">Whole program</strong>
-          </div>
-          <div class="status-grid">
-            <div class="chip todo"><span id="todoCount">0</span><label>Todo</label></div>
-            <div class="chip progress"><span id="progressCount">0</span><label>In progress</label></div>
-            <div class="chip compiled"><span id="compiledCount">0</span><label>Compiled</label></div>
-            <div class="chip done"><span id="doneCount">0</span><label>Done</label></div>
-            <div class="chip blocked"><span id="blockedCount">0</span><label>Blocked</label></div>
-          </div>
-        </section>
 
         <!-- Verified vs Console: the one number nobody declared, with its history and its
              three evidence tiers. Its own band, so the ring row above stays compact. -->
@@ -500,6 +488,6 @@
       </aside>
     </div>
 
-    <script src="/static/app.js?v=28" defer></script>
+    <script src="/static/app.js?v=29" defer></script>
   </body>
 </html>

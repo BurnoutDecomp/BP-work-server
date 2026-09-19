@@ -329,12 +329,6 @@ function render(data) {
   text("activeGoal", data.active_goal || "Whole program");
   text("serverTime", fmtTime(data.server_time));
 
-  text("todoCount", fmtInt(counts.todo));
-  text("progressCount", fmtInt(counts.in_progress));
-  text("compiledCount", fmtInt(counts.compiled));
-  text("doneCount", fmtInt(counts.done));
-  text("blockedCount", fmtInt(counts.blocked));
-
   renderAgents(data.agents || []);
   renderActiveWork(data.active_work || []);
   setQueueData((data.next && data.next.items) || []);
