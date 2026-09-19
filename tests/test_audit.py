@@ -228,3 +228,86 @@ def test_segments_and_top_lists(tmp_path):
     everything = client.get("/api/stubs/top", params={"live": "false"}).json()
     assert len(everything["items"]) == 2
 
+
+
+
+def _asm_workflow(tmp_path, commit="aaaa1111"):
+    """The audit checkout plus an instruction-shape audit of a build of that commit."""
+    root = _workflow(tmp_path, commit=commit)
+    (root / "progress" / "asmaudit.json").write_text(
+        json.dumps(
+            {
+                "meta": {"tool": "asmaudit", "generated_at": "2026-09-20T04:00:00Z",
+                         "b5_commit": commit, "b5_author": "Adriwin", "exe_commit": "eeee2222"},
+                "stats": {"identity": 4, "no_export": 0, "paired_in_exe": 3, "not_in_exe": 1,
+                          "A": 1, "B": 0, "C": 1, "T": 1, "scoreable": 2, "shape_percent": 50.0,
+                          "mean_score": 65.0},
+                "results": [
+                    {"name": "BrnWorld::A::Run", "addr": "0x82000010", "file": "GameSource/World/A.cpp",
+                     "pc_va": "0x140001000", "tier": "C", "score": 40.0,
+                     "components": {"calls": 0.25, "cond": 0.5, "imm": 0.5, "ind": None},
+                     "counts": {"n": [120, 80], "cond": [6, 3], "ind": [0, 0], "calls": [3, 1], "imm": [2, 2]},
+                     "diff": {"calls_only_console": ["BrnWorld::RemoveRivals", "BrnWorld::Tick"],
+                              "calls_only_pc": [], "calls_only_console_n": 2, "calls_only_pc_n": 0,
+                              "imm_only_console": [39], "imm_only_pc": [64]},
+                     "notes": []},
+                    {"name": "BrnWorld::A::Stop", "addr": "0x82000018", "file": "GameSource/World/A.cpp",
+                     "pc_va": "0x140001200", "tier": "A", "score": 90.0,
+                     "components": {"calls": 1.0, "cond": 1.0, "imm": 0.5, "ind": None},
+                     "counts": {"n": [40, 30], "cond": [2, 2], "ind": [1, 1], "calls": [1, 1], "imm": [2, 1]},
+                     "diff": {"calls_only_console": [], "calls_only_pc": [], "calls_only_console_n": 0,
+                              "calls_only_pc_n": 0, "imm_only_console": [7], "imm_only_pc": []},
+                     "notes": ["folded: 1 other symbol(s) share this PC address"]},
+                    {"name": "BrnWorld::B::Run", "addr": "0x82000020", "file": "GameSource/World/B.cpp",
+                     "pc_va": "0x140001400", "tier": "T", "score": None,
+                     "components": {"calls": None, "cond": None, "imm": None, "ind": None},
+                     "counts": {"n": [6, 4], "cond": [0, 0], "ind": [0, 0], "calls": [0, 0], "imm": [0, 0]},
+                     "diff": {"calls_only_console": [], "calls_only_pc": [], "calls_only_console_n": 0,
+                              "calls_only_pc_n": 0, "imm_only_console": [], "imm_only_pc": []},
+                     "notes": []},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return root
+
+
+def test_asm_import_summary_files_functions_and_top(tmp_path):
+    store = WorkStore(tmp_path / "work.sqlite3")
+    store.migrate()
+    root = _asm_workflow(tmp_path)
+    result = store.import_workflow(root)
+    assert result["asm_functions"] == 3
+
+    summary = store.audit_summary()
+    assert summary["asm"]["A"] == 1
+    assert summary["asm"]["shape_percent"] == 50.0
+    assert summary["asm"]["files"] == 2
+    assert summary["asm"]["commit"] == "aaaa1111"
+    assert summary["history"][-1]["asm_a"] == 1
+    assert summary["history"][-1]["asm_shape_percent"] == 50.0
+
+    files = store.asm_files()
+    assert files["total"] == 2
+    assert files["items"][0]["file"] == "GameSource/World/A.cpp"
+    assert files["items"][0]["c"] == 1 and files["items"][0]["a"] == 1
+    assert files["items"][0]["mean_score"] == 65.0
+    assert [i["file"] for i in store.asm_files(tier="T")["items"]] == ["GameSource/World/B.cpp"]
+
+    functions = store.asm_functions("GameSource/World/A.cpp")
+    assert functions["tu_id"] == "GameSource/World/A.cpp"
+    assert [f["tier"] for f in functions["items"]] == ["C", "A"]
+    assert functions["items"][0]["diff"]["calls_only_console"] == ["BrnWorld::RemoveRivals", "BrnWorld::Tick"]
+    assert functions["items"][1]["notes"][0].startswith("folded")
+
+    assert [t["name"] for t in store.asm_top("C")] == ["BrnWorld::A::Run"]
+
+    # a re-import of the same build changes nothing; a new build logs a delta on tier C
+    assert store.import_workflow(root)["asm_functions"] == 0
+
+    client = TestClient(create_app(store))
+    assert client.get("/api/asm/files").json()["total"] == 2
+    assert client.get("/api/asm/top", params={"tier": "C"}).json()["items"][0]["name"] == "BrnWorld::A::Run"
+    assert client.get("/api/asm/functions", params={"file": "GameSource/World/A.cpp"}).json()["items"][0]["score"] == 40.0
+    assert "asm_tiers" in client.get("/api/facets").json()

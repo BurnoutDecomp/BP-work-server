@@ -32,6 +32,7 @@ const state = {
     category: "",
     tier: "",
     live: false,
+    asmTier: "",
     offset: 0,
     limit: 25,
     total: 0,
@@ -308,6 +309,7 @@ function render(data) {
   const funcs = Number(totals.funcs || 0);
   const covered = Number(totals.done_funcs || 0);
   const unidentified = Number(totals.unidentified_funcs || 0);
+  state.funcTotals = { funcs, unidentified };
   setDonut("fn", [
     { label: "covered", value: covered, color: "gold" },
     { label: "named, uncovered", value: Math.max(0, funcs - covered - unidentified), color: "grey" },
@@ -2491,8 +2493,9 @@ function tuAuditSection(d) {
   const rollup = audit.rollup;
   const stubs = audit.stubs || [];
   const funcs = audit.funcs || {};
+  const asm = audit.asm || {};
   const section = detailSection("Console audit");
-  if (!rollup && !Object.keys(funcs).length && !stubs.length) {
+  if (!rollup && !Object.keys(funcs).length && !stubs.length && !Object.keys(asm).length) {
     section.appendChild(
       div("muted-text", audit.file ? "Nothing the audit can name differs in this file." : "No audit data for this TU."),
     );
@@ -2520,6 +2523,18 @@ function tuAuditSection(d) {
     section.appendChild(row);
   }
   if (names.length > 40) section.appendChild(div("audit-meta", `${fmtInt(names.length - 40)} more functions in the file audit.`));
+  const asmNames = Object.keys(asm).sort((a, b) =>
+    (asm[a].score == null ? 101 : asm[a].score) - (asm[b].score == null ? 101 : asm[b].score));
+  if (asmNames.length) {
+    const sub = div("detail-section-title");
+    const r = audit.asm_rollup || {};
+    sub.textContent = `Instruction shape (${fmtInt(asmNames.length)} of this TU's functions in the built exe` +
+      (r.functions ? `; file: ${fmtInt(r.a || 0)} A, ${fmtInt(r.b || 0)} B, ${fmtInt(r.c || 0)} C` : "") + ")";
+    sub.style.marginTop = "14px";
+    section.appendChild(sub);
+    for (const name of asmNames.slice(0, 40)) section.appendChild(asmRow({ name, ...asm[name] }));
+    if (asmNames.length > 40) section.appendChild(div("audit-meta", `${fmtInt(asmNames.length - 40)} more in the file's instruction-shape view.`));
+  }
   if (stubs.length) {
     const sub = div("detail-section-title");
     sub.textContent = `Stubs in this file (${fmtInt(stubs.length)})`;
@@ -2597,6 +2612,10 @@ function renderAudit(audit) {
   const paired = Number(fa.paired || 0);
   const clean = Number(fa.clean || 0);
   const trend = el("verifiedTrend");
+  const ft = state.funcTotals || { funcs: 0, unidentified: 0 };
+  // every named function the audit did not select: templates, operators, compiler-generated
+  const selected = Number(fa.selected || 0);
+  const notComparable = ft.funcs && selected ? Math.max(0, ft.funcs - ft.unidentified - selected) : 0;
   if (!paired) {
     setDonut("verified", [{ label: "no audit imported yet", value: 1, color: "dim" }], 0, "no audit yet");
     if (trend) trend.hidden = true;
@@ -2612,7 +2631,12 @@ function renderAudit(audit) {
         title: "The ledger names a PC file for the function but no definition exists anywhere." },
       { label: "not audited", value: seg.unpaired, color: "dim",
         title: "Console functions with no known PC file; not compared." },
-    ], fa.verified_percent, `${fmtInt(clean)} / ${fmtInt(paired)} paired bodies`);
+      { label: "not comparable by name", value: notComparable, color: "dim",
+        title: "Named functions the audit skips: template instantiations, operators and compiler-generated bodies." },
+      { label: "not yet identified", value: ft.unidentified, color: "dim",
+        title: "Functions of the console image that have no name in the ledger yet." },
+    ], fa.verified_percent, `${fmtInt(clean)} / ${fmtInt(paired)} comparable bodies` +
+      (ft.funcs ? ` · of ${fmtInt(ft.funcs)} functions` : ""));
     if (trend) {
       const t = verifiedTrend(audit.history);
       trend.hidden = !t;
@@ -2620,6 +2644,16 @@ function renderAudit(audit) {
         trend.textContent = t.text;
         trend.className = `metric-note audit-trend ${t.cls}`;
       }
+    }
+  }
+  const asmNote = el("verifiedAsm");
+  if (asmNote) {
+    const asm = audit.asm || {};
+    const scoreable = Number(asm.scoreable || 0);
+    asmNote.hidden = !scoreable;
+    if (scoreable) {
+      asmNote.textContent = `instruction shape of the built exe: ${fmtInt(asm.A)} of ${fmtInt(scoreable)} same shape (${asm.shape_percent}%)`;
+      asmNote.title = "tools/re/asmaudit.py on every published build: the exe's callees, branch counts and constants against the console's machine code";
     }
   }
   state.evidence.summary = audit;
@@ -2700,6 +2734,35 @@ function renderEvidenceSummary() {
         renderEvidenceSummary();
       }));
     }
+  } else if (ev.tab === "asm") {
+    const asm = audit.asm || {};
+    if (meta) {
+      meta.textContent = asm.commit
+        ? `build of b5 ${String(asm.commit).slice(0, 10)} \u00b7 ${relTime(asm.generated_at || asm.imported_at)}`
+        : "no build audited yet";
+      meta.title = asm.exe_mtime ? `exe built ${fmtTime(asm.exe_mtime)}` : "";
+    }
+    intro.textContent =
+      "The exe CI built, function by function, against the console's own machine code: the same named callees, the same number of conditional branches, the same constants. Byte-matching is impossible across the x64 widening, so this is shape, not identity \u2014 tier A is the same shape, C diverges, and a divergence is a diff to read (which callees and constants exist on one side only), not a verdict. Recomputed on every published build.";
+    tiles.appendChild(evidenceTile("in the built exe", Number(asm.paired_in_exe || 0), "progress"));
+    tiles.appendChild(evidenceTile("A \u00b7 same shape", Number(asm.A || 0), "done"));
+    tiles.appendChild(evidenceTile("B \u00b7 close", Number(asm.B || 0), "compiled"));
+    tiles.appendChild(evidenceTile("C \u00b7 diverges", Number(asm.C || 0), "blocked"));
+    tiles.appendChild(evidenceTile("T \u00b7 trivial", Number(asm.T || 0), "todo"));
+    tiles.appendChild(evidenceTile("named, not in the exe", Number(asm.not_in_exe || 0), "todo"));
+    for (const [key, label, color, count] of [
+      ["", "all tiers", "", null],
+      ["A", "same shape", "green", asm.A],
+      ["B", "close", "amber", asm.B],
+      ["C", "diverges", "red", asm.C],
+      ["T", "trivial", "grey", asm.T],
+    ]) {
+      chips.appendChild(evidenceChip(label, count, ev.asmTier === key, color, () => {
+        ev.asmTier = key;
+        loadEvidenceList(true);
+        renderEvidenceSummary();
+      }));
+    }
   } else {
     intro.textContent =
       "Every body in the tree that is still a stand-in, per file. High: the file or the body says so, or it traps. Medium: a trivial body under a softer marker. Low: a trivial, unmarked body whose console function does real work — possibly a legitimate empty default. \"Live today\" means a body we have reconstructed calls the stub right now.";
@@ -2757,12 +2820,57 @@ function evidenceParams(reset) {
   if (ev.tab === "audit") {
     if (ev.category) p.set("category", ev.category);
     p.set("sort", "weight");
+  } else if (ev.tab === "asm") {
+    if (ev.asmTier) p.set("tier", ev.asmTier);
+    p.set("sort", ev.asmTier ? ev.asmTier.toLowerCase() : "c");
   } else {
     if (ev.tier) p.set("tier", ev.tier);
     if (ev.live) p.set("live", "true");
     p.set("sort", ev.live ? "live" : "stubs");
   }
   return p;
+}
+
+/* ---- the instruction-shape tier (tools/re/asmaudit.py) ---- */
+const ASM_TIER_LABELS = { A: "same shape", B: "close", C: "diverges", T: "trivial" };
+const ASM_TIER_PILL = { A: "done", B: "compiled", C: "blocked", T: "todo" };
+
+function asmTierPill(tier) {
+  return span(`pill ${ASM_TIER_PILL[tier] || "todo"}`, `${tier} ${ASM_TIER_LABELS[tier] || ""}`.trim());
+}
+
+function asmRow(fn) {
+  const row = div("audit-row");
+  const head = div("audit-row-head");
+  head.appendChild(span("dep-name", fn.name));
+  head.appendChild(asmTierPill(fn.tier));
+  if (fn.score != null) head.appendChild(span("pill todo", `score ${fn.score}`));
+  const c = fn.counts || {};
+  const where = [];
+  if (fn.addr) where.push(`X360 ${fn.addr}`);
+  if (c.n) where.push(`${fmtInt(c.n[0])} console / ${fmtInt(c.n[1])} pc insns`);
+  if (c.cond) where.push(`branches ${fmtInt(c.cond[0])} / ${fmtInt(c.cond[1])}`);
+  if (c.calls) where.push(`calls ${fmtInt(c.calls[0])} / ${fmtInt(c.calls[1])}`);
+  if (where.length) head.appendChild(span("tu-meta", where.join(" \u00b7 ")));
+  row.appendChild(head);
+  const d = fn.diff || {};
+  const list = document.createElement("ul");
+  list.className = "audit-findings";
+  const add = (label, items, high) => {
+    if (!items || !items.length) return;
+    const li = document.createElement("li");
+    if (high) li.classList.add("high");
+    li.appendChild(span("audit-cat", label));
+    li.appendChild(span("audit-items", items.join("; ")));
+    list.appendChild(li);
+  };
+  add(`callees only on the console (${fmtInt(d.calls_only_console_n || 0)})`, d.calls_only_console, true);
+  add(`callees only in our exe (${fmtInt(d.calls_only_pc_n || 0)})`, d.calls_only_pc, false);
+  add("constants only on the console", d.imm_only_console, true);
+  add("constants only in our exe", d.imm_only_pc, false);
+  if (fn.notes && fn.notes.length) add("notes", fn.notes, false);
+  if (list.childNodes.length) row.appendChild(list);
+  return row;
 }
 
 async function loadEvidenceList(reset) {
@@ -2773,7 +2881,7 @@ async function loadEvidenceList(reset) {
     ev.expanded = {};
   }
   const requestId = ++ev.requestId;
-  const path = ev.tab === "audit" ? "/api/audit/files" : "/api/stubs/files";
+  const path = ev.tab === "audit" ? "/api/audit/files" : ev.tab === "asm" ? "/api/asm/files" : "/api/stubs/files";
   try {
     const data = await fetchJson(`${path}?${evidenceParams(reset)}`, 15000);
     if (requestId !== ev.requestId) return;
@@ -2795,13 +2903,16 @@ function renderEvidenceList() {
   const list = el("evidenceList");
   clearNode(list);
   if (!ev.items.length) {
-    list.appendChild(div("muted-text", ev.summary && (ev.summary.funcaudit || {}).paired ? "No files match." : "No audit has been imported yet."));
+    const have = ev.tab === "asm"
+      ? ((ev.summary || {}).asm || {}).paired_in_exe
+      : ev.summary && (ev.summary.funcaudit || {}).paired;
+    list.appendChild(div("muted-text", have ? "No files match." : ev.tab === "asm" ? "No build has been audited yet." : "No audit has been imported yet."));
   }
   for (const item of ev.items) {
     const card = div("evidence-file");
     const head = div("evidence-file-head");
     const left = div("evidence-file-left");
-    left.appendChild(div("evidence-file-path", item.file));
+    left.appendChild(div("evidence-file-path", item.file || "(functions the ledger files nowhere)"));
     const nums = div("evidence-file-nums");
     if (ev.tab === "audit") {
       const meta = [];
@@ -2815,6 +2926,15 @@ function renderEvidenceList() {
       if (item.missing_event) nums.appendChild(span("pill cat-mid", `${fmtInt(item.missing_event)} events`));
       if (item.missing_callee) nums.appendChild(span("pill cat-low", `${fmtInt(item.missing_callee)} callees`));
       if (item.missing_assert) nums.appendChild(span("pill cat-low", `${fmtInt(item.missing_assert)} asserts`));
+    } else if (ev.tab === "asm") {
+      const meta = [];
+      if (item.mean_score) meta.push(`mean score ${item.mean_score}`);
+      left.appendChild(div("evidence-file-meta", meta.join(" \u00b7 ")));
+      nums.appendChild(span("pill todo", `${fmtInt(item.functions)} in exe`));
+      if (item.a) nums.appendChild(span("pill done", `${fmtInt(item.a)} A`));
+      if (item.b) nums.appendChild(span("pill compiled", `${fmtInt(item.b)} B`));
+      if (item.c) nums.appendChild(span("pill blocked", `${fmtInt(item.c)} C`));
+      if (item.t) nums.appendChild(span("pill todo", `${fmtInt(item.t)} T`));
     } else {
       const meta = [];
       if (item.console_lines) meta.push(`${fmtInt(item.console_lines)} console lines behind them`);
@@ -2874,6 +2994,16 @@ async function fillEvidenceFile(file, body) {
         body.appendChild(row);
       }
       if (items.length > 60) body.appendChild(div("audit-meta", `${fmtInt(items.length - 60)} more functions in this file.`));
+    } else if (ev.tab === "asm") {
+      const data = await fetchJson(`/api/asm/functions?file=${encodeURIComponent(file)}`, 15000);
+      clearNode(body);
+      const tools = div("audit-row-head");
+      tools.appendChild(fileRepoLink(file));
+      if (data.tu_id) tools.appendChild(tuButton(data.tu_id, "pill todo"));
+      body.appendChild(tools);
+      const items = (data.items || []).filter((fn) => !ev.asmTier || fn.tier === ev.asmTier);
+      for (const fn of items.slice(0, 60)) body.appendChild(asmRow(fn));
+      if (items.length > 60) body.appendChild(div("audit-meta", `${fmtInt(items.length - 60)} more functions in this file.`));
     } else {
       const data = await fetchJson(`/api/stubs?file=${encodeURIComponent(file)}`, 15000);
       clearNode(body);
@@ -2913,6 +3043,27 @@ async function loadEvidenceTop() {
         name.appendChild(span("top-meta", `${item.file}${item.preview ? ` — ${item.preview}` : ""}`));
         li.appendChild(name);
         li.addEventListener("click", () => openAuditFile(item.file));
+        list.appendChild(li);
+      }
+    } else if (ev.tab === "asm") {
+      title.textContent = "Largest divergences";
+      note.textContent = "Tier C functions by the size of the console body: the biggest bodies whose calls, branches or constants do not line up with the console's machine code. Click one to open its file.";
+      const data = await fetchJson(`/api/asm/top?tier=C&limit=12`, 15000);
+      clearNode(list);
+      for (const item of data.items || []) {
+        const li = document.createElement("li");
+        li.appendChild(span("top-n", item.score != null ? String(item.score) : "?"));
+        const name = span("top-name", item.name);
+        const c = item.counts || {};
+        name.appendChild(span("top-meta", `${item.file || "(no file)"} \u00b7 ${fmtInt(c.n ? c.n[0] : 0)} console insns`));
+        li.appendChild(name);
+        li.addEventListener("click", () => {
+          ev.q = item.file || "";
+          const search = el("evidenceSearch");
+          if (search) search.value = ev.q;
+          ev.expanded = { [item.file]: true };
+          loadEvidenceList(true);
+        });
         list.appendChild(li);
       }
     } else {

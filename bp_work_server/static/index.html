@@ -183,6 +183,7 @@
               <div class="metric-total" id="verifiedCount">—</div>
               <div class="legend" id="verifiedLegend"></div>
               <small id="verifiedTrend" class="metric-note" hidden></small>
+              <small id="verifiedAsm" class="metric-note" hidden></small>
             </div>
           </article>
         </section>
@@ -208,6 +209,7 @@
             <div class="explorer-tabs" id="evidenceTabs">
               <button class="tab active" data-tab="audit" title="Every reconstructed body compared with the console's own function">Glue audit</button>
               <button class="tab" data-tab="stubs" title="Every body that is still a stand-in">Stub inventory</button>
+              <button class="tab" data-tab="asm" title="The exe CI built, function by function, against the console's own machine code">Instruction shape</button>
             </div>
             <span id="evidenceMeta" class="badge">no audit yet</span>
           </div>
@@ -466,6 +468,6 @@
       </aside>
     </div>
 
-    <script src="/static/app.js?v=18" defer></script>
+    <script src="/static/app.js?v=19" defer></script>
   </body>
 </html>

@@ -235,11 +235,13 @@ class FacetsResponse(FlexibleModel):
     goals: list[str] = Field(default_factory=list)
     audit_categories: list[str] = Field(default_factory=list)
     stub_tiers: list[str] = Field(default_factory=list)
+    asm_tiers: list[str] = Field(default_factory=list)
 
 
 class AuditSummaryResponse(FlexibleModel):
     funcaudit: dict[str, Any] = Field(default_factory=dict)
     stubs: dict[str, Any] = Field(default_factory=dict)
+    asm: dict[str, Any] = Field(default_factory=dict)
     history: list[dict[str, Any]] = Field(default_factory=list)
 
 

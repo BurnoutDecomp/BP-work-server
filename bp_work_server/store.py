@@ -355,6 +355,7 @@ class WorkStore:
                 "unidentified": unidentified_count,
                 "audit_findings": audit_counts.get("funcaudit", 0),
                 "stubs": audit_counts.get("stubs", 0),
+                "asm_functions": audit_counts.get("asm", 0),
             }
 
     # ---------------------------------------------------------------- audit layer
@@ -385,6 +386,18 @@ class WorkStore:
     def stub_top(self, live_only: bool = True, limit: int = 12) -> list[dict[str, Any]]:
         with self.connect() as con:
             return audit.top_stubs(con, live_only, limit)
+
+    def asm_files(self, **kwargs: Any) -> dict[str, Any]:
+        with self.connect() as con:
+            return audit.asm_files(con, **kwargs)
+
+    def asm_functions(self, file: str) -> dict[str, Any]:
+        with self.connect() as con:
+            return audit.asm_functions(con, file)
+
+    def asm_top(self, tier: str = "C", limit: int = 12) -> list[dict[str, Any]]:
+        with self.connect() as con:
+            return audit.asm_top(con, tier, limit)
 
     def _restore_unidentified(
         self,
@@ -1479,6 +1492,7 @@ class WorkStore:
                 "goals": goals,
                 "audit_categories": list(audit.FILE_COLUMNS),
                 "stub_tiers": list(audit.STUB_TIERS),
+                "asm_tiers": list(audit.ASM_TIERS),
             }
 
     def goal_detail(self, name: str) -> dict[str, Any]:

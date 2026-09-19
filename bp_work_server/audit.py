@@ -77,6 +77,12 @@ STUB_FILE_SORTS = {
     "file": "file",
 }
 STUB_TIERS = ("HIGH", "MEDIUM", "LOW")
+# The instruction-shape tier (tools/re/asmaudit.py): the exe CI built, function by function,
+# against the console's machine code. A same shape, B close, C diverges, T trivial. X (named
+# but not in the exe) is counted in the run's stats and never stored per row.
+ASM_TIERS = ("A", "B", "C", "T")
+ASM_FILE_SORTS = {"c": "c", "a": "a", "b": "b", "t": "t", "functions": "functions",
+                  "mean_score": "mean_score", "file": "file"}
 SRC_PREFIX = "b5-decomp/src/"
 HISTORY_LIMIT = 120
 DELTA_LIST_LIMIT = 5
@@ -142,6 +148,29 @@ CREATE TABLE IF NOT EXISTS stub_file(
   console_lines INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS asm_function(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  addr TEXT,
+  file TEXT NOT NULL,
+  tier TEXT NOT NULL,
+  score REAL,
+  console_n INTEGER NOT NULL DEFAULT 0,
+  row_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS asm_file(
+  file TEXT PRIMARY KEY,
+  functions INTEGER NOT NULL DEFAULT 0,
+  a INTEGER NOT NULL DEFAULT 0,
+  b INTEGER NOT NULL DEFAULT 0,
+  c INTEGER NOT NULL DEFAULT 0,
+  t INTEGER NOT NULL DEFAULT 0,
+  mean_score REAL NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS ix_asm_function_file ON asm_function(file);
+CREATE INDEX IF NOT EXISTS ix_asm_function_name ON asm_function(name);
 CREATE INDEX IF NOT EXISTS ix_audit_finding_file ON audit_finding(file);
 CREATE INDEX IF NOT EXISTS ix_audit_finding_name ON audit_finding(name);
 CREATE INDEX IF NOT EXISTS ix_stub_file ON stub(file);
@@ -186,7 +215,7 @@ def import_audits(
     Idempotent per (kind, commit): a re-sync of the same snapshot changes nothing, so the
     history never carries duplicate points and no phantom delta is ever logged.
     """
-    counts = {"funcaudit": 0, "stubs": 0}
+    counts = {"funcaudit": 0, "stubs": 0, "asm": 0}
     funcaudit_path = progress / "funcaudit.json"
     stubs_path = progress / "stubs.json"
     if funcaudit_path.exists():
@@ -195,6 +224,10 @@ def import_audits(
     if stubs_path.exists():
         data = json.loads(stubs_path.read_text(encoding="utf-8"))
         counts["stubs"] = import_stubs(con, data, now, log)
+    asm_path = progress / "asmaudit.json"
+    if asm_path.exists():
+        data = json.loads(asm_path.read_text(encoding="utf-8"))
+        counts["asm"] = import_asm(con, data, now, log)
     return counts
 
 
@@ -407,6 +440,116 @@ def import_stubs(
     return len(rows)
 
 
+def _asm_run_key(meta: dict[str, Any]) -> str:
+    return str(meta.get("b5_commit") or meta.get("exe_commit") or meta.get("generated_at") or "")
+
+
+def import_asm(
+    con: sqlite3.Connection, data: dict[str, Any], now: str, log: Logger
+) -> int:
+    """``progress/asmaudit.json``: one row per function paired in the built exe, keyed by the
+    b5-decomp commit the exe was built from. The per-commit delta counts tier C (diverging)
+    functions per file, so a build that brings bodies into shape shows as "closed"."""
+    meta = data.get("meta") or {}
+    key = _asm_run_key(meta)
+    if not key:
+        return 0
+    if con.execute(
+        "SELECT 1 FROM audit_run WHERE kind='asm' AND commit_hash=?", (key,)
+    ).fetchone():
+        return 0
+    results = data.get("results") or []
+    previous_run = _last_run(con, "asm")
+    previous_files = {row["file"]: row["c"] for row in con.execute("SELECT file, c FROM asm_file")}
+    con.execute("DELETE FROM asm_function")
+    con.execute("DELETE FROM asm_file")
+    rollup: dict[str, dict[str, Any]] = {}
+    rows = []
+    for item in results:
+        tier = str(item.get("tier") or "T").upper()
+        if tier not in ASM_TIERS:
+            continue
+        file = item.get("file") or ""
+        score = item.get("score")
+        counts = item.get("counts") or {}
+        console_n = int(((counts.get("n") or [0, 0])[0]) or 0)
+        rows.append(
+            (
+                item.get("name") or "",
+                item.get("addr"),
+                file,
+                tier,
+                float(score) if score is not None else None,
+                console_n,
+                json.dumps(item, separators=(",", ":")),
+            )
+        )
+        b = rollup.setdefault(file, {"functions": 0, "a": 0, "b": 0, "c": 0, "t": 0, "scores": []})
+        b["functions"] += 1
+        b[tier.lower()] += 1
+        if score is not None and tier != "T":
+            b["scores"].append(float(score))
+    con.executemany(
+        """
+        INSERT INTO asm_function(name, addr, file, tier, score, console_n, row_json)
+        VALUES(?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+    con.executemany(
+        """
+        INSERT INTO asm_file(file, functions, a, b, c, t, mean_score)
+        VALUES(?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (
+                file,
+                b["functions"],
+                b["a"],
+                b["b"],
+                b["c"],
+                b["t"],
+                round(sum(b["scores"]) / len(b["scores"]), 1) if b["scores"] else 0.0,
+            )
+            for file, b in rollup.items()
+        ],
+    )
+    stats = dict(data.get("stats") or {})
+    stats["files"] = len(rollup)
+    stats["exe_commit"] = meta.get("exe_commit")
+    stats["exe_mtime"] = meta.get("exe_mtime")
+    stats["toolchain"] = meta.get("toolchain")
+    author = meta.get("b5_author") or None
+    con.execute(
+        """
+        INSERT INTO audit_run(kind, commit_hash, author, generated_at, imported_at, stats_json)
+        VALUES('asm', ?, ?, ?, ?, ?)
+        """,
+        (key, author, meta.get("generated_at"), now, json.dumps(stats, sort_keys=True)),
+    )
+    if previous_run is not None:
+        before = json.loads(previous_run["stats_json"] or "{}")
+        _log_delta(
+            con,
+            log,
+            action="asm",
+            author=author,
+            key=key,
+            before=before,
+            after=stats,
+            measure="C",
+            label="diverging functions",
+            previous_files=previous_files,
+            current_files={file: b["c"] for file, b in rollup.items()},
+            extra={
+                "same_shape": stats.get("A"),
+                "same_shape_before": before.get("A"),
+                "shape_percent": stats.get("shape_percent"),
+            },
+        )
+    return len(rows)
+
+
 def _log_delta(
     con: sqlite3.Connection,
     log: Logger,
@@ -468,6 +611,7 @@ def summary(con: sqlite3.Connection, history_limit: int = HISTORY_LIMIT) -> dict
     """Latest totals per kind plus the per-commit history behind the verified ring."""
     funcaudit = _stats(_last_run(con, "funcaudit"))
     stubs = _stats(_last_run(con, "stubs"))
+    asm = _stats(_last_run(con, "asm"))
     paired = int(funcaudit.get("paired") or 0)
     clean = int(funcaudit.get("clean") or 0)
     funcaudit["verified_percent"] = round(clean * 100.0 / paired, 1) if paired else 0.0
@@ -499,6 +643,15 @@ def summary(con: sqlite3.Connection, history_limit: int = HISTORY_LIMIT) -> dict
                     "verified_percent": round(c * 100.0 / p, 1) if p else 0.0,
                 }
             )
+        elif row["kind"] == "asm":
+            point.update(
+                {
+                    "asm_a": int(stats.get("A") or 0),
+                    "asm_scoreable": int(stats.get("scoreable") or 0),
+                    "asm_shape_percent": float(stats.get("shape_percent") or 0.0),
+                    "asm_mean_score": float(stats.get("mean_score") or 0.0),
+                }
+            )
         else:
             point.update(
                 {
@@ -513,6 +666,7 @@ def summary(con: sqlite3.Connection, history_limit: int = HISTORY_LIMIT) -> dict
         "stubs": stubs,
         "history": history,
         "segments": segments(con, funcaudit),
+        "asm": asm,
     }
 
 
@@ -728,6 +882,80 @@ def stubs(con: sqlite3.Connection, file: str) -> dict[str, Any]:
     }
 
 
+# ------------------------------------------------------------------ the instruction-shape tier
+def _asm_row(row: sqlite3.Row) -> dict[str, Any]:
+    item = json.loads(row["row_json"] or "{}")
+    item.setdefault("name", row["name"])
+    item.setdefault("tier", row["tier"])
+    return item
+
+
+def asm_files(
+    con: sqlite3.Connection,
+    *,
+    q: str | None = None,
+    tier: str | None = None,
+    sort: str = "c",
+    order: str = "desc",
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if q:
+        clauses.append("file LIKE ?")
+        params.append(f"%{q}%")
+    tier_col = (tier or "").lower()
+    if tier_col in ("a", "b", "c", "t"):
+        clauses.append(f"{tier_col} > 0")
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    sort_col = ASM_FILE_SORTS.get(sort, "c")
+    direction = "ASC" if order == "asc" else "DESC"
+    total = con.execute(f"SELECT COUNT(*) FROM asm_file{where}", params).fetchone()[0]
+    items = [
+        dict(row)
+        for row in con.execute(
+            f"SELECT * FROM asm_file{where} ORDER BY {sort_col} {direction}, functions DESC, file ASC LIMIT ? OFFSET ?",
+            [*params, limit, offset],
+        )
+    ]
+    return {"total": total, "limit": limit, "offset": offset, "items": items}
+
+
+def asm_functions(con: sqlite3.Connection, file: str) -> dict[str, Any]:
+    rollup = con.execute("SELECT * FROM asm_file WHERE file=?", (file,)).fetchone()
+    items = [
+        _asm_row(row)
+        for row in con.execute(
+            """
+            SELECT * FROM asm_function WHERE file=?
+            ORDER BY CASE tier WHEN 'C' THEN 0 WHEN 'B' THEN 1 WHEN 'A' THEN 2 ELSE 3 END,
+                     COALESCE(score, 101) ASC, console_n DESC, name ASC
+            """,
+            (file,),
+        )
+    ]
+    tu = con.execute(
+        "SELECT id FROM tu WHERE dest_path=? OR dest_path=? ORDER BY id LIMIT 1",
+        (SRC_PREFIX + file, file),
+    ).fetchone()
+    return {"file": file, "rollup": dict(rollup) if rollup else None, "tu_id": tu["id"] if tu else None, "items": items}
+
+
+def asm_top(con: sqlite3.Connection, tier: str = "C", limit: int = 12) -> list[dict[str, Any]]:
+    """The largest console bodies in one tier -- for C, the biggest divergences."""
+    tier = (tier or "C").upper()
+    if tier not in ASM_TIERS:
+        return []
+    return [
+        _asm_row(row)
+        for row in con.execute(
+            "SELECT * FROM asm_function WHERE tier=? ORDER BY console_n DESC, name ASC LIMIT ?",
+            (tier, limit),
+        )
+    ]
+
+
 def tu_audit(
     con: sqlite3.Connection, dest_path: str | None, func_names: list[str]
 ) -> dict[str, Any]:
@@ -735,12 +963,15 @@ def tu_audit(
     stubs in its file. Functions are joined by canonical name, so a TU whose functions
     live in a file the ledger does not name (class TUs) still gets its own findings."""
     file = audit_file_for_dest(dest_path)
-    out: dict[str, Any] = {"file": file, "rollup": None, "funcs": {}, "stubs": [], "stub_rollup": None}
+    out: dict[str, Any] = {"file": file, "rollup": None, "funcs": {}, "stubs": [], "stub_rollup": None,
+                           "asm": {}, "asm_rollup": None}
     if file:
         rollup = con.execute("SELECT * FROM audit_file WHERE file=?", (file,)).fetchone()
         out["rollup"] = dict(rollup) if rollup else None
         stub_rollup = con.execute("SELECT * FROM stub_file WHERE file=?", (file,)).fetchone()
         out["stub_rollup"] = dict(stub_rollup) if stub_rollup else None
+        asm_rollup = con.execute("SELECT * FROM asm_file WHERE file=?", (file,)).fetchone()
+        out["asm_rollup"] = dict(asm_rollup) if asm_rollup else None
         out["stubs"] = [
             _stub_row(row)
             for row in con.execute(
@@ -766,4 +997,8 @@ def tu_audit(
                     "weight": row["weight"],
                     "findings": json.loads(row["findings_json"] or "{}"),
                 }
+            for row in con.execute(
+                f"SELECT * FROM asm_function WHERE name IN ({placeholders})", chunk
+            ):
+                out["asm"][row["name"]] = _asm_row(row)
     return out

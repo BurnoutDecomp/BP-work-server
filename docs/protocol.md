@@ -379,3 +379,18 @@ To revert everything to a known-good commit, run `work server-reset --to <ref>`:
 re-seeds the server via `POST /admin/sync` with `reset=true`. The reset discards live
 claims and the event log (claims are ephemeral; event history is not recoverable), so it
 is the deliberate clean-slate path.
+
+## Instruction-shape audit (`progress/asmaudit.json`)
+
+The third evidence tier. `tools/re/asmaudit.py` runs in the workflow repo's build job (the only job
+that has an exe) and compares every function of the built `Burnout_PC.exe` with the console's
+machine code: named callees, conditional-branch count, integer and float constants. Tiers: A same
+shape, B close, C diverges, T trivial; "not in exe" is a count. The ordinary import reads the file
+when present (idempotent per build commit) and logs one `asm` event per build that moved the
+tier-C count, blamed on the b5-decomp author of the commit the exe was built from.
+
+- `GET /api/audit/summary` carries `asm` (latest run stats) and `asm_*` history points.
+- `GET /api/asm/files?q=&tier=&sort=c|a|b|t|functions|mean_score|file&order=&limit=&offset=`
+- `GET /api/asm/functions?file=` -- every paired function in the file with its score, counts, diff and notes.
+- `GET /api/asm/top?tier=C&limit=` -- the largest console bodies in a tier.
+- `GET /api/tu` carries `audit.asm` (per function) and `audit.asm_rollup`.
