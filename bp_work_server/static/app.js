@@ -2798,7 +2798,7 @@ function renderEvidenceList() {
   for (const item of ev.items) {
     const card = div("evidence-file");
     const head = div("evidence-file-head");
-    const left = div("");
+    const left = div("evidence-file-left");
     left.appendChild(div("evidence-file-path", item.file));
     const nums = div("evidence-file-nums");
     if (ev.tab === "audit") {

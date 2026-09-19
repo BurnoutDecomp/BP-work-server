@@ -2712,12 +2712,16 @@ html::-webkit-scrollbar-corner,
 }
 
 .evidence-file-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
   align-items: center;
   padding: 9px 12px;
   cursor: pointer;
+}
+.evidence-file-left {
+  flex: 1 1 300px;
+  min-width: 0;
 }
 .evidence-file-head:hover {
   background: var(--surface-hover);
@@ -2741,6 +2745,8 @@ html::-webkit-scrollbar-corner,
   gap: 6px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  flex: 0 1 auto;
+  margin-left: auto;
 }
 
 .evidence-file-body {
