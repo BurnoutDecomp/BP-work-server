@@ -24,12 +24,22 @@ const state = {
     items: [],
     searchTimer: null,
     requestId: 0,
-    // the evidence tabs (Audit / Stubs) keep their own filters and sorts
-    auditCat: "",
-    auditSort: "weight",
-    stubTier: "",
-    stubLive: false,
-    stubSort: "stubs",
+  },
+  // the Console Evidence section: its own tab, filters and paging
+  evidence: {
+    tab: "audit",
+    q: "",
+    category: "",
+    tier: "",
+    live: false,
+    offset: 0,
+    limit: 25,
+    total: 0,
+    items: [],
+    summary: null,
+    expanded: {},
+    searchTimer: null,
+    requestId: 0,
   },
   // Client-side mini-explorers for the Live Events and Next Queue panels:
   // the dashboard payload carries the full lists; we filter/search/page here.
@@ -284,25 +294,32 @@ function render(data) {
   const totals = data.totals || {};
   const counts = data.counts || {};
   text("subtitle", `${fmtInt(totals.tus)} translation units · ${fmtInt(totals.funcs)} functions`);
-  text("tuPercent", `${Number(totals.tu_percent || 0).toFixed(1)}%`);
-  text("fnPercent", `${Number(totals.func_percent || 0).toFixed(1)}%`);
-  text("exePercent", `${Number(totals.linked_percent || 0).toFixed(1)}%`);
-  setRing("tuRing", totals.tu_percent);
-  setRing("fnRing", totals.func_percent);
-  setRing("exeRing", totals.linked_percent);
-  text("tuCount", `${fmtInt(totals.done_tus)} / ${fmtInt(totals.tus)} done`);
-  text("fnCount", `${fmtInt(totals.done_funcs)} / ${fmtInt(totals.funcs)} covered`);
-  // Say why the denominator is bigger than the count of functions anyone has
-  // named. Without this the ring just looks lower than it used to for no reason.
+  const tus = Number(totals.tus || 0);
+  setDonut("tu", [
+    { label: "done", value: counts.done, color: "green" },
+    { label: "compiled", value: counts.compiled, color: "gold" },
+    { label: "in progress", value: counts.in_progress, color: "blue" },
+    { label: "blocked", value: counts.blocked, color: "red" },
+    { label: "todo", value: counts.todo, color: "grey" },
+  ], totals.tu_percent, `${fmtInt(totals.done_tus)} / ${fmtInt(tus)} done`);
+
+  const funcs = Number(totals.funcs || 0);
+  const covered = Number(totals.done_funcs || 0);
   const unidentified = Number(totals.unidentified_funcs || 0);
-  const unidentifiedNote = el("fnUnidentified");
-  if (unidentifiedNote) {
-    unidentifiedNote.hidden = unidentified <= 0;
-    unidentifiedNote.textContent = unidentified
-      ? `includes ${fmtInt(unidentified)} not yet identified in the binary`
-      : "";
-  }
-  text("exeCount", `${fmtInt(totals.linked_tus)} / ${fmtInt(totals.tus)} linked`);
+  setDonut("fn", [
+    { label: "covered", value: covered, color: "gold" },
+    { label: "named, uncovered", value: Math.max(0, funcs - covered - unidentified), color: "grey" },
+    { label: "unidentified", value: unidentified, color: "dim",
+      title: "Functions IDA found in the binary that nobody has named: no DWARF file, no RTTI class, so no translation unit — but still code to write." },
+  ], totals.func_percent, `${fmtInt(covered)} / ${fmtInt(funcs)} covered`);
+
+  const linked = Number(totals.linked_tus || 0);
+  setDonut("exe", [
+    { label: "linked", value: linked, color: "blue" },
+    { label: "not linked", value: Math.max(0, tus - linked), color: "grey",
+      title: "Translation units whose file is not on the game build's compile line yet." },
+  ], totals.linked_percent, `${fmtInt(linked)} / ${fmtInt(tus)} linked`);
+
   renderAudit(data.audit || {});
   text("activeGoal", data.active_goal || "Whole program");
   text("serverTime", fmtTime(data.server_time));
@@ -1183,8 +1200,6 @@ async function loadFacets() {
     const f = await fetchJson("/api/facets", 15000);
     fillSelect("filterSource", f.sources, "All sources");
     fillSelect("filterGoal", f.goals, "All goals");
-    fillSelect("filterAuditCat", f.audit_categories, "All findings");
-    fillSelect("filterStubTier", f.stub_tiers, "All tiers");
     // status options swap per tab; remember both sets
     state.explorer.tuStatuses = f.tu_statuses || [];
     state.explorer.funcStatuses = f.func_statuses || [];
@@ -1238,26 +1253,13 @@ function explorerParams() {
     if (ex.goal) p.set("goal", ex.goal);
     p.set("sort", ex.sort);
     p.set("order", ex.order);
-  } else if (ex.tab === "audit") {
-    p.delete("status");
-    if (ex.auditCat) p.set("category", ex.auditCat);
-    p.set("sort", ex.auditSort);
-    p.set("order", ex.order);
-  } else if (ex.tab === "stubs") {
-    p.delete("status");
-    if (ex.stubTier) p.set("tier", ex.stubTier);
-    if (ex.stubLive) p.set("live", "true");
-    p.set("sort", ex.stubSort);
-    p.set("order", ex.order);
   }
   return p;
 }
 
 async function loadExplorer() {
   const ex = state.explorer;
-  const path =
-    { funcs: "/api/funcs", audit: "/api/audit/files", stubs: "/api/stubs/files" }[ex.tab] ||
-    "/api/tus";
+  const path = ex.tab === "funcs" ? "/api/funcs" : "/api/tus";
   const requestId = ++ex.requestId;
   try {
     const data = await fetchJson(`${path}?${explorerParams()}`, 15000);
@@ -1265,8 +1267,6 @@ async function loadExplorer() {
     ex.total = data.total || 0;
     ex.items = data.items || [];
     if (ex.tab === "funcs") renderFuncRows(ex.items);
-    else if (ex.tab === "audit") renderAuditRows(ex.items);
-    else if (ex.tab === "stubs") renderStubRows(ex.items);
     else renderTuRows(ex.items);
     renderExplorerFoot();
   } catch (error) {
@@ -1496,18 +1496,6 @@ function initExplorer() {
     document
       .querySelectorAll(".tus-only")
       .forEach((node) => node.classList.toggle("hidden", ex.tab !== "tus"));
-    document
-      .querySelectorAll(".ledger-only")
-      .forEach((node) => node.classList.toggle("hidden", ex.tab !== "tus" && ex.tab !== "funcs"));
-    document
-      .querySelectorAll(".audit-only")
-      .forEach((node) => node.classList.toggle("hidden", ex.tab !== "audit"));
-    document
-      .querySelectorAll(".stubs-only")
-      .forEach((node) => node.classList.toggle("hidden", ex.tab !== "stubs"));
-    // the evidence tabs rank worst-first by default; the ledger tabs read by name
-    ex.order = ex.tab === "audit" || ex.tab === "stubs" ? "desc" : "asc";
-    el("sortOrder").textContent = ex.order === "asc" ? "↑" : "↓";
     ex.status = "";
     syncStatusOptions();
     resetAndLoad();
@@ -1533,26 +1521,6 @@ function initExplorer() {
   });
   el("sortBy").addEventListener("change", (e) => {
     ex.sort = e.target.value;
-    resetAndLoad();
-  });
-  el("filterAuditCat").addEventListener("change", (e) => {
-    ex.auditCat = e.target.value;
-    resetAndLoad();
-  });
-  el("sortAudit").addEventListener("change", (e) => {
-    ex.auditSort = e.target.value;
-    resetAndLoad();
-  });
-  el("filterStubTier").addEventListener("change", (e) => {
-    ex.stubTier = e.target.value;
-    resetAndLoad();
-  });
-  el("filterStubLive").addEventListener("change", (e) => {
-    ex.stubLive = Boolean(e.target.checked);
-    resetAndLoad();
-  });
-  el("sortStubs").addEventListener("change", (e) => {
-    ex.stubSort = e.target.value;
     resetAndLoad();
   });
   el("sortOrder").addEventListener("click", () => {
@@ -2272,6 +2240,7 @@ connectStream();
 refreshGithub();
 refreshDownload();
 initExplorer();
+initEvidence();
 initMiniPanels();
 // GitHub data changes slowly and is cached server-side; poll gently.
 state.githubTimer = window.setInterval(refreshGithub, 90000);
@@ -2372,101 +2341,6 @@ function verifiedTrend(history) {
     text: `${parts.join(", ")} since the previous audited commit`,
     cls: good ? "up" : "down",
   };
-}
-
-function renderAudit(audit) {
-  const fa = audit.funcaudit || {};
-  const stubs = audit.stubs || {};
-  const paired = Number(fa.paired || 0);
-  const clean = Number(fa.clean || 0);
-  const percent = Number(fa.verified_percent || 0);
-  text("verifiedPercent", `${percent.toFixed(1)}%`);
-  setRing("verifiedRing", percent);
-  const count = el("verifiedCount");
-  const note = el("verifiedNote");
-  const trend = el("verifiedTrend");
-  if (!paired) {
-    if (count) count.textContent = "no audit imported yet";
-    if (note) note.hidden = true;
-    if (trend) trend.hidden = true;
-    return;
-  }
-  if (count) count.textContent = `${fmtInt(clean)} / ${fmtInt(paired)} bodies clean vs the console`;
-  if (note) {
-    const bits = [];
-    if (fa.no_body) bits.push(`${fmtInt(fa.no_body)} named, no body`);
-    if (stubs.live) bits.push(`${fmtInt(stubs.live)} stubs on live paths`);
-    else if (stubs.stubs) bits.push(`${fmtInt(stubs.stubs)} stub bodies`);
-    if (fa.unpaired_no_file) bits.push(`${fmtInt(fa.unpaired_no_file)} not audited (no PC file)`);
-    note.hidden = !bits.length;
-    note.textContent = bits.join(" · ");
-    note.title = fa.commit
-      ? `audited at b5-decomp ${String(fa.commit).slice(0, 12)}${fa.generated_at ? ` (${fmtTime(fa.generated_at)})` : ""}`
-      : "";
-  }
-  if (trend) {
-    const t = verifiedTrend(audit.history);
-    trend.hidden = !t;
-    if (t) {
-      trend.textContent = t.text;
-      trend.className = `metric-note audit-trend ${t.cls}`;
-    }
-  }
-}
-
-function renderAuditRows(items) {
-  setHead(["File", "Findings", "No body", "Case ids", "Event posts", "Callees", "Asserts", "Functions"]);
-  const body = el("explorerBody");
-  clearNode(body);
-  if (!items.length) return emptyRow(body, 8, "No audited files match.");
-  for (const item of items) {
-    const row = document.createElement("tr");
-    row.className = "clickable";
-    const name = document.createElement("td");
-    name.appendChild(div("tu-name", item.file));
-    const meta = [];
-    if (item.missing_string) meta.push(`${fmtInt(item.missing_string)} log strings`);
-    if (item.uncited_data) meta.push(`${fmtInt(item.uncited_data)} uncited data`);
-    if (meta.length) name.appendChild(div("tu-meta", meta.join(" · ")));
-    row.append(
-      name,
-      numCell(item.weight, "high-signal findings: missing bodies, case ids, event posts, callees, asserts"),
-      numCell(item.no_body, "functions the ledger names in this file with no definition anywhere"),
-      numCell(item.missing_case, "switch case ids the console has and the body does not"),
-      numCell(item.missing_event, "event posts the console makes and the body does not"),
-      numCell(item.missing_callee, "named console callees the body never calls"),
-      numCell(item.missing_assert, "console assert expressions absent from the body"),
-      numCell(item.functions, "functions with at least one finding"),
-    );
-    row.addEventListener("click", () => openAuditFile(item.file));
-    body.appendChild(row);
-  }
-}
-
-function renderStubRows(items) {
-  setHead(["File", "Stubs", "High", "Live today", "Console lines"]);
-  const body = el("explorerBody");
-  clearNode(body);
-  if (!items.length) return emptyRow(body, 5, "No files with stubs match.");
-  for (const item of items) {
-    const row = document.createElement("tr");
-    row.className = "clickable";
-    const name = document.createElement("td");
-    name.appendChild(div("tu-name", item.file));
-    const meta = [];
-    if (item.medium) meta.push(`${fmtInt(item.medium)} medium`);
-    if (item.low) meta.push(`${fmtInt(item.low)} low`);
-    if (meta.length) name.appendChild(div("tu-meta", meta.join(" · ")));
-    row.append(
-      name,
-      numCell(item.stubs, "bodies that are still stand-ins"),
-      numCell(item.high, "the file or the body says it is a stand-in, or it traps"),
-      numCell(item.live, "stubs a body we have reconstructed calls right now"),
-      numCell(item.console_lines, "pseudocode lines of the console functions behind these stubs"),
-    );
-    row.addEventListener("click", () => openStubFile(item.file));
-    body.appendChild(row);
-  }
 }
 
 async function openAuditFile(file, options = {}) {
@@ -2660,4 +2534,429 @@ function tuAuditSection(d) {
     }
   }
   return section;
+}
+
+/* ---------------- Donut rings ---------------- */
+
+// One arc per state. `segments` = [{label, value, color, title}], drawn in order from
+// 12 o'clock; the first segment is the state the centre percentage is about.
+function setDonut(id, segments, percent, totalText) {
+  const ring = el(`${id}Ring`);
+  if (!ring) return;
+  const group = ring.querySelector(".ring-segments");
+  const total = segments.reduce((sum, seg) => sum + Math.max(0, Number(seg.value || 0)), 0);
+  if (group) {
+    clearNode(group);
+    let start = 0;
+    segments.forEach((seg, index) => {
+      const value = Math.max(0, Number(seg.value || 0));
+      if (!value || !total) return;
+      const len = (value / total) * RING_CIRCUMFERENCE;
+      const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      circle.setAttribute("cx", "60");
+      circle.setAttribute("cy", "60");
+      circle.setAttribute("r", "52");
+      circle.setAttribute("class", `ring-seg seg-${seg.color}${index === 0 ? " lead" : ""}`);
+      // a hairline gap between arcs so the states read as separate
+      const gap = segments.length > 1 && len > 2 ? 1.2 : 0;
+      circle.setAttribute("stroke-dasharray", `${Math.max(0, len - gap)} ${RING_CIRCUMFERENCE - Math.max(0, len - gap)}`);
+      circle.setAttribute("stroke-dashoffset", String(-start));
+      const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+      title.textContent = `${seg.label}: ${fmtInt(value)} (${((value / total) * 100).toFixed(1)}%)`;
+      circle.appendChild(title);
+      group.appendChild(circle);
+      start += len;
+    });
+  }
+  const pct = Number(percent == null ? (total ? (Number(segments[0]?.value || 0) / total) * 100 : 0) : percent);
+  text(`${id}Percent`, `${pct.toFixed(1)}%`);
+  ring.style.setProperty("--p", Math.max(0, Math.min(100, pct)));
+  if (totalText != null) text(`${id}Count`, totalText);
+  const legend = el(`${id}Legend`);
+  if (legend) {
+    clearNode(legend);
+    for (const seg of segments) {
+      const value = Math.max(0, Number(seg.value || 0));
+      const row = div("legend-row");
+      row.appendChild(span(`sw sw-${seg.color}`));
+      const label = span("lg-label", seg.label);
+      if (seg.title) label.title = seg.title;
+      row.appendChild(label);
+      row.appendChild(span("lg-n", fmtInt(value)));
+      row.appendChild(span("lg-pct", total ? `${((value / total) * 100).toFixed(1)}%` : "—"));
+      legend.appendChild(row);
+    }
+  }
+}
+
+function renderAudit(audit) {
+  const fa = audit.funcaudit || {};
+  const seg = audit.segments || {};
+  const paired = Number(fa.paired || 0);
+  const clean = Number(fa.clean || 0);
+  const trend = el("verifiedTrend");
+  if (!paired) {
+    setDonut("verified", [{ label: "no audit imported yet", value: 1, color: "dim" }], 0, "no audit yet");
+    if (trend) trend.hidden = true;
+  } else {
+    setDonut("verified", [
+      { label: "clean", value: seg.clean, color: "green",
+        title: "Nothing the static audit can name differs: case ids, event posts, callees, asserts, cited data." },
+      { label: "high-signal findings", value: seg.high, color: "red",
+        title: "A missing case id, event post, callee or assert the console has and the body does not." },
+      { label: "context-only findings", value: seg.soft, color: "amber",
+        title: "Only log strings, uncited data symbols or the parameter hint differ." },
+      { label: "named, no body", value: seg.no_body, color: "crimson",
+        title: "The ledger names a PC file for the function but no definition exists anywhere." },
+      { label: "not audited", value: seg.unpaired, color: "dim",
+        title: "Console functions with no known PC file; not compared." },
+    ], fa.verified_percent, `${fmtInt(clean)} / ${fmtInt(paired)} paired bodies`);
+    if (trend) {
+      const t = verifiedTrend(audit.history);
+      trend.hidden = !t;
+      if (t) {
+        trend.textContent = t.text;
+        trend.className = `metric-note audit-trend ${t.cls}`;
+      }
+    }
+  }
+  state.evidence.summary = audit;
+  renderEvidenceSummary();
+}
+
+/* ---------------- Console Evidence section ---------------- */
+
+const EVIDENCE_AUDIT_CHIPS = [
+  ["", "all files", "", ""],
+  ["NO_BODY", "no body", "crimson", "NO_BODY"],
+  ["MISSING_CASE", "missing case ids", "red", "MISSING_CASE"],
+  ["EXTRA_CASE", "misfiled case ids", "red", "EXTRA_CASE"],
+  ["MISSING_EVENT", "missing event posts", "red", "MISSING_EVENT"],
+  ["MISSING_CALLEE", "missing callees", "red", "MISSING_CALLEE"],
+  ["MISSING_ASSERT", "missing asserts", "amber", "MISSING_ASSERT"],
+  ["MISSING_STRING", "missing log strings", "grey", "MISSING_STRING"],
+  ["UNCITED_DATA", "uncited data", "grey", "UNCITED_DATA"],
+];
+
+function evidenceChip(label, count, active, color, onClick) {
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.className = `evidence-chip${active ? " on" : ""}`;
+  if (color) chip.appendChild(span(`sw sw-${color}`));
+  chip.appendChild(span("", label));
+  if (count != null) chip.appendChild(span("n", fmtInt(count)));
+  chip.addEventListener("click", onClick);
+  return chip;
+}
+
+function evidenceTile(label, value, cls) {
+  const chip = div(`chip ${cls || "todo"}`);
+  chip.appendChild(span("", typeof value === "number" ? fmtInt(value) : value));
+  const l = document.createElement("label");
+  l.textContent = label;
+  chip.appendChild(l);
+  return chip;
+}
+
+function renderEvidenceSummary() {
+  const ev = state.evidence;
+  const audit = ev.summary || {};
+  const fa = audit.funcaudit || {};
+  const st = audit.stubs || {};
+  const meta = el("evidenceMeta");
+  if (meta) {
+    meta.textContent = fa.commit
+      ? `b5-decomp ${String(fa.commit).slice(0, 10)} · ${relTime(fa.generated_at || fa.imported_at)}`
+      : "no audit yet";
+    meta.title = fa.generated_at ? `audited ${fmtTime(fa.generated_at)}` : "";
+  }
+  const intro = el("evidenceIntro");
+  const tiles = el("evidenceTiles");
+  const chips = el("evidenceChips");
+  if (!intro || !tiles || !chips) return;
+  clearNode(tiles);
+  clearNode(chips);
+  if (ev.tab === "audit") {
+    intro.textContent =
+      "Every reconstructed body (plus the PC-only helpers it calls) compared with the console's own pseudocode, per file. A missing switch case id, event post, callee or body is a difference the console's code has and ours does not; missing log strings and uncited data symbols are context. Rebuilt by CI on every commit — nothing here is declared by hand.";
+    const seg = audit.segments || {};
+    tiles.appendChild(evidenceTile("paired with the console", Number(fa.paired || 0), "progress"));
+    tiles.appendChild(evidenceTile("clean", Number(fa.clean || 0), "done"));
+    tiles.appendChild(evidenceTile("high-signal findings", Number(seg.high || 0), "blocked"));
+    tiles.appendChild(evidenceTile("named, no body", Number(seg.no_body || 0), "blocked"));
+    tiles.appendChild(evidenceTile("files with findings", Number(fa.files || 0), "todo"));
+    tiles.appendChild(evidenceTile("not audited (no PC file)", Number(fa.unpaired_no_file || 0), "todo"));
+    const spark = evidenceSparkline(audit.history || []);
+    if (spark) tiles.after(spark);
+    const cats = fa.categories || {};
+    for (const [key, label, color, catKey] of EVIDENCE_AUDIT_CHIPS) {
+      const count = catKey ? (cats[catKey] ? cats[catKey].functions : 0) : null;
+      if (catKey && !count) continue;
+      chips.appendChild(evidenceChip(label, count, ev.category === key, color, () => {
+        ev.category = key;
+        loadEvidenceList(true);
+        renderEvidenceSummary();
+      }));
+    }
+  } else {
+    intro.textContent =
+      "Every body in the tree that is still a stand-in, per file. High: the file or the body says so, or it traps. Medium: a trivial body under a softer marker. Low: a trivial, unmarked body whose console function does real work — possibly a legitimate empty default. \"Live today\" means a body we have reconstructed calls the stub right now.";
+    tiles.appendChild(evidenceTile("stub bodies", Number(st.stubs || 0), "todo"));
+    tiles.appendChild(evidenceTile("high tier", Number(st.high || 0), "blocked"));
+    tiles.appendChild(evidenceTile("on live paths", Number(st.live || 0), "progress"));
+    tiles.appendChild(evidenceTile("console lines behind them", Number(st.console_lines || 0), "compiled"));
+    tiles.appendChild(evidenceTile("files", Number(st.files || 0), "todo"));
+    for (const [key, label, color, count] of [
+      ["", "all tiers", "", null],
+      ["HIGH", "high", "red", st.high],
+      ["MEDIUM", "medium", "amber", st.medium],
+      ["LOW", "low", "grey", st.low],
+    ]) {
+      chips.appendChild(evidenceChip(label, count, ev.tier === key, color, () => {
+        ev.tier = key;
+        loadEvidenceList(true);
+        renderEvidenceSummary();
+      }));
+    }
+    chips.appendChild(evidenceChip("live today only", st.live, ev.live, "blue", () => {
+      ev.live = !ev.live;
+      loadEvidenceList(true);
+      renderEvidenceSummary();
+    }));
+  }
+  const old = document.querySelector(".evidence-spark");
+  if (old && ev.tab !== "audit") old.remove();
+}
+
+function evidenceSparkline(history) {
+  const existing = document.querySelector(".evidence-spark");
+  if (existing) existing.remove();
+  const points = history.filter((p) => p.paired != null);
+  if (points.length < 2) return null;
+  const wrap = div("evidence-spark");
+  wrap.title = "verified % per audited commit";
+  const max = Math.max(...points.map((p) => Number(p.verified_percent || 0)), 1);
+  for (const p of points.slice(-40)) {
+    const bar = div("bar");
+    bar.style.height = `${Math.max(4, (Number(p.verified_percent || 0) / max) * 44)}px`;
+    bar.title = `${String(p.commit).slice(0, 10)}: ${Number(p.verified_percent || 0).toFixed(1)}% verified, ${fmtInt(p.clean)} clean`;
+    wrap.appendChild(bar);
+  }
+  return wrap;
+}
+
+function evidenceParams(reset) {
+  const ev = state.evidence;
+  const p = new URLSearchParams();
+  if (ev.q) p.set("q", ev.q);
+  p.set("limit", ev.limit);
+  p.set("offset", reset ? 0 : ev.offset);
+  p.set("order", "desc");
+  if (ev.tab === "audit") {
+    if (ev.category) p.set("category", ev.category);
+    p.set("sort", "weight");
+  } else {
+    if (ev.tier) p.set("tier", ev.tier);
+    if (ev.live) p.set("live", "true");
+    p.set("sort", ev.live ? "live" : "stubs");
+  }
+  return p;
+}
+
+async function loadEvidenceList(reset) {
+  const ev = state.evidence;
+  if (reset) {
+    ev.offset = 0;
+    ev.items = [];
+    ev.expanded = {};
+  }
+  const requestId = ++ev.requestId;
+  const path = ev.tab === "audit" ? "/api/audit/files" : "/api/stubs/files";
+  try {
+    const data = await fetchJson(`${path}?${evidenceParams(reset)}`, 15000);
+    if (requestId !== ev.requestId) return;
+    ev.total = data.total || 0;
+    ev.items = reset ? data.items || [] : ev.items.concat(data.items || []);
+    ev.offset = ev.items.length;
+    renderEvidenceList();
+  } catch (error) {
+    if (requestId !== ev.requestId) return;
+    const list = el("evidenceList");
+    clearNode(list);
+    list.appendChild(div("muted-text", `Evidence unavailable: ${error.message}`));
+  }
+  loadEvidenceTop();
+}
+
+function renderEvidenceList() {
+  const ev = state.evidence;
+  const list = el("evidenceList");
+  clearNode(list);
+  if (!ev.items.length) {
+    list.appendChild(div("muted-text", ev.summary && (ev.summary.funcaudit || {}).paired ? "No files match." : "No audit has been imported yet."));
+  }
+  for (const item of ev.items) {
+    const card = div("evidence-file");
+    const head = div("evidence-file-head");
+    const left = div("");
+    left.appendChild(div("evidence-file-path", item.file));
+    const nums = div("evidence-file-nums");
+    if (ev.tab === "audit") {
+      const meta = [];
+      if (item.functions) meta.push(`${fmtInt(item.functions)} functions with findings`);
+      if (item.missing_string) meta.push(`${fmtInt(item.missing_string)} log strings`);
+      if (item.uncited_data) meta.push(`${fmtInt(item.uncited_data)} uncited data`);
+      left.appendChild(div("evidence-file-meta", meta.join(" · ")));
+      nums.appendChild(span("pill cat-high", `${fmtInt(item.weight)} findings`));
+      if (item.no_body) nums.appendChild(span("pill tier-HIGH", `${fmtInt(item.no_body)} no body`));
+      if (item.missing_case) nums.appendChild(span("pill cat-mid", `${fmtInt(item.missing_case)} case ids`));
+      if (item.missing_event) nums.appendChild(span("pill cat-mid", `${fmtInt(item.missing_event)} events`));
+      if (item.missing_callee) nums.appendChild(span("pill cat-low", `${fmtInt(item.missing_callee)} callees`));
+      if (item.missing_assert) nums.appendChild(span("pill cat-low", `${fmtInt(item.missing_assert)} asserts`));
+    } else {
+      const meta = [];
+      if (item.console_lines) meta.push(`${fmtInt(item.console_lines)} console lines behind them`);
+      left.appendChild(div("evidence-file-meta", meta.join(" · ")));
+      nums.appendChild(span("pill cat-high", `${fmtInt(item.stubs)} stubs`));
+      if (item.high) nums.appendChild(span("pill tier-HIGH", `${fmtInt(item.high)} high`));
+      if (item.medium) nums.appendChild(span("pill tier-MEDIUM", `${fmtInt(item.medium)} medium`));
+      if (item.low) nums.appendChild(span("pill tier-LOW", `${fmtInt(item.low)} low`));
+      if (item.live) nums.appendChild(span("pill live", `${fmtInt(item.live)} live`));
+    }
+    head.append(left, nums);
+    const body = div("evidence-file-body");
+    body.hidden = !ev.expanded[item.file];
+    head.addEventListener("click", () => toggleEvidenceFile(item.file, body));
+    card.append(head, body);
+    if (ev.expanded[item.file]) fillEvidenceFile(item.file, body);
+    list.appendChild(card);
+  }
+  text("evidenceRange", ev.total ? `${fmtInt(ev.items.length)} of ${fmtInt(ev.total)} files` : "—");
+  const more = el("evidenceMore");
+  if (more) more.hidden = ev.items.length >= ev.total;
+}
+
+function toggleEvidenceFile(file, body) {
+  const ev = state.evidence;
+  const open = !ev.expanded[file];
+  ev.expanded[file] = open;
+  body.hidden = !open;
+  if (open && !body.childNodes.length) fillEvidenceFile(file, body);
+}
+
+async function fillEvidenceFile(file, body) {
+  const ev = state.evidence;
+  clearNode(body);
+  body.appendChild(div("muted-text", "Loading…"));
+  try {
+    if (ev.tab === "audit") {
+      const data = await fetchJson(`/api/audit/functions?file=${encodeURIComponent(file)}`, 15000);
+      clearNode(body);
+      const tools = div("audit-row-head");
+      tools.appendChild(fileRepoLink(file));
+      if (data.tu_id) tools.appendChild(tuButton(data.tu_id, "pill todo"));
+      body.appendChild(tools);
+      const items = (data.items || []).filter((fn) => !ev.category || (fn.findings && fn.findings[ev.category]));
+      for (const fn of items.slice(0, 60)) {
+        const row = div("audit-row");
+        const head = div("audit-row-head");
+        head.appendChild(span("dep-name", fn.name));
+        if (fn.weight) head.appendChild(span("pill cat-high", `${fmtInt(fn.weight)} high-signal`));
+        if (fn.flagged) head.appendChild(span("pill todo", "flagged in source"));
+        const where = [];
+        if (fn.addr) where.push(`X360 ${fn.addr}`);
+        if (fn.line) where.push(`line ${fmtInt(fn.line)}`);
+        if (where.length) head.appendChild(span("tu-meta", where.join(" · ")));
+        row.appendChild(head);
+        row.appendChild(findingsList(fn.findings || {}));
+        body.appendChild(row);
+      }
+      if (items.length > 60) body.appendChild(div("audit-meta", `${fmtInt(items.length - 60)} more functions in this file.`));
+    } else {
+      const data = await fetchJson(`/api/stubs?file=${encodeURIComponent(file)}`, 15000);
+      clearNode(body);
+      const tools = div("audit-row-head");
+      tools.appendChild(fileRepoLink(file));
+      if (data.tu_id) tools.appendChild(tuButton(data.tu_id, "pill todo"));
+      body.appendChild(tools);
+      const items = (data.items || []).filter((s) => (!ev.tier || s.tier === ev.tier) && (!ev.live || (s.live_callers || []).length));
+      for (const stub of items.slice(0, 80)) body.appendChild(stubRow(stub));
+      if (items.length > 80) body.appendChild(div("audit-meta", `${fmtInt(items.length - 80)} more stubs in this file.`));
+    }
+  } catch (error) {
+    clearNode(body);
+    body.appendChild(div("muted-text", `Failed to load: ${error.message}`));
+  }
+}
+
+async function loadEvidenceTop() {
+  const ev = state.evidence;
+  const title = el("evidenceTopTitle");
+  const note = el("evidenceTopNote");
+  const list = el("evidenceTop");
+  if (!title || !list) return;
+  try {
+    if (ev.tab === "audit") {
+      const cat = ev.category && ev.category !== "NO_BODY" ? ev.category : "MISSING_CASE";
+      title.textContent = cat === "MISSING_CASE" ? "Largest switch gaps" : `Most ${AUDIT_LABELS[cat] || cat}`;
+      note.textContent = cat === "MISSING_CASE"
+        ? "Functions with the most console case ids that have no arm in our body — whole behaviours the console dispatches and we never reach."
+        : "Functions with the most items of this category.";
+      const data = await fetchJson(`/api/audit/top?category=${encodeURIComponent(cat)}&limit=12`, 15000);
+      clearNode(list);
+      for (const item of data.items || []) {
+        const li = document.createElement("li");
+        li.appendChild(span("top-n", fmtInt(item.ids != null ? item.ids : item.count)));
+        const name = span("top-name", item.name);
+        name.appendChild(span("top-meta", `${item.file}${item.preview ? ` — ${item.preview}` : ""}`));
+        li.appendChild(name);
+        li.addEventListener("click", () => openAuditFile(item.file));
+        list.appendChild(li);
+      }
+    } else {
+      title.textContent = "Biggest stubs on live paths";
+      note.textContent = "Stand-ins a reconstructed body calls today, by the size of the console function behind them — the work that is running wrong right now.";
+      const data = await fetchJson(`/api/stubs/top?live=true&limit=12`, 15000);
+      clearNode(list);
+      for (const item of data.items || []) {
+        const li = document.createElement("li");
+        li.appendChild(span("top-n", fmtInt(item.console_lines || 0)));
+        const name = span("top-name", item.name);
+        name.appendChild(span("top-meta", `${item.file} — called by ${(item.live_callers || []).slice(0, 2).join(", ")}`));
+        li.appendChild(name);
+        li.addEventListener("click", () => openStubFile(item.file));
+        list.appendChild(li);
+      }
+    }
+  } catch (_) {
+    /* the side list is best-effort */
+  }
+}
+
+function initEvidence() {
+  const ev = state.evidence;
+  const tabs = el("evidenceTabs");
+  if (!tabs) return;
+  tabs.addEventListener("click", (e) => {
+    const btn = e.target.closest(".tab");
+    if (!btn) return;
+    ev.tab = btn.dataset.tab;
+    for (const t of tabs.querySelectorAll(".tab")) t.classList.toggle("active", t === btn);
+    renderEvidenceSummary();
+    loadEvidenceList(true);
+  });
+  el("evidenceSearch").addEventListener("input", (e) => {
+    ev.q = e.target.value.trim();
+    clearTimeout(ev.searchTimer);
+    ev.searchTimer = setTimeout(() => loadEvidenceList(true), 250);
+  });
+  el("evidenceMore").addEventListener("click", () => loadEvidenceList(false));
+  const card = el("verifiedCard");
+  if (card) {
+    card.addEventListener("click", () => {
+      const section = el("evidence");
+      if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+  loadEvidenceList(true);
 }

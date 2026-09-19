@@ -107,6 +107,24 @@ async def stub_files(
     )
 
 
+@router.get("/api/audit/top")
+async def audit_top(
+    category: str = Query("MISSING_CASE"),
+    limit: int = Query(12, ge=1, le=100),
+    store: WorkStore = Depends(get_store),
+) -> dict:
+    return {"category": category, "items": await asyncio.to_thread(store.audit_top, category, limit)}
+
+
+@router.get("/api/stubs/top")
+async def stub_top(
+    live: bool = Query(True),
+    limit: int = Query(12, ge=1, le=100),
+    store: WorkStore = Depends(get_store),
+) -> dict:
+    return {"live": live, "items": await asyncio.to_thread(store.stub_top, live, limit)}
+
+
 @router.get("/api/stubs", response_model=AuditFileResponse)
 async def stubs(
     file: str = Query(..., min_length=1),

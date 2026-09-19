@@ -656,7 +656,7 @@ h2::before {
 /* ---------- Headline metrics ---------- */
 .metrics {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr 1.4fr;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 20px;
   min-width: 0;
 }
@@ -669,13 +669,14 @@ h2::before {
 .ring-card {
   display: flex;
   align-items: center;
-  gap: 22px;
+  gap: 18px;
+  padding: 18px;
 }
 
 .ring {
   position: relative;
-  width: 116px;
-  height: 116px;
+  width: 124px;
+  height: 124px;
   flex-shrink: 0;
 }
 
@@ -699,6 +700,92 @@ h2::before {
   stroke-dashoffset: 326.7;
   transition: stroke-dashoffset 700ms cubic-bezier(0.22, 1, 0.36, 1);
   filter: drop-shadow(0 0 6px rgba(236, 28, 36, 0.5));
+}
+
+/* one arc per state; the first (the "good" state) glows, the rest sit flat */
+.ring-seg {
+  fill: none;
+  stroke-width: 10;
+  stroke-linecap: butt;
+  transition: stroke-dasharray 700ms cubic-bezier(0.22, 1, 0.36, 1), stroke-dashoffset 700ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ring-seg.lead {
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.18));
+}
+.seg-green { stroke: var(--green); }
+.seg-gold { stroke: var(--gold); }
+.seg-blue { stroke: var(--blue); }
+.seg-red { stroke: var(--red-bright); }
+.seg-amber { stroke: #d7742a; }
+.seg-crimson { stroke: var(--red-deep); }
+.seg-grey { stroke: #4a423b; }
+.seg-dim { stroke: #2e2926; }
+.sw-green { background: var(--green); }
+.sw-gold { background: var(--gold); }
+.sw-blue { background: var(--blue); }
+.sw-red { background: var(--red-bright); }
+.sw-amber { background: #d7742a; }
+.sw-crimson { background: var(--red-deep); }
+.sw-grey { background: #4a423b; }
+.sw-dim { background: #2e2926; }
+
+.metric-total {
+  margin-top: 4px;
+  font-family: var(--font-display);
+  font-size: 22px;
+  letter-spacing: 0.3px;
+  color: var(--text);
+  transform: skewX(-6deg);
+  transform-origin: left;
+}
+
+.legend {
+  display: grid;
+  gap: 3px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.legend-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+}
+
+.legend-row .sw {
+  width: 10px;
+  height: 10px;
+  clip-path: polygon(2px 0, 100% 0, calc(100% - 2px) 100%, 0 100%);
+}
+
+.legend-row .lg-label {
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.legend-row .lg-n,
+.legend-row .lg-pct {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.legend-row .lg-n {
+  color: var(--text);
+}
+
+.legend-row .lg-pct {
+  color: var(--faint);
+  min-width: 42px;
+  text-align: right;
+}
+
+#verifiedCard {
+  cursor: pointer;
+}
+#verifiedCard:hover {
+  border-top-color: var(--green);
 }
 
 .ring-fill.tu {
@@ -763,13 +850,21 @@ small {
   font-size: 13px;
 }
 
-.goal-card {
+.goal-strip {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  padding: 16px 20px;
 }
 
-.goal-card strong {
-  margin: 8px 0 16px;
+.goal-strip-title {
+  flex: 0 1 260px;
+  min-width: 0;
+}
+
+.goal-strip strong {
+  display: block;
+  margin-top: 4px;
   font-size: 24px;
   line-height: 1.05;
   color: var(--text);
@@ -777,10 +872,10 @@ small {
 }
 
 .status-grid {
+  flex: 1 1 auto;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 10px;
-  margin-top: auto;
 }
 
 .chip {
@@ -1533,21 +1628,14 @@ html::-webkit-scrollbar-corner,
 }
 
 /* ---------- Responsive ---------- */
-/* Five cards across only survive on a wide viewport: below that the four rings
-   keep two rows of two and the goal card drops underneath. */
+/* Four donuts across need width for their legends; two rows of two below that. */
 @media (max-width: 1400px) {
-  .metrics {
-    grid-template-columns: repeat(4, 1fr);
-  }
-  .goal-card {
-    grid-column: span 4;
-  }
   .ring {
-    width: 104px;
-    height: 104px;
+    width: 108px;
+    height: 108px;
   }
   .ring-card {
-    gap: 16px;
+    gap: 14px;
   }
 }
 
@@ -1555,10 +1643,14 @@ html::-webkit-scrollbar-corner,
   .metrics {
     grid-template-columns: 1fr 1fr;
   }
-  .goal-card {
-    grid-column: span 2;
-  }
   .grid {
+    grid-template-columns: 1fr;
+  }
+  .goal-strip {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .evidence-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -1570,8 +1662,8 @@ html::-webkit-scrollbar-corner,
   .metrics {
     grid-template-columns: 1fr;
   }
-  .goal-card {
-    grid-column: auto;
+  .status-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
   .topbar {
     flex-direction: column;
@@ -2528,4 +2620,212 @@ html::-webkit-scrollbar-corner,
 }
 .audit-summary .chip {
   min-width: 96px;
+}
+
+/* ---------- Console evidence section ---------- */
+.evidence-body {
+  padding: 14px 18px 18px;
+}
+
+.evidence-intro {
+  margin: 0 0 12px;
+  max-width: 90ch;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.evidence-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.evidence-tiles .chip span {
+  font-size: 24px;
+}
+
+.evidence-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.evidence-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.evidence-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-family: var(--font-head);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
+  transition: color 0.12s, border-color 0.12s;
+}
+.evidence-chip:hover {
+  color: var(--text);
+  border-color: var(--red);
+}
+.evidence-chip.on {
+  color: #fff;
+  border-color: transparent;
+  background: url("/static/img/ui/banner-red.png") no-repeat center / 100% 100%;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+.evidence-chip .n {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+.evidence-chip .sw {
+  width: 9px;
+  height: 9px;
+}
+
+.evidence-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.evidence-list {
+  display: grid;
+  gap: 6px;
+}
+
+.evidence-file {
+  border: 1px solid var(--line-soft);
+  background: var(--surface-2);
+}
+
+.evidence-file-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+.evidence-file-head:hover {
+  background: var(--surface-hover);
+}
+
+.evidence-file-path {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.evidence-file-meta {
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+.evidence-file-nums {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.evidence-file-body {
+  border-top: 1px solid var(--line-soft);
+  padding: 6px 12px 10px;
+}
+
+.evidence-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.evidence-side h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-family: var(--font-head);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--red-bright);
+}
+
+.evidence-side-note {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.evidence-top {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+
+.evidence-top li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  padding: 7px 10px;
+  border: 1px solid var(--line-soft);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.evidence-top li:hover {
+  background: var(--surface-hover);
+}
+
+.evidence-top .top-n {
+  font-family: var(--font-display);
+  font-size: 18px;
+  color: var(--gold);
+  transform: skewX(-8deg);
+  min-width: 34px;
+}
+
+.evidence-top .top-name {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.evidence-top .top-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.evidence-spark {
+  display: flex;
+  align-items: end;
+  gap: 3px;
+  height: 46px;
+  margin: 2px 0 12px;
+}
+.evidence-spark .bar {
+  flex: 1 1 0;
+  min-width: 3px;
+  max-width: 14px;
+  background: linear-gradient(180deg, var(--green), rgba(111, 207, 87, 0.35));
+  clip-path: polygon(2px 0, 100% 0, calc(100% - 2px) 100%, 0 100%);
 }

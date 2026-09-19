@@ -378,6 +378,14 @@ class WorkStore:
         with self.connect() as con:
             return audit.stubs(con, file)
 
+    def audit_top(self, category: str, limit: int = 12) -> list[dict[str, Any]]:
+        with self.connect() as con:
+            return audit.top_functions(con, category, limit)
+
+    def stub_top(self, live_only: bool = True, limit: int = 12) -> list[dict[str, Any]]:
+        with self.connect() as con:
+            return audit.top_stubs(con, live_only, limit)
+
     def _restore_unidentified(
         self,
         con: sqlite3.Connection,

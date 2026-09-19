@@ -508,7 +508,88 @@ def summary(con: sqlite3.Connection, history_limit: int = HISTORY_LIMIT) -> dict
                 }
             )
     history = [points[k] for k in order][-history_limit:]
-    return {"funcaudit": funcaudit, "stubs": stubs, "history": history}
+    return {
+        "funcaudit": funcaudit,
+        "stubs": stubs,
+        "history": history,
+        "segments": segments(con, funcaudit),
+    }
+
+
+def segments(con: sqlite3.Connection, funcaudit: dict[str, Any]) -> dict[str, int]:
+    """The states that make up the verified ring, over every console function the audit
+    selected: clean, high-signal findings, soft-only findings (log strings / uncited data /
+    the parameter hint), named-with-no-body, and not audited (no PC file known)."""
+    row = con.execute(
+        """
+        SELECT
+          SUM(CASE WHEN json_extract(findings_json, '$.NO_BODY') IS NOT NULL THEN 1 ELSE 0 END) AS no_body,
+          SUM(CASE WHEN json_extract(findings_json, '$.NO_BODY') IS NULL AND weight > 0 THEN 1 ELSE 0 END) AS high,
+          SUM(CASE WHEN weight = 0 THEN 1 ELSE 0 END) AS soft
+        FROM audit_finding
+        """
+    ).fetchone()
+    return {
+        "clean": int(funcaudit.get("clean") or 0),
+        "high": int((row["high"] if row else 0) or 0),
+        "soft": int((row["soft"] if row else 0) or 0),
+        "no_body": int((row["no_body"] if row else 0) or 0),
+        "unpaired": int(funcaudit.get("unpaired_no_file") or 0),
+    }
+
+
+def top_functions(con: sqlite3.Connection, category: str, limit: int = 12) -> list[dict[str, Any]]:
+    """The functions with the most items of one category -- the largest switch gaps, the
+    most missing event posts -- straight from the latest run."""
+    if category not in CATEGORIES:
+        return []
+    path = "$." + category.replace("?", "")   # JSON1 paths cannot carry the '?'
+    if category.endswith("?"):
+        path = '$."' + category + '"'
+    rows = con.execute(
+        """
+        SELECT name, addr, file, line, weight,
+               json_array_length(json_extract(findings_json, ?)) AS n,
+               json_extract(findings_json, ?) AS items
+        FROM audit_finding
+        WHERE json_extract(findings_json, ?) IS NOT NULL
+        ORDER BY n DESC, weight DESC, name ASC
+        LIMIT ?
+        """,
+        (path, path, path, limit),
+    ).fetchall()
+    out = []
+    for row in rows:
+        items = json.loads(row["items"] or "[]")
+        out.append(
+            {
+                "name": row["name"],
+                "addr": row["addr"],
+                "file": row["file"],
+                "line": row["line"],
+                "weight": row["weight"],
+                "count": row["n"],
+                # a MISSING_CASE item is one comma-joined list: count the ids for the label
+                "ids": len(items[0].split("[")[0].split(",")) if items and category in ("MISSING_CASE", "EXTRA_CASE") else None,
+                "preview": (items[0] if items else "")[:90],
+            }
+        )
+    return out
+
+
+def top_stubs(con: sqlite3.Connection, live_only: bool = True, limit: int = 12) -> list[dict[str, Any]]:
+    where = "WHERE live_json != '[]'" if live_only else ""
+    return [
+        _stub_row(row)
+        for row in con.execute(
+            f"""
+            SELECT * FROM stub {where}
+            ORDER BY COALESCE(console_lines, 0) DESC, file ASC, line ASC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+    ]
 
 
 def files(

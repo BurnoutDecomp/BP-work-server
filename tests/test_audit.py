@@ -207,3 +207,24 @@ def test_workflow_without_audit_files_imports_cleanly(tmp_path):
     summary = store.audit_summary()
     assert summary["funcaudit"] == {"verified_percent": 0.0}
     assert summary["history"] == []
+
+
+def test_segments_and_top_lists(tmp_path):
+    store = WorkStore(tmp_path / "work.sqlite3")
+    store.migrate()
+    store.import_workflow(_workflow(tmp_path))
+    client = TestClient(create_app(store))
+
+    summary = client.get("/api/audit/summary").json()
+    # A::Run has high-signal findings, B::Run has no body; clean and unpaired come from stats.
+    assert summary["segments"] == {"clean": 1, "high": 1, "soft": 0, "no_body": 1, "unpaired": 0}
+
+    top = client.get("/api/audit/top", params={"category": "MISSING_CASE"}).json()
+    assert [t["name"] for t in top["items"]] == ["BrnWorld::A::Run"]
+    assert top["items"][0]["ids"] == 2   # "3, 4"
+
+    live = client.get("/api/stubs/top", params={"live": "true"}).json()
+    assert [t["name"] for t in live["items"]] == ["BrnWorld::A::Stop"]
+    everything = client.get("/api/stubs/top", params={"live": "false"}).json()
+    assert len(everything["items"]) == 2
+
