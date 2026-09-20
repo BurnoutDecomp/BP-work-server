@@ -3751,6 +3751,7 @@ function renderEvidenceList() {
   const ev = state.evidence;
   const list = el("evidenceList");
   clearNode(list);
+  list.scrollTop = 0;   // the list is its own scroller: a new page starts at its top
   if (!ev.items.length) {
     const have = ev.tab === "asm"
       ? ((ev.summary || {}).asm || {}).paired_in_exe

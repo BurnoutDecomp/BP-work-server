@@ -2758,6 +2758,11 @@ html::-webkit-scrollbar-corner,
 .evidence-list {
   display: grid;
   gap: 6px;
+  align-content: start;
+  /* capped and scrollable like the other panels' lists; the pager stays below it */
+  max-height: 540px;
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .evidence-file {
