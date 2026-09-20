@@ -3217,8 +3217,12 @@ function drawEvolutionChart() {
   const ev = state.evolution;
   const points = evolutionPoints().filter((p) => Number.isFinite(Date.parse(p.ts)));
   const series = evolutionVisible();
+  // the span in days, not the number of measurements (two sources add a point each)
+  const spanDays = points.length
+    ? Math.round((Date.parse(points[points.length - 1].ts) - Date.parse(points[0].ts)) / 86400000) + 1
+    : 0;
   text("evolutionCount", points.length
-    ? `${fmtInt(points.length)} points \u00b7 ${points[0].date} \u2192 ${points[points.length - 1].date}`
+    ? `${fmtInt(spanDays)} days \u00b7 ${points[0].date} \u2192 ${points[points.length - 1].date}`
     : "\u00b7");
   if (points.length < 2) {
     host.appendChild(div("muted-text vh-empty", ev.points.length
