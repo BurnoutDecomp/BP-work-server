@@ -1680,6 +1680,12 @@ html::-webkit-scrollbar-corner,
   .evidence-grid {
     grid-template-columns: 1fr;
   }
+  /* stacked: nothing beside the list to match, so cap it like the tables */
+  .evidence-list {
+    flex: none;
+    height: auto;
+    max-height: 540px;
+  }
 }
 
 @media (max-width: 820px) {
@@ -2752,17 +2758,31 @@ html::-webkit-scrollbar-corner,
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
   gap: 18px;
-  align-items: start;
+  /* the side list sets the row height; the file list fills it and scrolls inside */
+  align-items: stretch;
+}
+
+.evidence-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .evidence-list {
   display: grid;
   gap: 6px;
   align-content: start;
-  /* capped and scrollable like the other panels' lists; the pager stays below it */
-  max-height: 540px;
+  /* height 0 + flex-basis 0: the list adds nothing to the row's height, so the side
+     list sets it and the file list grows to match, never below 420 px */
+  flex: 1 1 0;
+  height: 0;
+  min-height: 420px;
   overflow: auto;
   padding-right: 4px;
+}
+
+.evidence-side {
+  align-self: start;
 }
 
 .evidence-file {
