@@ -3282,6 +3282,9 @@ html::-webkit-scrollbar-corner,
 .vh-sw-nobody { background: var(--red-bright); }
 
 /* ---- Evolution: every ring over time ---- */
+.evolution-panel {
+  padding: 22px 24px 24px;
+}
 .evolution-panel .vp-head {
   align-items: flex-start;
 }
