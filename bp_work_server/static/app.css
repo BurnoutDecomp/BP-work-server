@@ -1677,15 +1677,6 @@ html::-webkit-scrollbar-corner,
     flex-direction: column;
     align-items: stretch;
   }
-  .evidence-grid {
-    grid-template-columns: 1fr;
-  }
-  /* stacked: nothing beside the list to match, so cap it like the tables */
-  .evidence-list {
-    flex: none;
-    height: auto;
-    max-height: 540px;
-  }
 }
 
 @media (max-width: 820px) {
@@ -2783,6 +2774,21 @@ html::-webkit-scrollbar-corner,
 
 .evidence-side {
   align-self: start;
+}
+
+/* Narrow screens stack the two columns. This block must follow the base rules above:
+   an earlier @media rule of equal specificity loses to them, which left the file list
+   in a 0 px column on phones. */
+@media (max-width: 1150px) {
+  .evidence-grid {
+    grid-template-columns: 1fr;
+  }
+  /* nothing beside the list to match, so cap it like the tables */
+  .evidence-list {
+    flex: none;
+    height: auto;
+    max-height: 540px;
+  }
 }
 
 .evidence-file {
