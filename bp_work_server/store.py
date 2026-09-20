@@ -6,6 +6,7 @@ import os
 import re
 import secrets
 import sqlite3
+import subprocess
 import threading
 from collections import defaultdict
 from contextlib import contextmanager
@@ -13,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 
-from bp_work_server import audit
+from bp_work_server import audit, history
 from bp_work_server.build_link import is_linked, parse_build_sources
 from bp_work_server.models import ClaimResponse, NextTu, StatusCounts, TuRecord
 from bp_work_server.schema import (
@@ -48,6 +49,18 @@ DEFAULT_ACTOR_ALIASES = {
     "Nathan V.": "JeBobs",
     "jebcraftserver@gmail.com": "JeBobs",
 }
+
+
+def _workflow_commit(workflow_root: str | Path) -> str | None:
+    """HEAD of the workflow checkout an import reads, or None when it is not a clone."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(workflow_root), "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=False, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return proc.stdout.strip() or None if proc.returncode == 0 else None
 
 
 def utcnow() -> datetime:
@@ -141,6 +154,7 @@ class WorkStore:
     def migrate(self) -> None:
         with self.connect(ensure_wal=True) as con:
             con.executescript(SCHEMA)
+            con.executescript(history.SCHEMA)
             cols = {r["name"] for r in con.execute("PRAGMA table_info(func)")}
             if "completed_by" not in cols:
                 con.execute("ALTER TABLE func ADD COLUMN completed_by TEXT")
@@ -222,7 +236,9 @@ class WorkStore:
         with self.connect() as con:
             con.execute("DROP TABLE IF EXISTS worker")
 
-    def import_workflow(self, workflow_root: str | Path, reset: bool = False) -> dict[str, int]:
+    def import_workflow(
+        self, workflow_root: str | Path, reset: bool = False, record_history: bool = True
+    ) -> dict[str, int]:
         progress = Path(workflow_root) / "progress"
         tu_index_path = progress / "tu_index.json"
         status_path = progress / "status.json"
@@ -351,6 +367,10 @@ class WorkStore:
             # The evidence layer: CI's per-commit glue audit and stub inventory. Optional,
             # idempotent per commit, and the one number on the dashboard nobody declared.
             audit_counts = audit.import_audits(con, progress, iso(), self._log)
+            # the evolution layer: the rings' totals as of this import (skipped when the
+            # totals did not move; the backfill imports throwaway stores with this off)
+            if record_history:
+                history.record(con, iso(), _workflow_commit(workflow_root))
             self._log(con, "server", "import", None, {"workflow_root": str(workflow_root)})
             return {
                 "tus": len(tu_index),
@@ -364,6 +384,18 @@ class WorkStore:
                 "stubs": audit_counts.get("stubs", 0),
                 "asm_functions": audit_counts.get("asm", 0),
             }
+
+    # ------------------------------------------------------------ evolution layer
+    def history_points(self, days: int | None = None) -> dict[str, Any]:
+        """Every ring's totals over time: snapshots + audit runs merged, oldest first."""
+        with self.connect() as con:
+            pts = history.points(con, days)
+        return {"points": pts, "series": history.SERIES}
+
+    def import_history_file(self, path: str | Path) -> int:
+        """Load the snapshots a ``history-backfill`` wrote; known commits are skipped."""
+        with self.connect(ensure_wal=True) as con:
+            return history.import_file(con, path)
 
     # ---------------------------------------------------------------- audit layer
     def import_audits_only(

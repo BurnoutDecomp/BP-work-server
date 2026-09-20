@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from bp_work_server.decomp import DecompRepo
 from bp_work_server.dependencies import get_store
 from bp_work_server.models import (
+    HistoryResponse,
     AuditFileResponse,
     AuditSummaryResponse,
     DashboardStateResponse,
@@ -50,6 +51,15 @@ def facets(store: WorkStore = Depends(get_store)) -> dict:
 @router.get("/api/audit/summary", response_model=AuditSummaryResponse)
 async def audit_summary(store: WorkStore = Depends(get_store)) -> dict:
     return await asyncio.to_thread(store.audit_summary)
+
+
+# ---- the evolution layer: every ring's totals over time ----
+@router.get("/api/history", response_model=HistoryResponse)
+async def history_points(
+    days: int | None = Query(None, ge=1, le=3650),
+    store: WorkStore = Depends(get_store),
+) -> dict:
+    return await asyncio.to_thread(store.history_points, days)
 
 
 @router.get("/api/audit/files", response_model=SearchResponse)

@@ -397,6 +397,25 @@ tier-C count, blamed on the b5-decomp author of the commit the exe was built fro
 - `GET /api/asm/top?tier=C&limit=` -- the largest console bodies in a tier.
 - `GET /api/tu` carries `audit.asm` (per function) and `audit.asm_rollup`.
 
+## Evolution: every ring over time (`snapshot` table, `GET /api/history`)
+
+Before 2026-09-20 only the console evidence had a history; the three ledger rings were live
+totals with no past. Every workflow import now records a `snapshot` row (the rings' totals:
+`tu_total/done/compiled/in_progress/blocked/todo/linked`, `funcs_total/done/named_uncovered/
+unidentified`, the workflow HEAD) unless the totals did not move. The past was rebuilt from the
+workflow repo's git history: `bp-work-server history-backfill <full clone> --out snaps.json`
+imports the last ledger commit of every day into a throwaway store (91 days from 2026-06-11,
+about three minutes), and `bp-work-server history-import snaps.json` loads the file (known
+commits are skipped). `tu_linked` is `null` for days before the build script existed (2026-06-24).
+
+- `GET /api/history?days=` -- `points` (oldest first; snapshots and audit runs merged, each
+  source's latest values carried forward so every series is continuous; `ts` in UTC, `date`,
+  `sources`, `commit` = workflow HEAD, `b5_commit`, the ring totals, `paired/clean/no_body/weight`,
+  `stubs/stubs_live`, `asm_a/asm_scoreable`) and `series` (each key's natural total, or null).
+  Read-only, no auth. The dashboard's Evolution panel draws it: toggleable series grouped by ring,
+  counts on one axis or each series as a share of its own total, 30/90/all-day ranges, hover
+  tooltip; the choice is remembered per browser.
+
 ## Downloads: full game, exe-only update, quotas, nginx offload
 
 Every published build has two artifacts: the full zip (assets merged with the exe) and the

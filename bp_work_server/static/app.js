@@ -282,6 +282,7 @@ async function refresh() {
     // ~15 s on a loaded one (it is warmed at startup, but a visitor can beat it).
     render(await fetchJson("/dashboard/state", 45000));
     setConnection("online", "Live");
+    loadEvolution();
   } catch (error) {
     setConnection("offline", "Disconnected");
     text("subtitle", `Dashboard update failed: ${error.message}`);
@@ -3047,6 +3048,342 @@ function openEvidence(tab, opts = {}) {
   if (btn) btn.click();       // initEvidence's handler: sets the tab, re-renders, reloads
   const section = el("evidence");
   if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+/* ---------------- Evolution: every ring over time ---------------- */
+// group, key, label, colour, share-of (null = counts only; hidden in share mode)
+const EVOLUTION_SERIES = [
+  { group: "Translation units", key: "tu_done", label: "done", color: "#6fcf57", of: "tu_total" },
+  { group: "Translation units", key: "tu_compiled", label: "compiled", color: "#e3a52c", of: "tu_total" },
+  { group: "Translation units", key: "tu_in_progress", label: "in progress", color: "#57a8e0", of: "tu_total" },
+  { group: "Translation units", key: "tu_blocked", label: "blocked", color: "#ec1c24", of: "tu_total" },
+  { group: "Translation units", key: "tu_todo", label: "todo", color: "#8a7f72", of: "tu_total" },
+  { group: "Translation units", key: "tu_total", label: "tracked", color: "#d9cfc0", of: null },
+  { group: "Functions", key: "funcs_done", label: "covered", color: "#f2b53f", of: "funcs_total" },
+  { group: "Functions", key: "funcs_named_uncovered", label: "named, uncovered", color: "#a08e6c", of: "funcs_total" },
+  { group: "Functions", key: "funcs_unidentified", label: "unidentified", color: "#6a6159", of: "funcs_total" },
+  { group: "Functions", key: "funcs_total", label: "in the binary", color: "#efe6d2", of: null },
+  { group: "Executable", key: "tu_linked", label: "linked", color: "#57a8e0", of: "tu_total" },
+  { group: "Verified vs console", key: "paired", label: "paired bodies", color: "#b9ad9e", of: "funcs_total" },
+  { group: "Verified vs console", key: "clean", label: "clean", color: "#8be07a", of: "paired" },
+  { group: "Verified vs console", key: "no_body", label: "named, no body", color: "#ff6b6b", of: "funcs_total" },
+  { group: "Verified vs console", key: "weight", label: "high-signal findings", color: "#d7742a", of: null },
+  { group: "Verified vs console", key: "asm_a", label: "same shape (A)", color: "#3ec9b0", of: "asm_scoreable" },
+  { group: "Stubs", key: "stubs", label: "stubs", color: "#c084fc", of: null },
+  { group: "Stubs", key: "stubs_live", label: "live stubs", color: "#e07aa8", of: null },
+];
+const EVOLUTION_DEFAULT_ON = ["tu_done", "funcs_done", "tu_linked", "paired", "clean"];
+const EVOLUTION_STORE_KEY = "bp.evolution";
+
+state.evolution = { points: [], range: 0, mode: "count", on: new Set(EVOLUTION_DEFAULT_ON), loadedAt: 0, wired: false, hot: null };
+try {
+  const saved = JSON.parse(localStorage.getItem(EVOLUTION_STORE_KEY) || "null");
+  if (saved && typeof saved === "object") {
+    if (Number.isFinite(saved.range)) state.evolution.range = saved.range;
+    if (saved.mode === "share" || saved.mode === "count") state.evolution.mode = saved.mode;
+    if (Array.isArray(saved.on) && saved.on.length) state.evolution.on = new Set(saved.on);
+  }
+} catch (_) { /* a private window or blocked storage: defaults */ }
+
+function saveEvolutionPrefs() {
+  try {
+    localStorage.setItem(EVOLUTION_STORE_KEY, JSON.stringify({
+      range: state.evolution.range, mode: state.evolution.mode, on: [...state.evolution.on],
+    }));
+  } catch (_) { /* nothing to do: the choice still holds for this page */ }
+}
+
+async function loadEvolution(force = false) {
+  const ev = state.evolution;
+  if (!el("evolutionChart")) return;
+  // the series move a few times a day at most: refetch at most every 10 minutes
+  if (!force && ev.loadedAt && Date.now() - ev.loadedAt < 10 * 60 * 1000) return;
+  try {
+    const body = await fetchJson("/api/history", 20000);
+    ev.points = (body && body.points) || [];
+    ev.loadedAt = Date.now();
+    renderEvolution();
+  } catch (error) {
+    const host = el("evolutionChart");
+    if (host && !host.querySelector("svg")) {
+      clearNode(host);
+      host.appendChild(div("muted-text vh-empty", `History unavailable: ${error.message}`));
+    }
+  }
+}
+
+function wireEvolution() {
+  const ev = state.evolution;
+  if (ev.wired) return;
+  ev.wired = true;
+  const range = el("evolutionRange"), mode = el("evolutionMode");
+  if (range) range.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-range]");
+    if (!b) return;
+    ev.range = Number(b.dataset.range) || 0;
+    saveEvolutionPrefs();
+    renderEvolution();
+  });
+  if (mode) mode.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-mode]");
+    if (!b) return;
+    ev.mode = b.dataset.mode === "share" ? "share" : "count";
+    saveEvolutionPrefs();
+    renderEvolution();
+  });
+  const picker = el("evolutionPicker");
+  if (picker) picker.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-key]");
+    if (!b || b.disabled) return;
+    if (ev.on.has(b.dataset.key)) ev.on.delete(b.dataset.key); else ev.on.add(b.dataset.key);
+    saveEvolutionPrefs();
+    renderEvolution();
+  });
+  let timer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { if (ev.points.length) drawEvolutionChart(); }, 150);
+  });
+}
+
+function evolutionVisible() {
+  const ev = state.evolution;
+  return EVOLUTION_SERIES.filter((sr) => ev.on.has(sr.key) && (ev.mode === "count" || sr.of));
+}
+
+function evolutionValue(sr, p) {
+  const v = p[sr.key];
+  if (v == null) return null;
+  if (state.evolution.mode === "count") return Number(v);
+  const d = Number(p[sr.of]);
+  return d > 0 ? (Number(v) / d) * 100 : null;
+}
+
+function evolutionPoints() {
+  const ev = state.evolution;
+  if (!ev.range) return ev.points;
+  const cutoff = new Date(Date.now() - ev.range * 86400000).toISOString().slice(0, 10);
+  return ev.points.filter((p) => p.date >= cutoff);
+}
+
+function renderEvolution() {
+  wireEvolution();
+  const ev = state.evolution;
+  for (const b of document.querySelectorAll("#evolutionRange button")) b.classList.toggle("active", (Number(b.dataset.range) || 0) === ev.range);
+  for (const b of document.querySelectorAll("#evolutionMode button")) b.classList.toggle("active", b.dataset.mode === ev.mode);
+  // the picker: one chip per series, grouped by ring
+  const picker = el("evolutionPicker");
+  if (picker) {
+    clearNode(picker);
+    const groups = new Map();
+    for (const sr of EVOLUTION_SERIES) {
+      if (!groups.has(sr.group)) groups.set(sr.group, []);
+      groups.get(sr.group).push(sr);
+    }
+    for (const [name, list] of groups) {
+      const g = div("evo-group");
+      g.appendChild(span("evo-group-name", name));
+      for (const sr of list) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.dataset.key = sr.key;
+        const countsOnly = ev.mode === "share" && !sr.of;
+        b.className = `evo-chip${ev.on.has(sr.key) && !countsOnly ? " on" : ""}`;
+        if (countsOnly) { b.disabled = true; b.title = "A count with no natural total: shown in Counts only."; }
+        const sw = span("sw", "");
+        sw.style.background = sr.color;
+        b.appendChild(sw);
+        b.appendChild(document.createTextNode(sr.label));
+        g.appendChild(b);
+      }
+      picker.appendChild(g);
+    }
+  }
+  drawEvolutionChart();
+}
+
+function evolutionNice(max) {
+  if (max <= 0) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(max)));
+  for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= max) return m * p;
+  return 10 * p;
+}
+
+function drawEvolutionChart() {
+  const host = el("evolutionChart"), legend = el("evolutionLegend");
+  if (!host) return;
+  clearNode(host);
+  if (legend) clearNode(legend);
+  const ev = state.evolution;
+  const points = evolutionPoints().filter((p) => Number.isFinite(Date.parse(p.ts)));
+  const series = evolutionVisible();
+  text("evolutionCount", points.length
+    ? `${fmtInt(points.length)} points \u00b7 ${points[0].date} \u2192 ${points[points.length - 1].date}`
+    : "\u00b7");
+  if (points.length < 2) {
+    host.appendChild(div("muted-text vh-empty", ev.points.length
+      ? "Not enough points in this range yet."
+      : "No history yet: the first snapshot is taken at the next workflow import."));
+    return;
+  }
+  if (!series.length) {
+    host.appendChild(div("muted-text vh-empty", "Pick at least one series above."));
+    return;
+  }
+  const ns = "http://www.w3.org/2000/svg";
+  const W = Math.max(280, Math.round(host.clientWidth || 600)), H = 280;
+  const padL = 54, padR = 14, padT = 12, padB = 26;
+  const t0 = Date.parse(points[0].ts), t1 = Date.parse(points[points.length - 1].ts);
+  const tSpan = Math.max(1, t1 - t0);   // not `span`: that is the element helper
+  const x = (t) => padL + ((t - t0) / tSpan) * (W - padL - padR);
+  const values = series.map((sr) => points.map((p) => evolutionValue(sr, p)));
+  let top = 0;
+  for (const col of values) for (const v of col) if (v != null && v > top) top = v;
+  top = ev.mode === "share" ? 100 : evolutionNice(top);
+  const y = (v) => padT + (1 - v / top) * (H - padT - padB);
+  const fmtV = (v) => ev.mode === "share" ? `${v.toFixed(1)}%` : fmtInt(Math.round(v));
+
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("width", String(W));
+  svg.setAttribute("height", String(H));
+  // horizontal grid + labels
+  for (let i = 0; i <= 4; i++) {
+    const v = (top * i) / 4;
+    const g = document.createElementNS(ns, "line");
+    g.setAttribute("class", "evo-grid");
+    g.setAttribute("x1", padL); g.setAttribute("x2", W - padR);
+    g.setAttribute("y1", y(v).toFixed(1)); g.setAttribute("y2", y(v).toFixed(1));
+    svg.appendChild(g);
+    const t = document.createElementNS(ns, "text");
+    t.setAttribute("class", "evo-axis");
+    t.setAttribute("x", padL - 6); t.setAttribute("y", (y(v) + 3.5).toFixed(1));
+    t.setAttribute("text-anchor", "end");
+    t.textContent = fmtV(v);
+    svg.appendChild(t);
+  }
+  // a tick at the first point of every month
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  let lastMonth = points[0].date.slice(0, 7);
+  points.forEach((p, i) => {
+    const m = p.date.slice(0, 7);
+    if (i && m !== lastMonth) {
+      const xx = x(Date.parse(p.ts));
+      const l = document.createElementNS(ns, "line");
+      l.setAttribute("class", "evo-grid evo-month");
+      l.setAttribute("x1", xx.toFixed(1)); l.setAttribute("x2", xx.toFixed(1));
+      l.setAttribute("y1", padT); l.setAttribute("y2", H - padB);
+      svg.appendChild(l);
+      const t = document.createElementNS(ns, "text");
+      t.setAttribute("class", "evo-axis");
+      t.setAttribute("x", (xx + 4).toFixed(1)); t.setAttribute("y", H - padB + 14);
+      t.textContent = months[Number(m.slice(5, 7)) - 1];
+      svg.appendChild(t);
+    }
+    lastMonth = m;
+  });
+  const first = document.createElementNS(ns, "text");
+  first.setAttribute("class", "evo-axis"); first.setAttribute("x", padL); first.setAttribute("y", H - 4);
+  first.textContent = points[0].date;
+  svg.appendChild(first);
+  const last = document.createElementNS(ns, "text");
+  last.setAttribute("class", "evo-axis"); last.setAttribute("x", W - padR); last.setAttribute("y", H - 4);
+  last.setAttribute("text-anchor", "end");
+  last.textContent = points[points.length - 1].date;
+  svg.appendChild(last);
+  // the lines: a null value breaks the line (a series that did not exist yet)
+  const lines = [];
+  series.forEach((sr, si) => {
+    let d = "", pen = false;
+    points.forEach((p, i) => {
+      const v = values[si][i];
+      if (v == null) { pen = false; return; }
+      d += `${pen ? "L" : "M"}${x(Date.parse(p.ts)).toFixed(1)},${y(v).toFixed(1)} `;
+      pen = true;
+    });
+    const path = document.createElementNS(ns, "path");
+    path.setAttribute("class", "evo-line");
+    path.setAttribute("d", d.trim());
+    path.setAttribute("stroke", sr.color);
+    path.dataset.key = sr.key;
+    svg.appendChild(path);
+    lines.push(path);
+  });
+  // hover: crosshair + markers + a tooltip listing every visible series at that point
+  const cross = document.createElementNS(ns, "line");
+  cross.setAttribute("class", "evo-cross");
+  cross.setAttribute("y1", padT); cross.setAttribute("y2", H - padB);
+  cross.style.display = "none";
+  svg.appendChild(cross);
+  const marks = series.map((sr) => {
+    const c = document.createElementNS(ns, "circle");
+    c.setAttribute("r", "3.2");
+    c.setAttribute("fill", sr.color);
+    c.setAttribute("class", "evo-mark");
+    c.style.display = "none";
+    svg.appendChild(c);
+    return c;
+  });
+  const tip = div("evo-tip");
+  tip.style.display = "none";
+  host.appendChild(svg);
+  host.appendChild(tip);
+  const xs = points.map((p) => x(Date.parse(p.ts)));
+  const show = (clientX) => {
+    const rect = svg.getBoundingClientRect();
+    const px = ((clientX - rect.left) / rect.width) * W;
+    let best = 0;
+    for (let i = 1; i < xs.length; i++) if (Math.abs(xs[i] - px) < Math.abs(xs[best] - px)) best = i;
+    const p = points[best];
+    cross.setAttribute("x1", xs[best].toFixed(1)); cross.setAttribute("x2", xs[best].toFixed(1));
+    cross.style.display = "";
+    clearNode(tip);
+    const head = div("evo-tip-head", p.date);
+    if (p.commit) head.appendChild(span("evo-tip-commit", ` \u00b7 ${String(p.commit).slice(0, 7)}`));
+    tip.appendChild(head);
+    series.forEach((sr, si) => {
+      const v = values[si][best];
+      if (v == null) { marks[si].style.display = "none"; return; }
+      marks[si].setAttribute("cx", xs[best].toFixed(1)); marks[si].setAttribute("cy", y(v).toFixed(1));
+      marks[si].style.display = "";
+      const row = div("evo-tip-row");
+      const sw = span("sw", ""); sw.style.background = sr.color;
+      const l = span("evo-tip-label", ""); l.appendChild(sw); l.appendChild(document.createTextNode(`${sr.group === "Translation units" ? "TUs " : sr.group === "Functions" ? "functions " : ""}${sr.label}`));
+      row.appendChild(l);
+      row.appendChild(span("evo-tip-value", fmtV(v)));
+      tip.appendChild(row);
+    });
+    tip.style.display = "";
+    const hostRect = host.getBoundingClientRect();
+    const left = ((xs[best] / W) * rect.width) + (rect.left - hostRect.left);
+    const flip = left > hostRect.width * 0.6;
+    tip.style.left = flip ? "" : `${Math.round(left + 12)}px`;
+    tip.style.right = flip ? `${Math.round(hostRect.width - left + 12)}px` : "";
+    tip.style.top = `${Math.round(padT)}px`;
+  };
+  const hide = () => {
+    cross.style.display = "none";
+    tip.style.display = "none";
+    for (const m of marks) m.style.display = "none";
+  };
+  svg.addEventListener("mousemove", (e) => show(e.clientX));
+  svg.addEventListener("mouseleave", hide);
+  svg.addEventListener("touchstart", (e) => { if (e.touches[0]) show(e.touches[0].clientX); }, { passive: true });
+  svg.addEventListener("touchmove", (e) => { if (e.touches[0]) show(e.touches[0].clientX); }, { passive: true });
+  // the legend: first -> last in the range; hovering it lifts that line
+  if (legend) {
+    series.forEach((sr, si) => {
+      const col = values[si].filter((v) => v != null);
+      const item = span("evo-legend-item", "");
+      const sw = span("sw", ""); sw.style.background = sr.color;
+      item.appendChild(sw);
+      item.appendChild(document.createTextNode(`${sr.label} `));
+      item.appendChild(span("evo-legend-values", col.length ? `${fmtV(col[0])} \u2192 ${fmtV(col[col.length - 1])}` : "\u2013"));
+      item.addEventListener("mouseenter", () => lines.forEach((l, i) => l.classList.toggle("dim", i !== si)));
+      item.addEventListener("mouseleave", () => lines.forEach((l) => l.classList.remove("dim")));
+      legend.appendChild(item);
+    });
+  }
 }
 
 function renderVerifiedHistory(history) {

@@ -195,7 +195,11 @@ class homes, re-import the progress files, then re-warm Git attribution.
 
 Both preserve live claims + the event log (no `--reset`), and `sync.ps1` backs up the
 DB first (timestamped, never clobbered). The remote path re-warms attribution lazily on
-the next dashboard view.
+the next dashboard view. Every import also records one `snapshot` of the rings' totals
+for the dashboard's Evolution panel; a fresh database gets its past with
+`bp-work-server history-backfill <full workflow clone> --out snaps.json` (run where the
+clone has history; the server's own clone is shallow) then `history-import snaps.json`
+(see `docs/protocol.md`).
 
 **The manual steps** (what those commands wrap):
 

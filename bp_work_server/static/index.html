@@ -39,7 +39,7 @@
       href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/app.css?v=37" />
+    <link rel="stylesheet" href="/static/app.css?v=38" />
   </head>
   <body>
     <div class="bp-bg" aria-hidden="true">
@@ -262,6 +262,31 @@
           </div>
         </section>
 
+
+        <!-- Evolution: every ring's totals over time -->
+        <section class="card evolution-panel" id="evolutionCard" aria-label="Evolution">
+          <div class="vp-head">
+            <div>
+              <span class="label">Evolution</span>
+              <div class="metric-total" id="evolutionCount">&middot;</div>
+              <p class="vp-intro">Every number on this page, over time. Pick the series to compare: counts share one axis; shares plot each series over its own total.</p>
+            </div>
+            <div class="evo-controls">
+              <div class="evo-seg" id="evolutionRange" role="group" aria-label="Range">
+                <button type="button" data-range="30">30 days</button>
+                <button type="button" data-range="90">90 days</button>
+                <button type="button" data-range="0" class="active">All</button>
+              </div>
+              <div class="evo-seg" id="evolutionMode" role="group" aria-label="Scale">
+                <button type="button" data-mode="count" class="active">Counts</button>
+                <button type="button" data-mode="share">Shares</button>
+              </div>
+            </div>
+          </div>
+          <div class="evo-picker" id="evolutionPicker"></div>
+          <div class="evo-chart" id="evolutionChart"></div>
+          <div class="evo-legend" id="evolutionLegend"></div>
+        </section>
 
         <!-- Explorer: search/browse every TU and function -->
         <section class="card explorer" aria-label="Explorer">
@@ -488,6 +513,6 @@
       </aside>
     </div>
 
-    <script src="/static/app.js?v=33" defer></script>
+    <script src="/static/app.js?v=34" defer></script>
   </body>
 </html>

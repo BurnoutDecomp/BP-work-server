@@ -54,6 +54,17 @@ def main() -> None:
     audits_p.add_argument("--replace-latest", action="store_true",
                           help="Also replace the per-function tables (default: a history point only).")
 
+    hb_p = sub.add_parser(
+        "history-backfill",
+        help="Rebuild the rings' history from a FULL BP-Decomp_Workflow clone: the last ledger "
+             "commit of every day, imported into a throwaway store, one snapshot each -> JSON.",
+    )
+    hb_p.add_argument("workflow_repo", help="Path to a full (not shallow) BP-Decomp_Workflow clone.")
+    hb_p.add_argument("--out", required=True, help="Where to write the snapshots JSON.")
+    hb_p.add_argument("--since", help="First day to include (YYYY-MM-DD).")
+    hi_p = sub.add_parser("history-import", help="Load a history-backfill JSON into this database.")
+    hi_p.add_argument("file", help="The snapshots JSON.")
+
     warm_p = sub.add_parser(
         "warm-attribution-cache",
         help="Precompute local-git surviving-line attribution for reviewed work.",
@@ -139,6 +150,23 @@ def main() -> None:
             f"{counts.get('funcaudit', 0)} findings, {counts.get('stubs', 0)} stubs, "
             f"{counts.get('asm', 0)} shape rows (0 = already imported or absent)"
         )
+        return
+
+    if args.cmd == "history-backfill":
+        from bp_work_server import history
+
+        def report(day: str, sha: str, values: dict) -> None:
+            print(f"{day} {sha[:10]}: {values['tu_done']}/{values['tu_total']} TUs done, "
+                  f"{values['funcs_done']}/{values['funcs_total']} funcs covered, "
+                  f"linked {values['tu_linked']}", flush=True)
+
+        snaps = history.backfill(args.workflow_repo, since=args.since, out_path=args.out, progress=report)
+        print(f"{len(snaps)} snapshots -> {args.out}")
+        return
+
+    if args.cmd == "history-import":
+        n = store.import_history_file(args.file)
+        print(f"imported {n} snapshots from {args.file}")
         return
 
     if args.cmd == "warm-attribution-cache":

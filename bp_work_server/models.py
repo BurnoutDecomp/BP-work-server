@@ -252,6 +252,11 @@ class AuditSummaryResponse(FlexibleModel):
     history: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class HistoryResponse(FlexibleModel):
+    points: list[dict[str, Any]] = Field(default_factory=list)
+    series: dict[str, str | None] = Field(default_factory=dict)
+
+
 class AuditFileResponse(FlexibleModel):
     file: str
     rollup: dict[str, Any] | None = None

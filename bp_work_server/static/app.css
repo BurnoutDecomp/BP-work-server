@@ -3280,3 +3280,207 @@ html::-webkit-scrollbar-corner,
 .vh-sw-paired { background: var(--muted); }
 .vh-sw-clean { background: var(--green); }
 .vh-sw-nobody { background: var(--red-bright); }
+
+/* ---- Evolution: every ring over time ---- */
+.evolution-panel .vp-head {
+  align-items: flex-start;
+}
+.evo-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.evo-seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  clip-path: polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
+}
+.evo-seg button {
+  appearance: none;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  padding: 5px 12px;
+  font: 600 11.5px var(--font-head);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.evo-seg button:hover {
+  color: var(--text);
+}
+.evo-seg button.active {
+  background: var(--red);
+  color: #fff;
+}
+.evo-seg button:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: -2px;
+}
+.evo-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin: 12px 0 10px;
+}
+.evo-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.evo-group-name {
+  font: 600 10.5px var(--font-head);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--faint);
+  margin-right: 2px;
+}
+.evo-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--line-soft);
+  background: var(--surface-2);
+  color: var(--muted);
+  font: 500 12px var(--font-body);
+  cursor: pointer;
+  clip-path: polygon(3px 0, 100% 0, calc(100% - 3px) 100%, 0 100%);
+}
+.evo-chip .sw,
+.evo-legend .sw,
+.evo-tip .sw {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  flex: none;
+  clip-path: polygon(2px 0, 100% 0, calc(100% - 2px) 100%, 0 100%);
+}
+.evo-chip .sw {
+  opacity: 0.3;
+}
+.evo-chip:hover {
+  color: var(--text);
+}
+.evo-chip.on {
+  color: var(--text);
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.05);
+}
+.evo-chip.on .sw {
+  opacity: 1;
+}
+.evo-chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.evo-chip:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 1px;
+}
+.evo-chart {
+  position: relative;
+  min-height: 120px;
+}
+.evo-chart svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+.evo-grid {
+  stroke: var(--line-soft);
+  stroke-width: 1;
+}
+.evo-grid.evo-month {
+  stroke: var(--line);
+  stroke-dasharray: 2 4;
+}
+.evo-axis {
+  fill: var(--faint);
+  font-size: 10px;
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
+}
+.evo-line {
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  transition: opacity 0.15s;
+}
+.evo-line.dim {
+  opacity: 0.16;
+}
+.evo-cross {
+  stroke: var(--muted);
+  stroke-dasharray: 2 3;
+  pointer-events: none;
+}
+.evo-mark {
+  pointer-events: none;
+  stroke: var(--bg);
+  stroke-width: 1.5;
+}
+.evo-tip {
+  position: absolute;
+  pointer-events: none;
+  z-index: 3;
+  min-width: 190px;
+  padding: 8px 10px;
+  background: rgba(12, 11, 10, 0.97);
+  border: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.evo-tip-head {
+  color: var(--text);
+  font-weight: 600;
+  margin-bottom: 5px;
+}
+.evo-tip-commit {
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-weight: 400;
+}
+.evo-tip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  line-height: 1.5;
+}
+.evo-tip-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.evo-tip-value {
+  color: var(--text);
+}
+.evo-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.evo-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: default;
+}
+.evo-legend-values {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 720px) {
+  .evo-controls {
+    justify-content: flex-start;
+  }
+}
