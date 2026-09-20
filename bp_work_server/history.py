@@ -108,18 +108,43 @@ def record(
     source: str = "import",
     values: dict[str, Any] | None = None,
 ) -> bool:
-    """Store a snapshot unless the newest one already holds these exact totals
-    (an import that changed nothing must not add a point)."""
+    """Store a snapshot unless the newest one is from the same UTC day and already holds
+    these exact totals: an import that changed nothing adds no point, but every day gets
+    one (a flat line that reaches today reads "still true", a line that stops does not)."""
     con.executescript(SCHEMA)
     data = values if values is not None else metrics(con)
     last = con.execute("SELECT metrics_json, ts FROM snapshot ORDER BY ts DESC, id DESC LIMIT 1").fetchone()
-    if last is not None and json.loads(last["metrics_json"]) == data and last["ts"] <= ts:
+    if (
+        last is not None
+        and json.loads(last["metrics_json"]) == data
+        and last["ts"] <= ts
+        and _utc(last["ts"])[:10] == _utc(ts)[:10]
+    ):
         return False
     con.execute(
         "INSERT INTO snapshot(ts, source, commit_hash, metrics_json) VALUES(?, ?, ?, ?)",
         (ts, source, commit, json.dumps(data, sort_keys=True)),
     )
     return True
+
+
+def has_point_today(con: sqlite3.Connection, now: str) -> bool:
+    """Whether a snapshot already exists for ``now``'s UTC day."""
+    con.executescript(SCHEMA)
+    today = _utc(now)[:10]
+    for row in con.execute("SELECT ts FROM snapshot ORDER BY ts DESC, id DESC LIMIT 5"):
+        if _utc(row["ts"])[:10] == today:
+            return True
+    return False
+
+
+def seconds_until_daily_tick(now: datetime, hour: int = 0, minute: int = 10) -> float:
+    """Seconds from ``now`` (aware) to the next HH:MM UTC, at least one second."""
+    now = now.astimezone(timezone.utc)
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return max(1.0, (target - now).total_seconds())
 
 
 def points(con: sqlite3.Connection, days: int | None = None) -> list[dict[str, Any]]:
@@ -193,6 +218,23 @@ def _utc(ts: str) -> str:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+
+
+async def daily_task(store: Any, log: Any = None) -> None:
+    """Runs for the life of the process: a snapshot right away when today has none
+    (a restart or a quiet day must not leave a hole), then one every day at 00:10 UTC.
+    An import on the same day with the same totals adds nothing on top of it."""
+    import asyncio
+
+    while True:
+        try:
+            if await asyncio.to_thread(store.record_daily_snapshot):
+                if log:
+                    log.info("daily history snapshot recorded")
+        except Exception:  # noqa: BLE001 -- a failed tick must not end the loop
+            if log:
+                log.exception("daily history snapshot failed")
+        await asyncio.sleep(seconds_until_daily_tick(datetime.now(timezone.utc)))
 
 
 # --------------------------------------------------------------------------- backfill

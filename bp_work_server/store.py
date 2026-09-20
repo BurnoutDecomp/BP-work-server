@@ -392,6 +392,14 @@ class WorkStore:
             pts = history.points(con, days)
         return {"points": pts, "series": history.SERIES}
 
+    def record_daily_snapshot(self) -> bool:
+        """One snapshot per UTC day even when nothing moved; False when today has one."""
+        with self.connect(ensure_wal=True) as con:
+            now = iso()
+            if history.has_point_today(con, now):
+                return False
+            return history.record(con, now, None, source="daily")
+
     def import_history_file(self, path: str | Path) -> int:
         """Load the snapshots a ``history-backfill`` wrote; known commits are skipped."""
         with self.connect(ensure_wal=True) as con:

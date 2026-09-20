@@ -402,7 +402,9 @@ tier-C count, blamed on the b5-decomp author of the commit the exe was built fro
 Before 2026-09-20 only the console evidence had a history; the three ledger rings were live
 totals with no past. Every workflow import now records a `snapshot` row (the rings' totals:
 `tu_total/done/compiled/in_progress/blocked/todo/linked`, `funcs_total/done/named_uncovered/
-unidentified`, the workflow HEAD) unless the totals did not move. The past was rebuilt from the
+unidentified`, the workflow HEAD) unless the day already has one with the same totals. The
+server also records one every day at 00:10 UTC on its own (and right after a start when the
+day has none), so the series reaches today even when nothing was imported. The past was rebuilt from the
 workflow repo's git history: `bp-work-server history-backfill <full clone> --out snaps.json`
 imports the last ledger commit of every day into a throwaway store (91 days from 2026-06-11,
 about three minutes), and `bp-work-server history-import snaps.json` loads the file (known

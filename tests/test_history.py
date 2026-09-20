@@ -71,6 +71,34 @@ def test_points_merge_audit_runs_and_carry_values_forward(tmp_path):
     assert recent == []                                          # the window is by date
 
 
+def test_one_point_per_day_even_when_nothing_moved(tmp_path):
+    store = WorkStore(tmp_path / "work.sqlite3")
+    store.migrate()
+    with store.connect(ensure_wal=True) as con:
+        con.executescript(history.SCHEMA)
+        same = {"tu_total": 10, "tu_done": 1}
+        assert history.record(con, "2026-06-11T10:00:00+00:00", "a", values=same)
+        assert not history.record(con, "2026-06-11T18:00:00+00:00", "b", values=same)   # same day, same totals
+        assert history.record(con, "2026-06-12T00:10:00+00:00", "c", values=same)       # a new day
+        assert history.record(con, "2026-06-12T00:11:00+00:00", "d", values={"tu_total": 10, "tu_done": 2})
+        assert history.has_point_today(con, "2026-06-12T23:00:00+00:00")
+        assert not history.has_point_today(con, "2026-06-13T00:00:00+00:00")
+    # the daily tick: the first call of a day records, the second does not
+    assert store.record_daily_snapshot()
+    assert not store.record_daily_snapshot()
+    pts = store.history_points()["points"]
+    assert pts[-1]["sources"] == ["snapshot"] and pts[-1]["date"] == pts[-1]["ts"][:10]
+
+
+def test_seconds_until_daily_tick():
+    from datetime import datetime, timezone
+
+    at = datetime(2026, 9, 20, 0, 0, tzinfo=timezone.utc)
+    assert history.seconds_until_daily_tick(at) == 600
+    late = datetime(2026, 9, 20, 0, 10, tzinfo=timezone.utc)
+    assert history.seconds_until_daily_tick(late) == 86400
+
+
 def test_backfill_file_import_skips_known_commits(tmp_path):
     store = WorkStore(tmp_path / "work.sqlite3")
     store.migrate()

@@ -11,7 +11,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 
-from bp_work_server import __version__
+from bp_work_server import __version__, history
 from bp_work_server.decomp import DecompRepo
 from bp_work_server.dependencies import auth_required
 from bp_work_server.github import GitHubClient
@@ -48,10 +48,14 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
         app.state.dashboard_warm_task = asyncio.create_task(
             warm_dashboard_state(app, app.state.store)
         )
+        # the Evolution panel gets a point every day whether or not anything was imported
+        app.state.history_daily_task = asyncio.create_task(
+            history.daily_task(app.state.store, logging.getLogger("bp_work_server.history"))
+        )
         try:
             yield
         finally:
-            for name in ("dashboard_warm_task", "attribution_warm_task"):
+            for name in ("dashboard_warm_task", "attribution_warm_task", "history_daily_task"):
                 warm_task = getattr(app.state, name, None)
                 if warm_task and not warm_task.done():
                     warm_task.cancel()
