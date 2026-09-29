@@ -1,28 +1,37 @@
 """Which translation units are actually compiled into the game exe.
 
-``tools/build/build_game_exe.bat`` in the workflow repo is the ground truth for
-what ships: its source list exceeds cmd's ~8191-char command-line limit, so the
-script ``echo``s every source file into a ``cl`` response file. A TU whose
-destination file survives the response-file filters and appears on that list is
-*in the executable*; everything else is decompiled but not yet wired into the
-build.
+Two committed inputs from the workflow repo, unioned:
 
-Parsing the batch script beats parsing build output: the script is committed
-(so it syncs with the rest of the workflow snapshot), while the response file
-and the exe only exist on a machine that has actually run the build.
+* ``tools/build/build_game_exe.bat`` -- its source list exceeds cmd's ~8191-char
+  command-line limit, so the script ``echo``s every source file into a ``cl``
+  response file. A file that survives the response-file filters is on the
+  compile line.
+* ``progress/linked_files.json`` -- written by CI after every exe build from the
+  compiler's own ``/showIncludes`` output: the sources on the compile line plus
+  every repo header they include. A TU whose code lives in a header (a template
+  container, an inline class) is compiled into the exe without the bat ever
+  naming it; only this file can see that.
+
+The bat is read too so a file mounted since the last CI build counts at once,
+and so history commits from before the inventory existed still resolve.
 
 Matching is pure text -- no filesystem access -- because the workflow clone on
 the server is shallow and does *not* check out the ``b5-decomp`` submodule, so
-the sources the script names are not on disk next to it.
+the sources the script names are not on disk next to it. It is case-insensitive,
+as the Windows build is: a ledger path and the compiler's spelling of the same
+file may differ in case.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 # Path of the build script inside the workflow repo.
 BUILD_SCRIPT = "tools/build/build_game_exe.bat"
+# CI's compiled-file inventory (tools/work/build_linked_files.py in the workflow repo).
+LINKED_FILES = "progress/linked_files.json"
 
 # `set NAME=value` / `set "NAME=value"`, the two forms the script uses.
 _SET_LINE = re.compile(r'^set\s+"?([A-Za-z_]\w*)=([^"]*)"?\s*$', re.IGNORECASE)
@@ -175,6 +184,33 @@ def parse_build_sources(workflow_root: str | Path) -> set[str]:
     return sources
 
 
+def parse_linked_files(workflow_root: str | Path) -> set[str]:
+    """Repo-relative paths of every file CI's compiler opened for the exe.
+
+    Returns an empty set when the inventory is missing or unreadable.
+    """
+    try:
+        data = json.loads((Path(workflow_root) / LINKED_FILES).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    if not isinstance(data, dict):
+        return set()
+    files: set[str] = set()
+    for key in ("sources", "headers"):
+        entries = data.get(key)
+        if isinstance(entries, list):
+            files.update(normalize_path(p) for p in entries if isinstance(p, str))
+    files.discard("")
+    return files
+
+
+def compiled_files(workflow_root: str | Path) -> set[str]:
+    """Lower-cased repo-relative paths compiled into the exe: the bat's compile
+    line plus CI's inventory. Empty means "unknown", never "nothing is linked"."""
+    files = parse_build_sources(workflow_root) | parse_linked_files(workflow_root)
+    return {path.lower() for path in files}
+
+
 def dest_candidates(dest_path: str | None) -> list[str]:
     """Source files a TU's destination could compile into.
 
@@ -194,5 +230,6 @@ def dest_candidates(dest_path: str | None) -> list[str]:
     return candidates
 
 
-def is_linked(dest_path: str | None, sources: set[str]) -> bool:
-    return any(candidate in sources for candidate in dest_candidates(dest_path))
+def is_linked(dest_path: str | None, compiled: set[str]) -> bool:
+    """``compiled`` holds lower-cased paths, as ``compiled_files`` returns them."""
+    return any(candidate.lower() in compiled for candidate in dest_candidates(dest_path))

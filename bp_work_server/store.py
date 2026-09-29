@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from bp_work_server import audit, history
-from bp_work_server.build_link import is_linked, parse_build_sources
+from bp_work_server.build_link import compiled_files, is_linked
 from bp_work_server.models import ClaimResponse, NextTu, StatusCounts, TuRecord
 from bp_work_server.schema import (
     DB_BUSY_TIMEOUT_MS,
@@ -503,19 +503,20 @@ class WorkStore:
         return len(functions)
 
     def _restore_linked(self, con: sqlite3.Connection, workflow_root: str | Path) -> int:
-        """Flag every TU whose destination file the game build actually compiles.
+        """Flag every TU whose destination file the game build actually compiles:
+        on the compile line, or included by a file that is (see build_link).
 
-        The build script is the only source of truth here, so when it cannot be
-        read the previous flags are left alone -- zeroing them would report the
-        exe as empty just because a checkout was incomplete.
+        When neither the build script nor CI's inventory can be read the previous
+        flags are left alone -- zeroing them would report the exe as empty just
+        because a checkout was incomplete.
         """
-        sources = parse_build_sources(workflow_root)
-        if not sources:
+        compiled = compiled_files(workflow_root)
+        if not compiled:
             return 0
         linked_ids = [
             (row["id"],)
             for row in con.execute("SELECT id, dest_path FROM tu")
-            if is_linked(row["dest_path"], sources)
+            if is_linked(row["dest_path"], compiled)
         ]
         con.execute("UPDATE tu SET linked=0 WHERE linked!=0")
         con.executemany("UPDATE tu SET linked=1 WHERE id=?", linked_ids)

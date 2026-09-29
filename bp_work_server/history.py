@@ -42,8 +42,10 @@ LEDGER_PATHS = (
     "progress/unidentified.json",
 )
 BUILD_SCRIPT = "tools/build/build_game_exe.bat"
+LINKED_FILES = "progress/linked_files.json"
 # the files whose change makes a day worth a snapshot
-BACKFILL_TRIGGERS = ("progress/status.json", "progress/tu_index.json", "progress/unidentified.json", BUILD_SCRIPT)
+BACKFILL_TRIGGERS = ("progress/status.json", "progress/tu_index.json", "progress/unidentified.json",
+                     BUILD_SCRIPT, LINKED_FILES)
 
 # every series a point can carry, with the total it is a share of (None = counts only)
 SERIES: dict[str, str | None] = {
@@ -268,7 +270,7 @@ def backfill(repo: str | Path, since: str | None = None, out_path: str | Path | 
             store.migrate()
             store.import_workflow(root, record_history=False)
             with store.connect() as con:
-                values = metrics(con, linked_known=BUILD_SCRIPT in present)
+                values = metrics(con, linked_known=bool({BUILD_SCRIPT, LINKED_FILES} & present))
         snapshots.append({"ts": ts, "commit": sha, "metrics": values})
         if progress:
             progress(day, sha, values)
@@ -303,9 +305,10 @@ def _git(repo: Path, *args: str) -> str:
 
 
 def _extract(repo: Path, sha: str, root: Path) -> set[str]:
-    """Check the ledger files and the build script of one commit out into ``root``.
+    """Check the ledger files, the build script and CI's compiled-file inventory of one
+    commit out into ``root``.
     Returns the paths that exist at that commit."""
-    wanted = [*LEDGER_PATHS, BUILD_SCRIPT]
+    wanted = [*LEDGER_PATHS, BUILD_SCRIPT, LINKED_FILES]
     listing = _git(repo, "ls-tree", "-r", "--name-only", sha, "--", *wanted)
     present = {line.strip() for line in listing.splitlines() if line.strip()}
     if not present:

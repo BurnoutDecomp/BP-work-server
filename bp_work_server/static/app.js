@@ -323,7 +323,7 @@ function render(data) {
   setDonut("exe", [
     { label: "linked", value: linked, color: "blue" },
     { label: "not linked", value: Math.max(0, tus - linked), color: "grey",
-      title: "Translation units whose file is not on the game build's compile line yet." },
+      title: "Translation units whose file is not compiled into the game exe yet: not on the compile line, and not included by a file that is." },
   ], totals.linked_percent, `${fmtInt(linked)} / ${fmtInt(tus)} linked`);
 
   renderAudit(data.audit || {});
