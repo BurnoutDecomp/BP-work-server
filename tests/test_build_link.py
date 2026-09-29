@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import json
 
-from bp_work_server.build_link import dest_candidates, is_linked, parse_build_sources
+from bp_work_server.build_link import (
+    compiled_files,
+    dest_candidates,
+    is_linked,
+    parse_build_sources,
+    parse_linked_files,
+)
 from bp_work_server.store import WorkStore, iso
 
 
@@ -106,11 +112,46 @@ def test_dest_candidates_falls_back_to_the_cpp_a_header_decompiles_into():
 
 
 def test_is_linked_matches_header_tus_through_their_cpp():
-    sources = {"b5-decomp/src/GameSource/Main/BrnMain.cpp"}
+    compiled = {"b5-decomp/src/gamesource/main/brnmain.cpp"}
 
-    assert is_linked("b5-decomp/src/GameSource/Main/BrnMain.h", sources)
-    assert is_linked("b5-decomp/src/GameSource/Main/BrnMain.cpp", sources)
-    assert not is_linked("b5-decomp/src/GameSource/Main/BrnOther.cpp", sources)
+    assert is_linked("b5-decomp/src/GameSource/Main/BrnMain.h", compiled)
+    assert is_linked("b5-decomp/src/GameSource/Main/BrnMain.cpp", compiled)
+    assert not is_linked("b5-decomp/src/GameSource/Main/BrnOther.cpp", compiled)
+
+
+def write_linked_files(root, *, sources=(), headers=()):
+    path = root / "progress" / "linked_files.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"meta": {}, "summary": {}, "sources": list(sources), "headers": list(headers)}),
+        encoding="utf-8",
+    )
+
+
+def test_compiled_files_unions_the_bat_with_ci_inventory_case_insensitively(tmp_path):
+    root = write_script(tmp_path)
+    write_linked_files(
+        root,
+        sources=["b5-decomp/src/GameSource/Main/BrnMain.cpp"],
+        headers=["b5-decomp/src/GameShared/GameClasses/Containers/./CgsArray.h"],
+    )
+
+    compiled = compiled_files(root)
+
+    # the bat alone names CgsAssert.cpp: a mount since the last CI build still counts
+    assert "b5-decomp/src/gameshared/gameclasses/core/cgsassert.cpp" in compiled
+    assert "b5-decomp/src/gameshared/gameclasses/containers/cgsarray.h" in compiled
+    assert is_linked("b5-decomp/src/GameShared/GameClasses/Containers/CgsArray.h", compiled)
+    assert is_linked("B5-DECOMP/src/gamesource/main/BRNMAIN.cpp", compiled)
+
+
+def test_parse_linked_files_treats_a_missing_or_broken_inventory_as_unknown(tmp_path):
+    assert parse_linked_files(tmp_path) == set()
+    (tmp_path / "progress").mkdir()
+    (tmp_path / "progress" / "linked_files.json").write_text("{not json", encoding="utf-8")
+    assert parse_linked_files(tmp_path) == set()
+    (tmp_path / "progress" / "linked_files.json").write_text("[]", encoding="utf-8")
+    assert parse_linked_files(tmp_path) == set()
 
 
 def make_workflow(tmp_path, *, with_script: bool = True):
@@ -165,6 +206,41 @@ def test_import_flags_tus_the_game_build_compiles(tmp_path):
     totals = store.dashboard_state()["totals"]
     assert totals["linked_tus"] == 3
     assert totals["linked_percent"] == 75.0
+    with store.connect() as con:
+        unlinked = [
+            row["id"] for row in con.execute("SELECT id FROM tu WHERE linked=0 ORDER BY id")
+        ]
+    assert unlinked == ["GameSource/Parked/Parked.cpp"]
+
+
+def test_import_links_a_header_tu_through_ci_inventory(tmp_path):
+    store = WorkStore(tmp_path / "work.sqlite3")
+    store.migrate()
+    root = make_workflow(tmp_path)
+    index = json.loads((root / "progress" / "tu_index.json").read_text(encoding="utf-8"))
+    # a template container: no sibling .cpp anywhere, compiled only by its includers
+    index["GameShared/GameClasses/Containers/CgsArray.h"] = {
+        "source": "decfigs",
+        "n_funcs": 2,
+        "functions": ["Array::Append", "Array::GetItem"],
+    }
+    (root / "progress" / "tu_index.json").write_text(json.dumps(index), encoding="utf-8")
+
+    store.import_workflow(root)
+    with store.connect() as con:
+        before = con.execute(
+            "SELECT linked FROM tu WHERE id='GameShared/GameClasses/Containers/CgsArray.h'"
+        ).fetchone()["linked"]
+    assert before == 0
+
+    write_linked_files(
+        root,
+        sources=["b5-decomp/src/GameSource/Main/BrnMain.cpp"],
+        headers=["b5-decomp/src/GameShared/GameClasses/Containers/CgsArray.h"],
+    )
+    result = store.import_workflow(root)
+
+    assert result["linked"] == 4
     with store.connect() as con:
         unlinked = [
             row["id"] for row in con.execute("SELECT id FROM tu WHERE linked=0 ORDER BY id")
