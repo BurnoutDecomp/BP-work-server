@@ -57,6 +57,30 @@ Serves the live read-only dashboard for humans. It shows progress counts, active
 agents, active work, the next queue, imported goals, blocked TUs, and recent
 events.
 
+### `GET /api/progress-map?include_functions=false`
+
+Returns the unpaginated progress-map snapshot (`units`, `totals`,
+`include_functions`, `server_time`). Each unit includes its original `id`,
+`source`, `dest_path`, TU `status`, `linked` flag, goal memberships,
+`function_count`, `recorded_funcs`, and an `unidentified` flag.
+`function_count` counts actual function rows rather than the declared TU metadata.
+
+With `include_functions=true`, each unit also carries `functions`, containing
+individual `name` and `status` values. Function statuses are independent of TU
+statuses: a blocked unit can contain reviewed functions, and a unit marked done
+does not make its todo functions recorded. Recorded coverage counts non-todo
+function rows, matching `/dashboard/state`.
+
+The unidentified container is an implementation bucket for functions, not a
+translation unit. It contributes to function totals and individual function
+tiles, but is excluded from TU/linkage maps and `/api/tus` results.
+Snapshots are cached and gzip-compressed; no attribution work runs on this path.
+
+The dashboard defaults to a function-weighted TU treemap. Functions mode gives
+every individual function equal weight, using its own status; In Executable uses
+TU linkage. Map/List and metric selections are remembered locally. Original
+headline percentages keep their existing count-based meaning.
+
 ### `POST /admin/import?workflow_root=...&reset=false`
 
 Imports `progress/tu_index.json`, `progress/status.json`, `progress/tu_deps.json`,

@@ -14,6 +14,7 @@ from bp_work_server.models import (
     FacetsResponse,
     GoalDetailResponse,
     ProfileResponse,
+    ProgressMapResponse,
     SearchResponse,
     TuDetailResponse,
 )
@@ -24,6 +25,7 @@ from bp_work_server.services.attribution import (
     repo_revision,
 )
 from bp_work_server.services.dashboard import dashboard_state_response
+from bp_work_server.services.progress_map import cached_progress_map
 from bp_work_server.store import WorkStore
 
 router = APIRouter()
@@ -52,6 +54,15 @@ async def dashboard_state(
 @router.get("/api/facets", response_model=FacetsResponse)
 def facets(store: WorkStore = Depends(get_store)) -> dict:
     return store.facets()
+
+
+@router.get("/api/progress-map", response_model=ProgressMapResponse, response_model_exclude_none=True)
+async def progress_map(
+    request: Request,
+    include_functions: bool = Query(False),
+    store: WorkStore = Depends(get_store),
+) -> dict:
+    return await asyncio.to_thread(cached_progress_map, request, store, include_functions)
 
 
 # ---- the evidence layer: CI's per-commit glue audit + stub inventory ----

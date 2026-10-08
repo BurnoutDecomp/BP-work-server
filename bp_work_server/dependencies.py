@@ -23,9 +23,9 @@ def get_store(request: Request) -> WorkStore:
 
 
 def invalidate_dashboard_cache(request: Request) -> None:
-    with request.app.state.dashboard_cache_lock:
-        request.app.state.dashboard_cache["expires_at"] = 0.0
-        request.app.state.dashboard_cache["data"] = None
+    from bp_work_server.services.dashboard import invalidate_dashboard_cache as invalidate
+
+    invalidate(request)
 
 
 def worker_identity(

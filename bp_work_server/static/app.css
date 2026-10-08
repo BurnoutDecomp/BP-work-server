@@ -3518,3 +3518,60 @@ html::-webkit-scrollbar-corner,
     justify-content: flex-start;
   }
 }
+
+
+/* ---------- Progress map / list explorer ---------- */
+.explorer-tabs { flex-wrap: wrap; }
+.explorer-view-tools, .explorer-views, .map-navigation, .map-selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.explorer-view-tools { flex-wrap: wrap; justify-content: flex-end; }
+.explorer-views { gap: 0; flex-shrink: 0; }
+.explorer-views button:focus-visible, .map-crumb:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+.progress-map { padding: 0 20px 20px; }
+.map-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.map-breadcrumbs { display: flex; align-items: center; flex-wrap: wrap; min-width: 0; gap: 4px; }
+.map-crumb { border: 0; background: none; color: var(--gold); padding: 5px 4px; font: 600 13px var(--font-head); text-transform: uppercase; letter-spacing: .5px; cursor: pointer; overflow-wrap: anywhere; text-align: left; }
+.map-crumb:not(:last-child)::after { content: " /"; color: var(--muted); padding-left: 6px; }
+.map-crumb:disabled { color: var(--text); cursor: default; }
+.map-navigation { flex-shrink: 0; }
+.map-explanation { font-size: 12px; color: var(--muted); margin: 12px 0 10px; line-height: 1.6; }
+.map-legend { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 14px; font-size: 12px; }
+.map-legend-item { display: inline-flex; gap: 7px; align-items: center; }
+.map-legend-item i { width: 10px; height: 10px; clip-path: polygon(2px 0, 100% 0, calc(100% - 2px) 100%, 0 100%); }
+.map-viewport { position: relative; height: clamp(340px, 52vh, 600px); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.map-viewport canvas { display: block; width: 100%; height: 100%; cursor: pointer; }
+.map-viewport canvas:focus-visible { outline: 2px solid var(--gold); outline-offset: -3px; }
+.map-viewport.is-loading canvas, .map-viewport.is-loading .map-highlight { visibility: hidden; }
+.map-highlight { position: absolute; pointer-events: none; border: 2px solid var(--text); box-sizing: border-box; }
+.map-tooltip { position: absolute; pointer-events: none; z-index: 2; max-width: min(460px, calc(100% - 8px)); padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-top: 2px solid var(--red); border-radius: var(--radius); box-shadow: var(--shadow); overflow-wrap: anywhere; }
+.map-tooltip-type, .map-selection-type { color: var(--gold); font: 600 11px var(--font-head); text-transform: uppercase; letter-spacing: .08em; }
+.map-tooltip-name { color: var(--text); font: 500 12px var(--font-mono); margin: 5px 0; }
+.map-tooltip-meta { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.map-selection { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--line); min-height: 92px; }
+.map-selection-content { display: flex; flex-direction: column; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
+#mapSelectionName { font: 500 13px var(--font-mono); }
+#mapSelectionMeta { color: var(--muted); font-size: 11px; line-height: 1.6; }
+.map-selection-actions { flex-shrink: 0; }
+.map-footnotes { display: flex; flex-direction: column; gap: 5px; margin-top: 12px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.map-status { display: flex; align-items: center; gap: 12px; padding: 12px 0; color: var(--gold); font-size: 12px; }
+.map-status[hidden], .map-tooltip[hidden], .map-highlight[hidden], .map-empty[hidden], .map-selection-actions button[hidden], .map-status button[hidden] { display: none; }
+.map-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); padding: 20px; font-size: 14px; text-align: center; }
+.explorer-list { padding: 0 20px 18px; }
+.link-state { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.link-state.is-linked { color: var(--blue); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+@media (max-width: 700px) {
+  /* The tall mobile brand header must scroll away from the map's controls. */
+  .topbar { position: relative; top: auto; }
+  #progressExplorer > .panel-head { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .explorer-view-tools { width: 100%; justify-content: space-between; }
+  .progress-map { padding: 0 12px 12px; }
+  .map-toolbar { align-items: flex-start; flex-direction: column; }
+  .map-viewport { height: 430px; }
+  .map-selection { align-items: flex-start; flex-direction: column; }
+  .map-navigation .filter, .map-selection-actions .filter { min-height: 40px; }
+  .explorer-list { padding: 0 12px 12px; }
+}

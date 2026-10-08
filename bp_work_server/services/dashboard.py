@@ -92,6 +92,8 @@ def invalidate_dashboard_cache(request: Request) -> None:
     with request.app.state.dashboard_cache_lock:
         request.app.state.dashboard_cache["expires_at"] = 0.0
         request.app.state.dashboard_cache["data"] = None
+    with request.app.state.progress_map_cache_lock:
+        request.app.state.progress_map_cache.clear()
 
 
 def attribution_cache_needs_warm(data: dict[str, Any]) -> bool:

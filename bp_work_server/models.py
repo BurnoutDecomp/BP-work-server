@@ -293,6 +293,40 @@ class SearchResponse(BaseModel):
     items: list[dict[str, Any]]
 
 
+class ProgressMapFunction(BaseModel):
+    name: str
+    status: str
+
+
+class ProgressMapUnit(BaseModel):
+    id: str
+    source: str | None = None
+    dest_path: str | None = None
+    status: str
+    linked: bool
+    unidentified: bool
+    function_count: int
+    recorded_funcs: int
+    goals: list[str]
+    functions: list[ProgressMapFunction] | None = None
+
+
+class ProgressMapTotals(BaseModel):
+    tus: int
+    funcs: int
+    done_tus: int
+    done_funcs: int
+    linked_tus: int
+    unidentified_funcs: int
+
+
+class ProgressMapResponse(BaseModel):
+    units: list[ProgressMapUnit]
+    totals: ProgressMapTotals
+    include_functions: bool
+    server_time: str
+
+
 class TuDetailResponse(FlexibleModel):
     id: str
     source: str | None = None

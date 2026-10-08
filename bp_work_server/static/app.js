@@ -12,6 +12,7 @@ const state = {
   repo: { owner: "BurnoutDecomp", name: "b5-decomp", ref: "dev" },
   explorer: {
     tab: "tus",
+    view: "map",
     q: "",
     status: "",
     source: "",
@@ -25,6 +26,7 @@ const state = {
     searchTimer: null,
     requestId: 0,
   },
+  progressMap: { controller: null, snapshot: null, inFlight: false, pending: false, restoreFocus: false },
   // the Console Evidence section: its own tab, filters and paging
   evidence: {
     tab: "audit",
@@ -358,6 +360,8 @@ function render(data) {
   setEventsData(data.recent_events || []);
   renderGoals(data.goals || []);
   setBlockedData(data.blocked || []);
+  if (state.explorer.view === "map") loadProgressMap(true);
+  else loadExplorer();
 }
 
 function renderAgents(agents) {
@@ -1357,7 +1361,7 @@ function explorerParams() {
   if (ex.status) p.set("status", ex.status);
   p.set("limit", ex.limit);
   p.set("offset", ex.offset);
-  if (ex.tab === "tus") {
+  if (ex.tab !== "funcs") {
     if (ex.source) p.set("source", ex.source);
     if (ex.goal) p.set("goal", ex.goal);
     p.set("sort", ex.sort);
@@ -1368,18 +1372,19 @@ function explorerParams() {
 
 async function loadExplorer() {
   const ex = state.explorer;
+  if (ex.view === "map") return loadProgressMap();
   const path = ex.tab === "funcs" ? "/api/funcs" : "/api/tus";
   const requestId = ++ex.requestId;
   try {
     const data = await fetchJson(`${path}?${explorerParams()}`, 15000);
-    if (requestId !== ex.requestId) return;
+    if (requestId !== ex.requestId || ex.view !== "list") return;
     ex.total = data.total || 0;
     ex.items = data.items || [];
     if (ex.tab === "funcs") renderFuncRows(ex.items);
     else renderTuRows(ex.items);
     renderExplorerFoot();
   } catch (error) {
-    if (requestId !== ex.requestId) return;
+    if (requestId !== ex.requestId || ex.view !== "list") return;
     el("explorerBody").innerHTML = "";
     const row = document.createElement("tr");
     const cell = document.createElement("td");
@@ -1393,7 +1398,7 @@ async function loadExplorer() {
 
 function refreshExplorerTuRow(detail) {
   const ex = state.explorer;
-  if (ex.tab !== "tus" || !detail || !detail.id || !Array.isArray(ex.items)) return;
+  if (ex.view !== "list" || ex.tab === "funcs" || !detail || !detail.id || !Array.isArray(ex.items)) return;
   const index = ex.items.findIndex((item) => item.id === detail.id);
   if (index < 0) return;
   ex.items[index] = { ...ex.items[index], ...detail };
@@ -1465,10 +1470,13 @@ function setHead(cols) {
 }
 
 function renderTuRows(items) {
-  setHead(["Translation Unit", "Status", "Funcs", "Source", "Unresolved Deps", "Actor"]);
+  const linkage = state.explorer.tab === "linked";
+  const columns = ["Translation Unit", "Status", "Funcs", "Source", "Unresolved Deps", "Actor"];
+  if (linkage) columns.splice(2, 0, "In executable");
+  setHead(columns);
   const body = el("explorerBody");
   clearNode(body);
-  if (!items.length) return emptyRow(body, 6, "No translation units match.");
+  if (!items.length) return emptyRow(body, columns.length, "No translation units match.");
   for (const item of items) {
     const row = document.createElement("tr");
     row.className = "clickable";
@@ -1503,6 +1511,11 @@ function renderTuRows(items) {
     const status = document.createElement("td");
     status.appendChild(statusPill(item.status));
     row.append(name, status, fn, src, deps, owner);
+    if (linkage) {
+      const linked = document.createElement("td");
+      linked.appendChild(span(`link-state${item.linked ? " is-linked" : ""}`, item.linked ? "Linked" : "Not linked"));
+      row.insertBefore(linked, fn);
+    }
     row.addEventListener("click", () => openDetail(item.id));
     body.appendChild(row);
   }
@@ -1530,7 +1543,7 @@ function renderFuncRows(items) {
       actor.title = "No actor has been linked to this function yet.";
     }
     row.append(name, status, tu, actor);
-    row.addEventListener("click", () => openDetail(item.tu_id));
+    row.addEventListener("click", () => openDetail(item.tu_id, { functionName: item.name }));
     body.appendChild(row);
   }
 }
@@ -1548,6 +1561,82 @@ function emptyRow(body, span, message) {
 function resetAndLoad() {
   state.explorer.offset = 0;
   loadExplorer();
+}
+
+function saveExplorerView() {
+  try {
+    localStorage.setItem("bp-progress-explorer-v1", JSON.stringify({
+      view: state.explorer.view, tab: state.explorer.tab,
+    }));
+  } catch (_) { /* A disabled or full storage area must not break browsing. */ }
+}
+
+function syncExplorerView() {
+  const ex = state.explorer;
+  const isMap = ex.view === "map";
+  el("progressMap").classList.toggle("hidden", !isMap);
+  el("explorerList").classList.toggle("hidden", isMap);
+  for (const button of el("explorerViews").querySelectorAll("[data-view]")) {
+    const selected = button.dataset.view === ex.view;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  }
+  for (const button of el("explorerTabs").querySelectorAll("[data-tab]")) {
+    const selected = button.dataset.tab === ex.tab;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  }
+  document.querySelectorAll(".tus-only").forEach((node) =>
+    node.classList.toggle("hidden", ex.tab === "funcs"));
+  el("sortBy").classList.toggle("hidden", isMap || ex.tab === "funcs");
+  el("sortOrder").classList.toggle("hidden", isMap || ex.tab === "funcs");
+  el("explorerSearch").placeholder = ex.tab === "funcs" ? "Search functions by name…" : "Search by name, source, or path…";
+  el("filterStatus").setAttribute("aria-label", ex.tab === "funcs" ? "Function status" : "Translation unit status");
+  if (isMap) state.progressMap.controller?.scheduleDraw();
+}
+
+async function loadProgressMap(force = false) {
+  const map = state.progressMap;
+  const ex = state.explorer;
+  if (!map.controller || ex.view !== "map") return;
+  const needsFunctions = ex.tab === "funcs";
+  const renderSnapshot = () => {
+    if (ex.view !== "map") return;
+    if (ex.tab === "funcs" && !map.snapshot.include_functions) {
+      map.pending = true;
+      return;
+    }
+    map.controller.update(map.snapshot, ex.tab, {
+      q: ex.q, status: ex.status, source: ex.source, goal: ex.goal,
+    });
+    el("mapStatus").hidden = true;
+    el("progressMapViewport").classList.remove("is-loading");
+  };
+  if (!force && map.snapshot && (!needsFunctions || map.snapshot.include_functions)) {
+    renderSnapshot();
+    return;
+  }
+  if (map.inFlight) { map.pending = true; return; }
+  map.inFlight = true;
+  if (!map.snapshot || (needsFunctions && !map.snapshot.include_functions)) {
+    el("mapStatus").hidden = false;
+    el("mapRetry").hidden = true;
+    text("mapStatusText", needsFunctions ? "Loading individual functions…" : "Loading translation units…");
+    text("mapExplanation", needsFunctions ? "One tile = one function. Loading function statuses…" : "Loading unit statuses…");
+    el("mapLegend").replaceChildren();
+    el("progressMapViewport").classList.add("is-loading");
+  }
+  try {
+    map.snapshot = await fetchJson(`/api/progress-map?include_functions=${needsFunctions}`, 30000);
+    renderSnapshot();
+  } catch (error) {
+    el("mapStatus").hidden = false;
+    text("mapStatusText", `Progress map unavailable: ${error.message}. List view is also available.`);
+    el("mapRetry").hidden = false;
+  } finally {
+    map.inFlight = false;
+    if (map.pending) { map.pending = false; loadProgressMap(true); }
+  }
 }
 
 // Wire the search box, filter selects, and Prev/Next for the dashboard's
@@ -1595,18 +1684,43 @@ function initMiniPanels() {
 
 function initExplorer() {
   const ex = state.explorer;
+  try {
+    const saved = JSON.parse(localStorage.getItem("bp-progress-explorer-v1") || "null");
+    if (["map", "list"].includes(saved?.view)) ex.view = saved.view;
+    if (["tus", "funcs", "linked"].includes(saved?.tab)) ex.tab = saved.tab;
+  } catch (_) { /* Default to the TU map when preferences are unavailable. */ }
+  try {
+    state.progressMap.controller = new BPProgressMap.MapController({
+      onSummary(summary, mode) {
+        if (ex.view === "map") text("explorerCount", `${fmtInt(summary.items)} ${mode === "funcs" ? "functions" : "translation units"}`);
+      },
+      async onOpen(data) {
+        state.progressMap.restoreFocus = true;
+        await openDetail(data.tuId, { functionName: data.kind === "function" ? data.name : undefined });
+        if (detailIsOpen()) el("detailClose").focus();
+      },
+    });
+  } catch (error) {
+    text("mapStatusText", `Map unavailable: ${error.message}. Switch to List view to browse progress.`);
+  }
+  el("mapRetry").addEventListener("click", () => loadProgressMap(true));
+  el("explorerViews").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-view]");
+    if (!button) return;
+    ex.view = button.dataset.view;
+    ++ex.requestId;
+    saveExplorerView();
+    syncExplorerView();
+    loadExplorer();
+  });
 
   el("explorerTabs").addEventListener("click", (e) => {
     const btn = e.target.closest(".tab");
     if (!btn) return;
     ex.tab = btn.dataset.tab;
-    for (const t of el("explorerTabs").querySelectorAll(".tab")) {
-      t.classList.toggle("active", t === btn);
-    }
-    document
-      .querySelectorAll(".tus-only")
-      .forEach((node) => node.classList.toggle("hidden", ex.tab !== "tus"));
     ex.status = "";
+    saveExplorerView();
+    syncExplorerView();
     syncStatusOptions();
     resetAndLoad();
   });
@@ -1638,6 +1752,8 @@ function initExplorer() {
     el("sortOrder").textContent = ex.order === "asc" ? "↑" : "↓";
     resetAndLoad();
   });
+
+  syncExplorerView();
 
   el("pagePrev").addEventListener("click", () => {
     ex.offset = Math.max(0, ex.offset - ex.limit);
@@ -1734,7 +1850,10 @@ function goBackDetail() {
   if (!previous) return updateDetailBack();
   if (previous.type === "profile") openProfile(previous.name, previous.githubUsername, { push: false });
   else if (previous.type === "goal") openGoalDetail(previous.id, { push: false });
-  else if (previous.type === "func") openFunctionDetail(previous.tu, previous.fn, { push: false });
+  else if (previous.type === "func") {
+    if (previous.tu && previous.fn) openFunctionDetail(previous.tu, previous.fn, { push: false });
+    else openDetail(previous.tuId, { functionName: previous.name, push: false });
+  }
   else if (previous.type === "audit") openAuditFile(previous.id, { push: false });
   else if (previous.type === "stubs") openStubFile(previous.id, { push: false });
   else if (previous.type === "asm") openAsmFile(previous.id, { push: false });
@@ -1754,15 +1873,28 @@ function hideDetailOverlay() {
 }
 
 async function openDetail(tuId, options = {}) {
-  setCurrentDetail({ type: "tu", id: tuId }, options);
+  const entry = options.functionName
+    ? { type: "func", name: options.functionName, tuId }
+    : { type: "tu", id: tuId };
+  setCurrentDetail(entry, options);
   showDetailOverlay();
-  text("detailTitle", tuId);
+  text("detailTitle", options.functionName ? `Function: ${options.functionName}` : tuId);
   el("detailBody").innerHTML = '<p class="muted-text">Loading…</p>';
   try {
     const detail = await fetchJson(`/api/tu?id=${encodeURIComponent(tuId)}`, 15000);
+    if (detailEntryKey(state.detailNav.current) !== detailEntryKey(entry)) return;
     refreshExplorerTuRow(detail);
-    renderDetail(detail);
+    const fn = options.functionName && detail.funcs?.find((item) => item.name === options.functionName);
+    if (fn) openFunctionDetail(detail, fn, { push: false });
+    else {
+      if (options.functionName) {
+        setCurrentDetail({ type: "tu", id: tuId }, { push: false });
+        text("detailTitle", tuId);
+      }
+      renderDetail(detail);
+    }
   } catch (error) {
+    if (detailEntryKey(state.detailNav.current) !== detailEntryKey(entry)) return;
     el("detailBody").innerHTML = "";
     el("detailBody").appendChild(div("muted-text", `Failed to load: ${error.message}`));
   }
@@ -1814,6 +1946,10 @@ function closeDetail() {
   state.detailNav.current = null;
   state.detailNav.stack = [];
   updateDetailBack();
+  if (state.progressMap.restoreFocus) {
+    state.progressMap.restoreFocus = false;
+    el("progressMapCanvas").focus({ preventScroll: true });
+  }
 }
 
 function detailSection(title) {

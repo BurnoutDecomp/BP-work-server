@@ -1600,13 +1600,65 @@ class WorkStore:
                 "server_time": iso(),
             }
 
+    def progress_map(self, *, include_functions: bool = False) -> dict[str, Any]:
+        """Small ledger snapshot, with independent TU and function statuses.
+
+        Counts come from actual function rows, not the TU's declared n_funcs.
+        No attribution, dependency ranking, or per-file Git work belongs on the
+        map's refresh path. Function details are fetched only on selection.
+        """
+        with self.connect() as con:
+            # Keep all queries on one SQLite read snapshot, even during imports.
+            con.execute("BEGIN")
+            counts = {
+                row["tu_id"]: (row["n"], row["recorded"])
+                for row in con.execute(
+                    "SELECT tu_id, COUNT(*) AS n, SUM(status != 'todo') AS recorded "
+                    "FROM func GROUP BY tu_id"
+                )
+            }
+            goals: dict[str, list[str]] = defaultdict(list)
+            for row in con.execute("SELECT tu_id, goal_name FROM goal_tu ORDER BY goal_name"):
+                goals[row["tu_id"]].append(row["goal_name"])
+            functions: dict[str, list[dict]] = defaultdict(list)
+            if include_functions:
+                for row in con.execute("SELECT tu_id, name, status FROM func ORDER BY name"):
+                    functions[row["tu_id"]].append({"name": row["name"], "status": row["status"]})
+            units = []
+            totals = dict(tus=0, funcs=0, done_tus=0, done_funcs=0,
+                          linked_tus=0, unidentified_funcs=0)
+            for row in con.execute(
+                "SELECT id, source, dest_path, status, linked FROM tu ORDER BY id"
+            ):
+                tu_id = row["id"]
+                n_funcs, recorded = counts.get(tu_id, (0, 0))
+                unidentified = row["source"] == UNIDENTIFIED_SOURCE
+                units.append({
+                    "id": tu_id, "source": row["source"], "dest_path": row["dest_path"],
+                    "status": row["status"], "linked": bool(row["linked"]),
+                    "unidentified": unidentified, "function_count": n_funcs,
+                    "recorded_funcs": recorded, "goals": goals.get(tu_id, []),
+                    "functions": functions.get(tu_id, []) if include_functions else None,
+                })
+                totals["funcs"] += n_funcs
+                totals["done_funcs"] += recorded
+                if unidentified:
+                    totals["unidentified_funcs"] += n_funcs
+                else:
+                    totals["tus"] += 1
+                    totals["done_tus"] += row["status"] == "done"
+                    totals["linked_tus"] += bool(row["linked"])
+            return {"units": units, "totals": totals,
+                    "include_functions": include_functions, "server_time": iso()}
+
     def facets(self) -> dict[str, Any]:
         """Filter options for the explorer UI: sources, statuses, goals."""
         with self.connect() as con:
             sources = [
                 row["source"]
                 for row in con.execute(
-                    "SELECT DISTINCT source FROM tu WHERE source IS NOT NULL ORDER BY source"
+                    f"SELECT DISTINCT source FROM tu WHERE source IS NOT NULL "
+                    f"AND {NOT_UNIDENTIFIED_BARE} ORDER BY source"
                 )
             ]
             func_statuses = [
@@ -1751,7 +1803,7 @@ class WorkStore:
         with self.connect() as con:
             self._expire_leases(con)
 
-            clauses: list[str] = []
+            clauses: list[str] = [f"(t.source IS NULL OR t.source != '{UNIDENTIFIED_SOURCE}')"]
             params: list[Any] = []
             joins = ""
             if goal:

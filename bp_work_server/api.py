@@ -38,7 +38,9 @@ class DashboardGZipMiddleware(GZipMiddleware):
     """Compress the large polled snapshot without buffering downloads or SSE."""
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] == "http" and scope["path"] == "/dashboard/state":
+        if scope["type"] == "http" and scope["path"] in (
+            "/dashboard/state", "/api/progress-map",
+        ):
             await super().__call__(scope, receive, send)
         else:
             await self.app(scope, receive, send)
@@ -89,6 +91,8 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
     app.state.decomp = DecompRepo()
     app.state.dashboard_cache = {"expires_at": 0.0, "data": None}
     app.state.dashboard_cache_lock = threading.Lock()
+    app.state.progress_map_cache = {}
+    app.state.progress_map_cache_lock = threading.Lock()
     app.state.attribution_warm_lock = asyncio.Lock()
     app.state.attribution_warm_task = None
 

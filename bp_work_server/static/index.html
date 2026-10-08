@@ -39,7 +39,7 @@
       href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/app.css?v=42" />
+    <link rel="stylesheet" href="/static/app.css?v=43" />
   </head>
   <body>
     <div class="bp-bg" aria-hidden="true">
@@ -178,6 +178,110 @@
         </section>
 
 
+        <!-- Explorer: search/browse every TU and function -->
+        <section class="card explorer" id="progressExplorer" aria-label="Progress explorer">
+          <div class="panel-head">
+            <div class="explorer-tabs" id="explorerTabs">
+              <button class="tab active" type="button" data-tab="tus" aria-pressed="true">Translation Units</button>
+              <button class="tab" type="button" data-tab="funcs" aria-pressed="false">Functions</button>
+              <button class="tab" type="button" data-tab="linked" aria-pressed="false">In Executable</button>
+            </div>
+            <div class="explorer-view-tools">
+              <span id="explorerCount" class="badge">Loading…</span>
+              <div class="explorer-views evo-seg" id="explorerViews" aria-label="Explorer view">
+                <button type="button" data-view="map" class="active" aria-pressed="true">Map</button>
+                <button type="button" data-view="list" aria-pressed="false">List</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="explorer-controls">
+            <input
+              type="search"
+              id="explorerSearch"
+              class="search-input"
+              placeholder="Search by name, source, or path…"
+              autocomplete="off"
+            />
+            <select id="filterStatus" class="filter"><option value="">All statuses</option></select>
+            <select id="filterSource" class="filter tus-only"><option value="">All sources</option></select>
+            <select id="filterGoal" class="filter tus-only"><option value="">All goals</option></select>
+            <select id="sortBy" class="filter tus-only">
+              <option value="queue">Sort: Queue rank</option>
+              <option value="id" selected>Sort: Name</option>
+              <option value="funcs">Sort: Functions</option>
+              <option value="updated">Sort: Updated</option>
+              <option value="status">Sort: Status</option>
+            </select>
+            <button id="sortOrder" class="filter order-btn" title="Toggle order">↑</button>
+          </div>
+
+          <div id="progressMap" class="progress-map">
+            <div class="map-toolbar">
+              <nav id="mapBreadcrumbs" class="map-breadcrumbs" aria-label="Map location"></nav>
+              <div class="map-navigation">
+                <button id="mapUp" type="button" class="filter" disabled>Up</button>
+                <button id="mapReset" type="button" class="filter" disabled>Reset zoom</button>
+              </div>
+            </div>
+            <p id="mapExplanation" class="map-explanation"></p>
+            <div id="mapLegend" class="map-legend" aria-label="Map legend"></div>
+            <div id="mapStatus" class="map-status" role="status">
+              <span id="mapStatusText">Loading progress map…</span>
+              <button id="mapRetry" type="button" class="filter" hidden>Retry</button>
+            </div>
+            <div id="progressMapViewport" class="map-viewport">
+              <canvas id="progressMapCanvas" tabindex="0" role="group"
+                aria-label="Interactive progress map" aria-describedby="mapKeyboardHelp">
+                Use List view to browse progress in a table.
+              </canvas>
+              <div id="mapHighlight" class="map-highlight" hidden></div>
+              <div id="progressMapTooltip" class="map-tooltip" hidden></div>
+              <div id="mapEmpty" class="map-empty" hidden>No results match these filters.</div>
+            </div>
+            <div class="map-selection">
+              <div class="map-selection-content">
+                <span id="mapSelectionType" class="map-selection-type">Progress map</span>
+                <strong id="mapSelectionName">Whole program</strong>
+                <span id="mapSelectionMeta">Select a tile to inspect it; select a group to zoom.</span>
+              </div>
+              <div class="map-selection-actions">
+                <button id="mapActivate" type="button" class="filter" hidden>Open details</button>
+                <button id="mapUnitDetails" type="button" class="filter" hidden>Unit details</button>
+              </div>
+            </div>
+            <div class="map-footnotes">
+              <span id="mapScopeNote"></span>
+              <span id="mapZeroNote" hidden></span>
+              <span id="mapKeyboardHelp">Groups zoom in. Tiles open details. Keyboard: arrows to select, Enter to open, Escape to go up.</span>
+            </div>
+            <span id="mapAnnouncement" class="visually-hidden" aria-live="polite"></span>
+          </div>
+
+          <div id="explorerList" class="explorer-list hidden">
+          <div class="table-wrap">
+            <table class="explorer-table">
+              <thead id="explorerHead"></thead>
+              <tbody id="explorerBody"></tbody>
+            </table>
+          </div>
+
+          <div class="explorer-foot">
+            <span id="explorerRange" class="muted-text">—</span>
+            <div class="pager">
+              <button id="pagePrev" class="filter">Prev</button>
+              <div id="pageButtons" class="page-buttons" aria-label="Pages"></div>
+              <button id="pageNext" class="filter">Next</button>
+              <span id="pageStatus" class="page-status">Page 1 of 1</span>
+              <label class="page-jump">
+                <span>Jump</span>
+                <input id="pageJump" type="number" min="1" value="1" />
+              </label>
+            </div>
+          </div>
+          </div>
+        </section>
+
         <!-- Verified vs Console: the one number nobody declared, with its history and its
              three evidence tiers. Its own band, so the ring row above stays compact. -->
         <section class="card verified-panel" id="verifiedCard" aria-label="Verified vs console">
@@ -290,59 +394,6 @@
           <div class="evo-picker" id="evolutionPicker"></div>
           <div class="evo-chart" id="evolutionChart"></div>
           <div class="evo-legend" id="evolutionLegend"></div>
-        </section>
-
-        <!-- Explorer: search/browse every TU and function -->
-        <section class="card explorer" aria-label="Explorer">
-          <div class="panel-head">
-            <div class="explorer-tabs" id="explorerTabs">
-              <button class="tab active" data-tab="tus">Translation Units</button>
-              <button class="tab" data-tab="funcs">Functions</button>
-            </div>
-            <span id="explorerCount" class="badge">0 results</span>
-          </div>
-
-          <div class="explorer-controls">
-            <input
-              type="search"
-              id="explorerSearch"
-              class="search-input"
-              placeholder="Search by name, source, or path…"
-              autocomplete="off"
-            />
-            <select id="filterStatus" class="filter"><option value="">All statuses</option></select>
-            <select id="filterSource" class="filter tus-only"><option value="">All sources</option></select>
-            <select id="filterGoal" class="filter tus-only"><option value="">All goals</option></select>
-            <select id="sortBy" class="filter tus-only">
-              <option value="queue">Sort: Queue rank</option>
-              <option value="id" selected>Sort: Name</option>
-              <option value="funcs">Sort: Functions</option>
-              <option value="updated">Sort: Updated</option>
-              <option value="status">Sort: Status</option>
-            </select>
-            <button id="sortOrder" class="filter order-btn" title="Toggle order">↑</button>
-          </div>
-
-          <div class="table-wrap">
-            <table class="explorer-table">
-              <thead id="explorerHead"></thead>
-              <tbody id="explorerBody"></tbody>
-            </table>
-          </div>
-
-          <div class="explorer-foot">
-            <span id="explorerRange" class="muted-text">—</span>
-            <div class="pager">
-              <button id="pagePrev" class="filter">Prev</button>
-              <div id="pageButtons" class="page-buttons" aria-label="Pages"></div>
-              <button id="pageNext" class="filter">Next</button>
-              <span id="pageStatus" class="page-status">Page 1 of 1</span>
-              <label class="page-jump">
-                <span>Jump</span>
-                <input id="pageJump" type="number" min="1" value="1" />
-              </label>
-            </div>
-          </div>
         </section>
 
         <!-- GitHub repository panel -->
@@ -517,6 +568,8 @@
       </aside>
     </div>
 
-    <script src="/static/app.js?v=37" defer></script>
+    <script src="/static/d3-hierarchy.min.js?v=3.1.2" defer></script>
+    <script src="/static/progress-map.js?v=1" defer></script>
+    <script src="/static/app.js?v=38" defer></script>
   </body>
 </html>
