@@ -71,6 +71,17 @@ def test_manual_reset_is_respected_on_unchanged_source(store):
     assert tus["A"]["status"] == "todo" and funcs["A::Run"] == "todo"
 
 
+def test_later_tu_review_keeps_its_verdict_even_if_the_note_is_retained(store):
+    source_status.apply(store, evidence())
+    with store.connect() as con:
+        con.execute("UPDATE func SET status='reviewed' WHERE name='A::Run'")
+    removed = evidence("b", "a")
+    removed.update(functions={}, tus={})
+    source_status.apply(store, removed)
+    assert rows(store)[0]["A"]["status"] == "done"
+    assert rows(store)[1]["A::Run"] == "reviewed"
+
+
 def test_stale_or_incomplete_evidence_rolls_back(store):
     source_status.apply(store, evidence())
     before = rows(store)

@@ -108,6 +108,8 @@ def apply(store, evidence):
                 continue
             elif current["status"] != "done" or current["notes"] != note:
                 managed_tus.pop(name)  # preserve subsequent explicit worker decisions
+            elif required.get(name) and all(funcs[fn]["status"] == "reviewed" for fn in required[name]):
+                managed_tus.pop(name)  # a later TU review may retain the existing note
             elif name not in complete:
                 con.execute("UPDATE tu SET status='blocked',notes=?,updated_at=? WHERE id=?",
                             ("Source reconciliation: previously indexed bodies are missing or stub candidates in the new committed source.", iso(), name))

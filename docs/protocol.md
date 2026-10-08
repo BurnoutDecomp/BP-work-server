@@ -344,7 +344,8 @@ when their source disappears or becomes a stub candidate.
 
 `POST /admin/sync` accepts `metadata_only: true` to refresh ledger membership before
 source reconciliation without replaying an older status mirror. The reconciled
-durable ledger is then exported, committed, and synced normally. An hourly
+durable ledger is then exported and committed. The final metadata-only sync
+publishes audits without replaying statuses over later live decisions. An hourly
 freshness check repairs missed deliveries, failed publication, or changed inputs.
 Executable instruction metrics continue to describe the most recently published build.
 
