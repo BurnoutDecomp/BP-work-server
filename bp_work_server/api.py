@@ -10,6 +10,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 from bp_work_server import __version__, history
 from bp_work_server.decomp import DecompRepo
@@ -31,6 +32,16 @@ __all__ = [
     "default_users_db_path",
     "sync_workflow_repo",
 ]
+
+
+class DashboardGZipMiddleware(GZipMiddleware):
+    """Compress the large polled snapshot without buffering downloads or SSE."""
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"] == "/dashboard/state":
+            await super().__call__(scope, receive, send)
+        else:
+            await self.app(scope, receive, send)
 
 
 def default_db_path() -> Path:
@@ -71,6 +82,7 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
         description="Coordination API for Burnout Paradise decompilation work claims.",
         lifespan=lifespan,
     )
+    app.add_middleware(DashboardGZipMiddleware, minimum_size=1000, compresslevel=5)
     app.state.store = store or WorkStore(default_db_path(), default_users_db_path())
     app.state.store.migrate()
     app.state.github = GitHubClient()

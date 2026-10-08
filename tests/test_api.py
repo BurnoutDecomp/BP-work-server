@@ -56,6 +56,23 @@ def test_dashboard_page_and_state(tmp_path):
     assert body["next"]["items"]
 
 
+def test_dashboard_snapshot_compression_preserves_data_and_skips_other_routes(tmp_path):
+    client, _ = make_client(tmp_path)
+    compressed = client.get("/dashboard/state", headers={"Accept-Encoding": "gzip"})
+    plain = client.get("/dashboard/state", headers={"Accept-Encoding": "identity"})
+    assert compressed.headers["content-encoding"] == "gzip"
+    assert "content-encoding" not in plain.headers
+    assert compressed.json()["totals"] == plain.json()["totals"]
+    assert int(compressed.headers["content-length"]) < len(plain.content)
+
+    async def large_control():
+        return {"text": "x" * 3000}
+
+    client.app.add_api_route("/api/compression-control", large_control)
+    control = client.get("/api/compression-control", headers={"Accept-Encoding": "gzip"})
+    assert len(control.content) > 1000 and "content-encoding" not in control.headers
+
+
 def test_claim_updates_dashboard_agents(tmp_path):
     client, store = make_client(tmp_path)
     store.create_worker("idle-user")
