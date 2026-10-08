@@ -1320,7 +1320,7 @@ class WorkStore:
                 WHERE NOT {NOT_UNIDENTIFIED}
                 """
             ).fetchone()[0]
-            # A function counts as covered when the ledger says *it* is reviewed,
+            # Recorded coverage includes recovered, compiled and reviewed functions,
             # not when its whole TU happens to be finished. Counting by TU threw
             # away every reviewed function sitting in a TU that is still blocked
             # or open -- 1,401 of them on production, a five-point understatement
@@ -1329,6 +1329,21 @@ class WorkStore:
             done_funcs = con.execute(
                 "SELECT COUNT(*) FROM func WHERE status!='todo'"
             ).fetchone()[0]
+            function_status_counts = {
+                row["status"]: row["n"] for row in con.execute(
+                    "SELECT status, COUNT(*) AS n FROM func GROUP BY status"
+                )
+            }
+            missing_body_status = con.execute(
+                """
+                SELECT COUNT(DISTINCT CASE WHEN t.status='done' THEN t.id END) AS done_tus,
+                       COUNT(DISTINCT CASE WHEN f.status!='todo' THEN f.name END) AS recorded_funcs
+                FROM audit_finding a
+                JOIN func f ON f.name=a.name
+                JOIN tu t ON t.id=f.tu_id
+                WHERE json_array_length(a.findings_json, '$.NO_BODY') > 0
+                """
+            ).fetchone()
             linked_tus = con.execute(
                 f"SELECT COUNT(*) FROM tu WHERE linked=1 AND {NOT_UNIDENTIFIED_BARE}"
             ).fetchone()[0]
@@ -1545,6 +1560,11 @@ class WorkStore:
             return {
                 "active_goal": self._get_meta(con, "active_goal"),
                 "counts": counts,
+                "function_status_counts": function_status_counts,
+                "ledger_evidence": {
+                    "done_tus_with_missing_bodies": missing_body_status["done_tus"],
+                    "recorded_funcs_with_missing_bodies": missing_body_status["recorded_funcs"],
+                },
                 "totals": {
                     "tus": total_tus,
                     "funcs": total_funcs,

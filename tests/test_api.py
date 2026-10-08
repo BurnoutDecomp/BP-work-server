@@ -73,6 +73,32 @@ def test_dashboard_snapshot_compression_preserves_data_and_skips_other_routes(tm
     assert len(control.content) > 1000 and "content-encoding" not in control.headers
 
 
+def test_dashboard_distinguishes_ledger_coverage_and_source_findings(tmp_path):
+    from bp_work_server.audit import import_funcaudit
+
+    client, store = make_client(tmp_path)
+    with store.connect() as con:
+        con.execute("UPDATE tu SET status='done' WHERE id='GameSource/A.cpp'")
+        con.execute("UPDATE tu SET status='blocked' WHERE id='GameSource/B.cpp'")
+        con.execute("UPDATE func SET status='reviewed' WHERE name='A::Run'")
+        con.execute("UPDATE func SET status='recovered' WHERE name='B::Run'")
+        import_funcaudit(con, {
+            "meta": {"b5_commit": "source-audit"},
+            "stats": {"no_body": 3},
+            "results": [
+                {"name": name, "file": "Example.cpp", "findings": {"NO_BODY": ["unindexed"]}}
+                for name in ("A::Run", "B::Run", "Unknown::Run")
+            ],
+        }, iso(), lambda *_: None)
+    data = client.get("/dashboard/state").json()
+    assert data["totals"]["done_funcs"] == 2
+    assert data["function_status_counts"] == {"reviewed": 1, "recovered": 1}
+    assert data["ledger_evidence"] == {
+        "done_tus_with_missing_bodies": 1,
+        "recorded_funcs_with_missing_bodies": 2,
+    }
+
+
 def test_claim_updates_dashboard_agents(tmp_path):
     client, store = make_client(tmp_path)
     store.create_worker("idle-user")

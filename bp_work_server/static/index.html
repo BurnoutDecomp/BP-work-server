@@ -135,6 +135,7 @@
               <div class="metric-total" id="tuCount">—</div>
               <div class="legend" id="tuLegend"></div>
               <small class="metric-note">active goal · <span id="activeGoal">Whole program</span></small>
+              <small class="metric-note" id="tuEvidenceNote">Recorded status from the work ledger.</small>
             </div>
           </article>
           <article class="card metric ring-card" title="Every function in the shipped X360 binary, including the ones IDA found but nobody has named yet. Those carry no DWARF file and no RTTI class, so they belong to no translation unit — but they are still code that has to be written.">
@@ -145,13 +146,15 @@
               </svg>
               <div class="ring-label">
                 <strong id="fnPercent">0%</strong>
-                <span>covered</span>
+                <span>recorded</span>
               </div>
             </div>
             <div class="metric-body">
               <span class="label">Functions</span>
               <div class="metric-total" id="fnCount">—</div>
               <div class="legend" id="fnLegend"></div>
+              <small class="metric-note" id="fnStatusNote">Coverage recorded in the work ledger.</small>
+              <small class="metric-note" id="fnEvidenceNote"></small>
             </div>
           </article>
           <article class="card metric ring-card" title="Translation units whose file is on the game build's compile line (tools/build/build_game_exe.bat)">

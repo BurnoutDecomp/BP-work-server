@@ -313,11 +313,23 @@ function render(data) {
   const unidentified = Number(totals.unidentified_funcs || 0);
   state.funcTotals = { funcs, unidentified };
   setDonut("fn", [
-    { label: "covered", value: covered, color: "gold" },
-    { label: "named, uncovered", value: Math.max(0, funcs - covered - unidentified), color: "grey" },
+    { label: "recorded", value: covered, color: "gold" },
+    { label: "named, unrecorded", value: Math.max(0, funcs - covered - unidentified), color: "grey" },
     { label: "unidentified", value: unidentified, color: "dim",
       title: "Functions IDA found in the binary that nobody has named: no DWARF file, no RTTI class, so no translation unit — but still code to write." },
-  ], totals.func_percent, `${fmtInt(covered)} / ${fmtInt(funcs)} covered`);
+  ], totals.func_percent, `${fmtInt(covered)} / ${fmtInt(funcs)} recorded`);
+  const functionStates = data.function_status_counts || {};
+  const recordedStates = Object.entries(functionStates).filter(([status, count]) => status !== "todo" && count);
+  text("fnStatusNote", recordedStates.length
+    ? `Ledger: ${recordedStates.map(([status, count]) => `${fmtInt(count)} ${status === "compiles" ? "compiled" : status}`).join(" · ")}`
+    : "Coverage recorded in the work ledger.");
+  const ledgerEvidence = data.ledger_evidence || {};
+  text("tuEvidenceNote", ledgerEvidence.done_tus_with_missing_bodies
+    ? `Ledger status · ${fmtInt(ledgerEvidence.done_tus_with_missing_bodies)} done TUs have missing-body audit findings.`
+    : "Recorded status from the work ledger.");
+  text("fnEvidenceNote", ledgerEvidence.recorded_funcs_with_missing_bodies
+    ? `${fmtInt(ledgerEvidence.recorded_funcs_with_missing_bodies)} recorded functions have missing-body audit findings; these require source review.`
+    : "");
 
   const linked = Number(totals.linked_tus || 0);
   setDonut("exe", [
