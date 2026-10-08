@@ -181,7 +181,7 @@
             <div>
               <span class="label">Verified vs Console</span>
               <div class="metric-total" id="verifiedCount">&middot;</div>
-              <p class="vp-intro">Every function of the console image, by what the static audits found when they compared our reconstruction with the console's own code. Rebuilt by CI on every commit; nothing here is declared by hand.</p>
+              <p class="vp-intro">Static evidence against the console's code. Source audits run on each decomp commit; instruction shape comes from the latest audited build. Audit-clean means no detected differences, and does not prove gameplay parity.</p>
             </div>
             <div class="vp-facts" id="verifiedFacts" aria-label="Audit facts"></div>
           </div>
@@ -193,12 +193,12 @@
               </svg>
               <div class="ring-label">
                 <strong id="verifiedPercent">0%</strong>
-                <span>verified</span>
+                <span>audit clean</span>
               </div>
             </div>
             <div class="vp-legend">
               <div class="legend" id="verifiedLegend"></div>
-              <small class="vp-hint">Click a state to open it in Console Evidence.</small>
+              <small class="vp-hint">The percentage uses comparable bodies. Legend shares use all functions. Click a state for its evidence.</small>
             </div>
             <div class="vp-side">
               <div class="vp-block">

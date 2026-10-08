@@ -23,10 +23,12 @@ tool itself documents as noisy.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 HIGH_SIGNAL = (
     "NO_BODY",
@@ -219,6 +221,39 @@ def _last_run(con: sqlite3.Connection, kind: str) -> sqlite3.Row | None:
     ).fetchone()
 
 
+def _report_revision(con, kind, key, data, history_only=False):
+    """Allow a corrected report for the same source commit, without duplicating history.
+
+    Generation time alone is not a change. Older reports must not replace a newer audit
+    algorithm or an already corrected snapshot during an ordinary workflow sync.
+    """
+    payload = dict(data)
+    meta = dict(data.get("meta") or {})
+    meta.pop("generated_at", None)
+    payload["meta"] = meta
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    existing = con.execute(
+        "SELECT * FROM audit_run WHERE kind=? AND commit_hash=?", (kind, key)
+    ).fetchone()
+    if existing is None:
+        return True, digest, False
+    if history_only:
+        return False, digest, True
+    stats = json.loads(existing["stats_json"] or "{}")
+    version = int(meta.get("audit_version") or 1)
+    previous_version = int(stats.get("audit_version") or 1)
+    if stats.get("report_sha256") == digest or version < previous_version:
+        return False, digest, True
+    generated = (data.get("meta") or {}).get("generated_at") or ""
+    if version == previous_version and generated < (existing["generated_at"] or ""):
+        return False, digest, True
+    # A re-imported historical report cannot replace the current per-function tables.
+    latest = _last_run(con, kind)
+    if latest is not None and latest["id"] != existing["id"]:
+        return False, digest, True
+    return True, digest, True
+
+
 # ------------------------------------------------------------------ import
 def import_audits(
     con: sqlite3.Connection, progress: Path, now: str, log: Logger, history_only: bool = False
@@ -254,9 +289,8 @@ def import_funcaudit(
     key = _run_key(meta)
     if not key:
         return 0
-    if con.execute(
-        "SELECT 1 FROM audit_run WHERE kind='funcaudit' AND commit_hash=?", (key,)
-    ).fetchone():
+    changed, digest, correction = _report_revision(con, "funcaudit", key, data, history_only)
+    if not changed:
         return 0
     results = data.get("results") or []
     previous_run = _last_run(con, "funcaudit")
@@ -330,6 +364,7 @@ def import_funcaudit(
         ],
     )
     stats = dict(data.get("stats") or {})
+    stats.update(report_sha256=digest, audit_version=int(meta.get("audit_version") or 1))
     stats["weight"] = total_weight
     stats["files"] = len(rollup)
     stats["categories"] = data.get("categories") or {}
@@ -338,10 +373,12 @@ def import_funcaudit(
         """
         INSERT INTO audit_run(kind, commit_hash, author, generated_at, imported_at, stats_json)
         VALUES('funcaudit', ?, ?, ?, ?, ?)
+        ON CONFLICT(kind, commit_hash) DO UPDATE SET
+          author=excluded.author, generated_at=excluded.generated_at, stats_json=excluded.stats_json
         """,
         (key, author, meta.get("generated_at"), now, json.dumps(stats, sort_keys=True)),
     )
-    if previous_run is not None and not history_only:
+    if previous_run is not None and not history_only and not correction:
         _log_delta(
             con,
             log,
@@ -370,9 +407,8 @@ def import_stubs(
     key = _run_key(meta)
     if not key:
         return 0
-    if con.execute(
-        "SELECT 1 FROM audit_run WHERE kind='stubs' AND commit_hash=?", (key,)
-    ).fetchone():
+    changed, digest, correction = _report_revision(con, "stubs", key, data, history_only)
+    if not changed:
         return 0
     rows_in = data.get("rows") or []
     previous_run = _last_run(con, "stubs")
@@ -428,6 +464,7 @@ def import_stubs(
         ],
     )
     stats = dict(data.get("stats") or {})
+    stats.update(report_sha256=digest, audit_version=int(meta.get("audit_version") or 1))
     stats["stubs"] = len(rows)
     stats["files"] = len(rollup)
     stats["live"] = sum(b["live"] for b in rollup.values())
@@ -437,10 +474,12 @@ def import_stubs(
         """
         INSERT INTO audit_run(kind, commit_hash, author, generated_at, imported_at, stats_json)
         VALUES('stubs', ?, ?, ?, ?, ?)
+        ON CONFLICT(kind, commit_hash) DO UPDATE SET
+          author=excluded.author, generated_at=excluded.generated_at, stats_json=excluded.stats_json
         """,
         (key, author, meta.get("generated_at"), now, json.dumps(stats, sort_keys=True)),
     )
-    if previous_run is not None and not history_only:
+    if previous_run is not None and not history_only and not correction:
         _log_delta(
             con,
             log,

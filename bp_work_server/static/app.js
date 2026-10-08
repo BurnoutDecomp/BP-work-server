@@ -2989,7 +2989,10 @@ function renderAudit(audit) {
     asmNote.hidden = !scoreable;
     if (scoreable) {
       asmNote.textContent = `${fmtInt(asm.A)} of ${fmtInt(scoreable)} scoreable functions have the console's shape (${asm.shape_percent}%)` +
-        (asm.commit ? ` \u00b7 build of b5 ${String(asm.commit).slice(0, 10)}` : "");
+        (asm.commit ? ` \u00b7 build of b5 ${String(asm.commit).slice(0, 10)}` : "") +
+        (asm.generated_at ? ` \u00b7 audited ${fmtTime(asm.generated_at)}` : "") +
+        (fa.commit && asm.commit && String(asm.commit).split("@")[0] !== fa.commit
+          ? " \u00b7 source audit is newer" : "");
       asmNote.title = "tools/re/asmaudit.py on every published build: the exe's callees, branch counts and constants against the console's machine code";
     }
     renderShapeBar(audit.asm || {});
@@ -3026,7 +3029,7 @@ function renderVerifiedFacts(audit) {
     host.appendChild(c);
   };
   if (fa.files) fact(fa.files, "files with findings", "Files with at least one function the glue audit flagged. Opens the glue audit.", "blocked", () => openEvidence("audit"));
-  if (st.stubs) fact(st.stubs, "stub bodies", `${fmtInt(st.live || 0)} on live paths. Opens the stub inventory.`, "compiled", () => openEvidence("stubs"));
+  if (st.stubs) fact(st.stubs, "stub candidates", `${fmtInt(st.high || 0)} high, ${fmtInt(st.medium || 0)} medium, ${fmtInt(st.low || 0)} low confidence; includes platform leaves. ${fmtInt(st.live || 0)} have reconstructed callers. Audited b5 ${String(st.commit || "").slice(0, 10)}. Opens the inventory.`, "compiled", () => openEvidence("stubs"));
   if (asm.paired_in_exe) fact(asm.paired_in_exe, "in the built exe", "Named functions with a symbol in the exe CI built. Opens the instruction shape.", "progress", () => openEvidence("asm"));
   if (asm.flagged) fact(asm.flagged, "flagged in source", "Functions whose body carries [FLAG PC ...] markers. Opens the instruction shape, flagged only.", "todo", () => { openEvidence("asm"); state.evidence.asmFlagged = true; loadEvidenceList(true); renderEvidenceSummary(); });
 }

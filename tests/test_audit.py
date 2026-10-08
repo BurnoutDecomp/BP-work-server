@@ -161,6 +161,50 @@ def test_import_is_idempotent_per_commit_and_logs_a_delta_for_a_new_one(tmp_path
     assert summary["funcaudit"]["clean"] == 2
 
 
+def test_corrected_same_commit_replaces_rows_without_history_or_credit(tmp_path):
+    store = WorkStore(tmp_path / "work.sqlite3")
+    store.migrate()
+    root = _workflow(tmp_path)
+    store.import_workflow(root)
+    before = store.audit_summary()
+    root = _workflow(tmp_path / "corrected", weight_variant=1)
+    for kind in ("funcaudit", "stubs"):
+        path = root / "progress" / f"{kind}.json"
+        data = json.loads(path.read_text())
+        data["meta"]["audit_version"] = 2
+        if kind == "stubs":
+            data["rows"] = data["rows"][:1]
+        path.write_text(json.dumps(data))
+    store.import_workflow(root)
+    summary = store.audit_summary()
+    assert summary["funcaudit"]["clean"] == 2
+    assert summary["funcaudit"]["weight"] == 1
+    assert summary["stubs"]["stubs"] == 1
+    assert summary["funcaudit"]["imported_at"] == before["funcaudit"]["imported_at"]
+    with store.connect() as con:
+        assert con.execute("SELECT COUNT(*) FROM audit_run").fetchone()[0] == 2
+        assert con.execute("SELECT COUNT(*) FROM audit_finding").fetchone()[0] == 2
+        assert con.execute("SELECT weight FROM audit_finding WHERE name='BrnWorld::A::Run'").fetchone()[0] == 0
+        assert con.execute("SELECT COUNT(*) FROM event WHERE action IN ('audit','stubs')").fetchone()[0] == 0
+    # A subsequent workflow sync carrying the old algorithm cannot undo the correction.
+    store.import_workflow(_workflow(tmp_path / "old"))
+    assert store.audit_summary()["funcaudit"]["clean"] == 2
+    assert store.audit_summary()["stubs"]["stubs"] == 1
+
+
+def test_audit_generation_time_alone_does_not_reimport(tmp_path):
+    store = WorkStore(tmp_path / "work.sqlite3")
+    store.migrate()
+    root = _workflow(tmp_path)
+    store.import_workflow(root)
+    path = root / "progress" / "funcaudit.json"
+    data = json.loads(path.read_text())
+    data["meta"]["generated_at"] = "2026-09-20T17:00:00Z"
+    path.write_text(json.dumps(data))
+    counts = store.import_audits_only(root / "progress", history_only=False)
+    assert counts["funcaudit"] == 0
+
+
 def test_tu_detail_and_dashboard_carry_the_audit(tmp_path):
     store = WorkStore(tmp_path / "work.sqlite3")
     store.migrate()
