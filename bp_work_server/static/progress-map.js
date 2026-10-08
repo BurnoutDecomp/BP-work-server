@@ -11,12 +11,14 @@
   const colors = {
     done: "#6fcf57", compiled: "#e3a52c", in_progress: "#57a8e0",
     blocked: "#ec1c24", todo: "#4a423b", recorded: "#e3a52c",
+    external: "#b294df",
     unrecorded: "#4a423b", unidentified: "#2e2926", linked: "#57a8e0",
     unlinked: "#4a423b",
   };
   const labels = {
     done: "Done", compiled: "Compiled", in_progress: "In progress",
     blocked: "Blocked", todo: "Todo", recorded: "Recorded",
+    external: "External",
     unrecorded: "Named, unrecorded", unidentified: "Unidentified",
     linked: "Linked", unlinked: "Not linked",
   };
@@ -27,6 +29,7 @@
     if (mode === "funcs") {
       // A function's category is always its own status, never its unit's status.
       if (data.unidentified) return "unidentified";
+      if (data.status === "external") return "external";
       return data.status === "todo" ? "unrecorded" : "recorded";
     }
     if (mode === "linked") return data.linked ? "linked" : "unlinked";
@@ -92,7 +95,7 @@
           container.children.push(leaf);
           summary.items++;
           summary.functions++;
-          summary.recorded += fn.status !== "todo" ? 1 : 0;
+          summary.recorded += !["todo", "external"].includes(fn.status) ? 1 : 0;
           countState(leaf);
         }
         if (!unit.unidentified) parent.children.push(unitNode);
@@ -134,7 +137,7 @@
     if (data.kind === "unit") {
       if (mode === "funcs") {
         const functions = node.leaves();
-        const recorded = functions.filter((fn) => fn.data.status !== "todo").length;
+        const recorded = functions.filter((fn) => !["todo", "external"].includes(fn.data.status)).length;
         return { type: "Functions in translation unit", name: data.tuId,
           meta: `${number(functions.length)} functions · ${number(recorded)} recorded · select to zoom into individual functions` };
       }
@@ -156,6 +159,7 @@
       this.palette = { ...colors, done: token("--green", colors.done),
         compiled: token("--gold", colors.compiled), in_progress: token("--blue", colors.in_progress),
         blocked: token("--red-bright", colors.blocked), recorded: token("--gold", colors.recorded),
+        external: token("--purple", colors.external),
         linked: token("--blue", colors.linked) };
       this.theme = { background: token("--bg", "#0a0809"), group: "#211c19",
         text: token("--text", "#ece6da"), headFont: token("--font-head", "Oswald, sans-serif"),
@@ -258,8 +262,8 @@
       zero.textContent = `${number(this.summary.zeroFunctions)} units have no tracked functions and receive minimum-sized tiles.`;
       const legend = document.getElementById("mapLegend");
       legend.replaceChildren();
-      const keys = this.mode === "funcs" ? ["recorded", "unrecorded", "unidentified"] :
-        this.mode === "linked" ? ["linked", "unlinked"] : ["done", "compiled", "in_progress", "blocked", "todo"];
+      const keys = this.mode === "funcs" ? ["recorded", "external", "unrecorded", "unidentified"] :
+        this.mode === "linked" ? ["linked", "unlinked"] : ["done", "external", "compiled", "in_progress", "blocked", "todo"];
       for (const key of keys) {
         const item = document.createElement("span");
         item.className = "map-legend-item";

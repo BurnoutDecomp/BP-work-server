@@ -16,6 +16,18 @@ const snapshot = { units: [
 ] };
 const leaves = (tree) => tree.children ? tree.children.flatMap(leaves) : [tree];
 
+test("external source has a distinct color and does not inflate recorded functions", () => {
+  const external = { units: [{ id: "vendor:lua", status: "external", linked: false,
+    goals: [], function_count: 2, recorded_funcs: 1, external_funcs: 1,
+    functions: [{ name: "lua_call", status: "external" }, { name: "lua_helper", status: "reviewed" }] }] };
+  const tus = buildTree(external, "tus");
+  assert.deepEqual(tus.summary.states, { external: 1 });
+  const funcs = buildTree(external, "funcs");
+  assert.deepEqual(funcs.summary.states, { external: 1, recorded: 1 });
+  assert.equal(funcs.summary.recorded, 1);
+  assert.equal(buildTree(external, "funcs", { status: "external" }).summary.items, 1);
+});
+
 test("TU, function and linkage modes have different leaves and independent states", () => {
   const tus = buildTree(snapshot, "tus");
   const funcs = buildTree(snapshot, "funcs");

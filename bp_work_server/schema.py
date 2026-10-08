@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from bp_work_server.audit import SCHEMA as AUDIT_SCHEMA
 
-TU_STATUSES = {"todo", "in_progress", "compiled", "done", "blocked"}
+TU_STATUSES = {"todo", "in_progress", "compiled", "done", "blocked", "external"}
+SATISFIED_STATUSES = {"done", "external"}
 # Only these durable statuses are seeded from the workflow snapshot. The transient
 # work states (in_progress/compiled), owners, and leases are born on the server and
 # must never be clobbered or resurrected by a re-import/sync.
-DURABLE_IMPORT_STATUSES = {"done", "blocked"}
+DURABLE_IMPORT_STATUSES = {"done", "blocked", "external"}
 DB_BUSY_TIMEOUT_MS = 30_000
 
 # Functions IDA found in the shipped binary that carry no name, so neither the
@@ -47,7 +48,7 @@ CREATE TABLE IF NOT EXISTS tu(
   claimed_at TEXT,
   lease_expires_at TEXT,
   commit_hash TEXT,
-  CHECK(status IN ('todo','in_progress','compiled','done','blocked'))
+  CHECK(status IN ('todo','in_progress','compiled','done','blocked','external'))
 );
 
 CREATE TABLE IF NOT EXISTS func(

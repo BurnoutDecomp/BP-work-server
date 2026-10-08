@@ -6,7 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-TuStatus = Literal["todo", "in_progress", "compiled", "done", "blocked"]
+TuStatus = Literal["todo", "in_progress", "compiled", "done", "blocked", "external"]
 ReviewVerdict = Literal["pass", "fail"]
 
 
@@ -93,6 +93,7 @@ class StatusCounts(BaseModel):
     compiled: int = 0
     done: int = 0
     blocked: int = 0
+    external: int = 0
 
 
 class SnapshotResponse(BaseModel):
@@ -307,6 +308,7 @@ class ProgressMapUnit(BaseModel):
     unidentified: bool
     function_count: int
     recorded_funcs: int
+    external_funcs: int = 0
     goals: list[str]
     functions: list[ProgressMapFunction] | None = None
 
@@ -316,6 +318,8 @@ class ProgressMapTotals(BaseModel):
     funcs: int
     done_tus: int
     done_funcs: int
+    external_tus: int = 0
+    external_funcs: int = 0
     linked_tus: int
     unidentified_funcs: int
 
@@ -348,6 +352,7 @@ class GoalDetailResponse(FlexibleModel):
     name: str
     total: int = 0
     done: int = 0
+    external: int = 0
     remaining_count: int = 0
     counts: dict[str, int] = Field(default_factory=dict)
     ready: list[dict[str, Any]] = Field(default_factory=list)

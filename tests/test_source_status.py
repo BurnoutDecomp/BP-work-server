@@ -61,6 +61,13 @@ def test_removed_automatic_bodies_reopen_only_automatic_records(store):
     assert result["tus_reopened"] == result["functions_removed"] == 1
 
 
+def test_source_presence_cannot_clear_a_confirmed_semantic_gap(store):
+    with store.connect() as con:
+        con.execute("UPDATE tu SET notes='Missing initialization wiring; confirmed semantic gap' WHERE id='Review'")
+    source_status.apply(store, evidence())
+    assert rows(store)[0]['Review']['status'] == 'blocked'
+
+
 def test_manual_reset_is_respected_on_unchanged_source(store):
     source_status.apply(store, evidence())
     with store.connect() as con:

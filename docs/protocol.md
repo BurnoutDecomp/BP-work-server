@@ -44,6 +44,19 @@ ids and hands them out privately.
 | `compiled` | Local compile gate passed; waiting for review or merge policy. |
 | `done` | Accepted complete work. |
 | `blocked` | Not claimable until manually unblocked. |
+| `external` | Supplied by existing vendor source or a host platform implementation. Separate from reconstructed `done`; not claimable, even with force. |
+
+External TUs satisfy dependency availability. Their unrecorded functions become
+`external`; actual recovered/compiled/reviewed functions retain their statuses.
+`totals.external_tus` and `totals.external_funcs` report these separately from
+`done_tus` and `done_funcs`. They remain in the denominators. Rings, maps,
+filters, goal counts and history use the same distinction. The classification
+identifies the provider; it does not certify parity of every console SDK API.
+
+`POST /tu/{tu_id}/external` accepts the same `{agent, reason}` shape as blocking.
+The reason must explain the provider/source. Active or compiled work is protected.
+`POST /tu/{tu_id}/unblock` explicitly returns the TU to reconstruction. External
+decisions survive durable exports, metadata imports and per-commit source audits.
 
 ## Endpoints
 
@@ -263,7 +276,7 @@ Request:
 
 Regenerates the committed `progress/status.json` from the live DB and returns it as
 JSON. It is the inverse of `/admin/import`: it emits only the **durable** states the
-workflow CLI would commit to git — `done`/`blocked` TUs (with `notes`) plus every
+workflow CLI would commit to git — `done`/`blocked`/`external` TUs (with `notes`) plus every
 non-`todo` func status — and never the transient live layer (`in_progress`/`compiled`,
 owners, leases).
 

@@ -20,6 +20,7 @@ from bp_work_server.models import ClaimResponse, NextTu, StatusCounts, TuRecord
 from bp_work_server.schema import (
     DB_BUSY_TIMEOUT_MS,
     DURABLE_IMPORT_STATUSES,
+    SATISFIED_STATUSES,
     TU_STATUSES,
     UNIDENTIFIED_SOURCE,
     UNIDENTIFIED_TU_PREFIX,
@@ -174,8 +175,48 @@ class WorkStore:
             if "linked" not in tu_cols:
                 # Stays 0 until the next workflow import parses the build script.
                 con.execute("ALTER TABLE tu ADD COLUMN linked INTEGER NOT NULL DEFAULT 0")
+            self._migrate_external_status(con)
             self._backfill_missing_dest_paths(con)
         self._migrate_users()
+
+    @staticmethod
+    def _migrate_external_status(con: sqlite3.Connection) -> None:
+        """Widen the old CHECK without dropping children, claims or custom indexes.
+
+        SQLite's documented table rebuild requires foreign_keys OFF outside the
+        transaction. Never rename the original table: that rewrites child FKs.
+        """
+        sql = con.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='tu'").fetchone()[0]
+        if "'external'" in sql:
+            return
+        check = re.compile(r"CHECK\s*\(\s*status\s+IN\s*\(([^)]*)\)\s*\)", re.I)
+        if not check.search(sql):
+            raise ValueError("Unknown TU status constraint; refusing an unsafe migration")
+        ddl = check.sub(lambda m: "CHECK(status IN (" + m[1] + ",'external'))", sql)
+        ddl = re.sub(r'^(CREATE TABLE\s+(?:IF NOT EXISTS\s+)?)["`\[]?tu["`\]]?',
+                     r'\1tu_with_external', ddl, count=1, flags=re.I)
+        columns = ','.join('"' + r['name'].replace('"', '""') + '"'
+                           for r in con.execute('PRAGMA table_info(tu)'))
+        objects = [r[0] for r in con.execute(
+            "SELECT sql FROM sqlite_master WHERE tbl_name='tu' AND type IN ('index','trigger') AND sql IS NOT NULL")]
+        con.commit()
+        con.execute("PRAGMA foreign_keys=OFF")
+        try:
+            con.execute("BEGIN IMMEDIATE")
+            con.execute(ddl)
+            con.execute(f"INSERT INTO tu_with_external({columns}) SELECT {columns} FROM tu")
+            con.execute("DROP TABLE tu")
+            con.execute("ALTER TABLE tu_with_external RENAME TO tu")
+            for statement in objects:
+                con.execute(statement)
+            if con.execute("PRAGMA foreign_key_check").fetchall():
+                raise ValueError("Foreign key check failed during TU status migration")
+            con.commit()
+        except Exception:
+            con.rollback()
+            raise
+        finally:
+            con.execute("PRAGMA foreign_keys=ON")
 
     def _migrate_users(self) -> None:
         with self.users_connect(ensure_wal=True) as con:
@@ -362,6 +403,7 @@ class WorkStore:
                 con, unidentified_tu_id, unidentified
             )
             status_rows = self._restore_status(con, status) if restore_status else 0
+            self._sync_external_functions(con)
             dep_count = self._restore_deps(con, deps)
             goal_count = self._restore_goals(con, goals)
             linked_count = self._restore_linked(con, workflow_root)
@@ -561,7 +603,7 @@ class WorkStore:
                     message="renewed existing claim",
                 )
 
-            claimable = row["status"] == "todo" or (force and row["status"] != "done")
+            claimable = row["status"] == "todo" or (force and row["status"] not in SATISFIED_STATUSES)
             if not claimable:
                 return ClaimResponse(
                     claimed=False,
@@ -739,6 +781,32 @@ class WorkStore:
         with self.connect() as con:
             self._return_tu_to_todo(con, tu_id, notes=None)
             self._log(con, agent, "unblock", tu_id, {})
+
+    @staticmethod
+    def _sync_external_functions(con: sqlite3.Connection) -> None:
+        # Preserve actual recovered/compiled/reviewed work inside a vendor bucket.
+        # Only otherwise-unrecorded functions inherit the external implementation.
+        con.execute("UPDATE func SET status='external' WHERE status='todo' "
+                    "AND tu_id IN (SELECT id FROM tu WHERE status='external')")
+        con.execute("UPDATE func SET status='todo' WHERE status='external' "
+                    "AND tu_id IN (SELECT id FROM tu WHERE status!='external')")
+
+    def mark_external(self, tu_id: str, agent: str, reason: str) -> None:
+        if not reason.strip():
+            raise ValueError("An external implementation needs a provider/source explanation")
+        with self.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute("SELECT * FROM tu WHERE id=?", (tu_id,)).fetchone()
+            if not row:
+                raise KeyError(f"unknown TU: {tu_id}")
+            if row["status"] in ("in_progress", "compiled") or row["owner"] or row["lease_expires_at"]:
+                raise ValueError("Cannot reclassify active or compiled work as external")
+            con.execute("UPDATE tu SET status='external',notes=?,updated_at=? WHERE id=?",
+                        (reason, iso(), tu_id))
+            self._sync_external_functions(con)
+            self._log(con, agent, "external", tu_id, {"reason": reason})
+        with self.connect() as con:
+            history.record(con, iso(), None, source="external_classification")
 
     def reset_tu(self, tu_id: str, agent: str, notes: str | None = None) -> None:
         with self.connect() as con:
@@ -1082,7 +1150,7 @@ class WorkStore:
             tu: dict[str, dict[str, Any]] = {}
             for row in con.execute(
                 "SELECT id, status, notes FROM tu "
-                "WHERE status IN ('done','blocked') ORDER BY id"
+                "WHERE status IN ('done','blocked','external') ORDER BY id"
             ):
                 entry: dict[str, Any] = {"status": row["status"]}
                 if row["notes"]:
@@ -1328,7 +1396,7 @@ class WorkStore:
             # of the ring -- while adding nothing, because status.json never
             # marks a TU done while one of its functions is still todo.
             done_funcs = con.execute(
-                "SELECT COUNT(*) FROM func WHERE status!='todo'"
+                "SELECT COUNT(*) FROM func WHERE status NOT IN ('todo','external')"
             ).fetchone()[0]
             function_status_counts = {
                 row["status"]: row["n"] for row in con.execute(
@@ -1338,7 +1406,7 @@ class WorkStore:
             missing_body_status = con.execute(
                 """
                 SELECT COUNT(DISTINCT CASE WHEN t.status='done' THEN t.id END) AS done_tus,
-                       COUNT(DISTINCT CASE WHEN f.status!='todo' THEN f.name END) AS recorded_funcs
+                       COUNT(DISTINCT CASE WHEN f.status NOT IN ('todo','external') THEN f.name END) AS recorded_funcs
                 FROM audit_finding a
                 JOIN func f ON f.name=a.name
                 JOIN tu t ON t.id=f.tu_id
@@ -1549,12 +1617,14 @@ class WorkStore:
                     "description": row["description"],
                     "total": row["total"],
                     "done": row["done"],
+                    "external": row["external"],
                 }
                 for row in con.execute(
                     """
                     SELECT g.name, g.category, g.source, g.description,
                            COUNT(gt.tu_id) AS total,
-                           SUM(CASE WHEN t.status='done' THEN 1 ELSE 0 END) AS done
+                           SUM(CASE WHEN t.status='done' THEN 1 ELSE 0 END) AS done,
+                           SUM(CASE WHEN t.status='external' THEN 1 ELSE 0 END) AS external
                     FROM goal g
                     LEFT JOIN goal_tu gt ON gt.goal_name=g.name
                     LEFT JOIN tu t ON t.id=gt.tu_id
@@ -1578,6 +1648,8 @@ class WorkStore:
                     "funcs": total_funcs,
                     "done_tus": counts["done"],
                     "done_funcs": done_funcs,
+                    "external_tus": counts["external"],
+                    "external_funcs": function_status_counts.get("external", 0),
                     "unidentified_funcs": unidentified_funcs,
                     "identified_funcs": total_funcs - unidentified_funcs,
                     "linked_tus": linked_tus,
@@ -1611,9 +1683,10 @@ class WorkStore:
             # Keep all queries on one SQLite read snapshot, even during imports.
             con.execute("BEGIN")
             counts = {
-                row["tu_id"]: (row["n"], row["recorded"])
+                row["tu_id"]: (row["n"], row["recorded"], row["external"])
                 for row in con.execute(
-                    "SELECT tu_id, COUNT(*) AS n, SUM(status != 'todo') AS recorded "
+                    "SELECT tu_id, COUNT(*) AS n, SUM(status NOT IN ('todo','external')) AS recorded, "
+                    "SUM(status='external') AS external "
                     "FROM func GROUP BY tu_id"
                 )
             }
@@ -1626,27 +1699,30 @@ class WorkStore:
                     functions[row["tu_id"]].append({"name": row["name"], "status": row["status"]})
             units = []
             totals = dict(tus=0, funcs=0, done_tus=0, done_funcs=0,
-                          linked_tus=0, unidentified_funcs=0)
+                          linked_tus=0, unidentified_funcs=0, external_tus=0, external_funcs=0)
             for row in con.execute(
                 "SELECT id, source, dest_path, status, linked FROM tu ORDER BY id"
             ):
                 tu_id = row["id"]
-                n_funcs, recorded = counts.get(tu_id, (0, 0))
+                n_funcs, recorded, external = counts.get(tu_id, (0, 0, 0))
                 unidentified = row["source"] == UNIDENTIFIED_SOURCE
                 units.append({
                     "id": tu_id, "source": row["source"], "dest_path": row["dest_path"],
                     "status": row["status"], "linked": bool(row["linked"]),
                     "unidentified": unidentified, "function_count": n_funcs,
                     "recorded_funcs": recorded, "goals": goals.get(tu_id, []),
+                    "external_funcs": external,
                     "functions": functions.get(tu_id, []) if include_functions else None,
                 })
                 totals["funcs"] += n_funcs
                 totals["done_funcs"] += recorded
+                totals["external_funcs"] += external
                 if unidentified:
                     totals["unidentified_funcs"] += n_funcs
                 else:
                     totals["tus"] += 1
                     totals["done_tus"] += row["status"] == "done"
+                    totals["external_tus"] += row["status"] == "external"
                     totals["linked_tus"] += bool(row["linked"])
             return {"units": units, "totals": totals,
                     "include_functions": include_functions, "server_time": iso()}
@@ -1716,7 +1792,7 @@ class WorkStore:
 
             remaining: list[dict[str, Any]] = []
             for row in rows:
-                if row["status"] == "done":
+                if row["status"] in SATISFIED_STATUSES:
                     continue
                 item = self._dashboard_tu(row)
                 remaining.append(item)
@@ -1742,7 +1818,7 @@ class WorkStore:
             for item in remaining:
                 scoped_deps = {dep_id for dep_id in dep_map.get(item["id"], set()) if dep_id in scope}
                 unresolved = [
-                    dep_id for dep_id in scoped_deps if status_by_tu.get(dep_id) != "done"
+                    dep_id for dep_id in scoped_deps if status_by_tu.get(dep_id) not in SATISFIED_STATUSES
                 ]
                 item["total_deps"] = len(scoped_deps)
                 item["unresolved_deps"] = len(unresolved)
@@ -1772,7 +1848,8 @@ class WorkStore:
                 "description": goal["description"],
                 "total": total,
                 "done": done,
-                "remaining_count": total - done,
+                "external": counts.get("external", 0),
+                "remaining_count": total - done - counts.get("external", 0),
                 "counts": counts,
                 "ready": ready,
                 "active": active,
@@ -2214,7 +2291,7 @@ class WorkStore:
             ):
                 if scope is not None and row["dep_id"] not in scope:
                     continue
-                if row["dep_status"] != "done":
+                if row["dep_status"] not in SATISFIED_STATUSES:
                     counts[row["tu_id"]] += 1
         return counts
 
@@ -2237,9 +2314,10 @@ class WorkStore:
                     updated_at=?
                 WHERE id=? AND status != ?
                   AND status NOT IN ('in_progress','compiled')
+                  AND (status!='external' OR ?='external')
                   AND COALESCE(owner, '')='' AND lease_expires_at IS NULL
                 """,
-                (tu_status, data.get("notes"), iso(), tu_id, tu_status),
+                (tu_status, data.get("notes"), iso(), tu_id, tu_status, tu_status),
             )
             rows += cur.rowcount
         for name, data in status.get("func", {}).items():
@@ -2248,12 +2326,12 @@ class WorkStore:
                     SELECT 1 FROM tu WHERE tu.id=func.tu_id AND
                     (tu.status IN ('in_progress','compiled') OR COALESCE(tu.owner, '')!=''
                      OR tu.lease_expires_at IS NOT NULL)
-                ) AND
+                ) AND (status!='external' OR ?='external') AND
                 CASE ? WHEN 'reviewed' THEN 3 WHEN 'compiles' THEN 2 WHEN 'compiled' THEN 2
                        WHEN 'recovered' THEN 1 ELSE 0 END >=
                 CASE status WHEN 'reviewed' THEN 3 WHEN 'compiles' THEN 2 WHEN 'compiled' THEN 2
                             WHEN 'recovered' THEN 1 ELSE 0 END""",
-                (data.get("status", "todo"), name, data.get("status", "todo")),
+                (data.get("status", "todo"), name, data.get("status", "todo"), data.get("status", "todo")),
             )
         return rows
 
@@ -2537,7 +2615,7 @@ class WorkStore:
             f"""
             SELECT d.tu_id,
                    COUNT(*) AS total_deps,
-                   SUM(CASE WHEN COALESCE(t.status, 'todo') != 'done' THEN 1 ELSE 0 END)
+                   SUM(CASE WHEN COALESCE(t.status, 'todo') NOT IN ('done','external') THEN 1 ELSE 0 END)
                      AS unresolved_deps
             FROM tu_dep d
             LEFT JOIN tu t ON t.id=d.dep_id

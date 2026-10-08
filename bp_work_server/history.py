@@ -53,9 +53,11 @@ SERIES: dict[str, str | None] = {
     "tu_compiled": "tu_total",
     "tu_in_progress": "tu_total",
     "tu_blocked": "tu_total",
+    "tu_external": "tu_total",
     "tu_todo": "tu_total",
     "tu_linked": "tu_total",
     "funcs_done": "funcs_total",
+    "funcs_external": "funcs_total",
     "funcs_named_uncovered": "funcs_total",
     "funcs_unidentified": "funcs_total",
     "paired": "funcs_total",
@@ -84,7 +86,8 @@ def metrics(con: sqlite3.Connection, linked_known: bool = True) -> dict[str, Any
     unidentified = con.execute(
         f"SELECT COUNT(*) FROM func f JOIN tu ON tu.id=f.tu_id WHERE NOT {NOT_UNIDENTIFIED}"
     ).fetchone()[0]
-    done_funcs = con.execute("SELECT COUNT(*) FROM func WHERE status!='todo'").fetchone()[0]
+    done_funcs = con.execute("SELECT COUNT(*) FROM func WHERE status NOT IN ('todo','external')").fetchone()[0]
+    external_funcs = con.execute("SELECT COUNT(*) FROM func WHERE status='external'").fetchone()[0]
     linked = con.execute(
         f"SELECT COUNT(*) FROM tu WHERE linked=1 AND {NOT_UNIDENTIFIED_BARE}"
     ).fetchone()[0]
@@ -94,11 +97,13 @@ def metrics(con: sqlite3.Connection, linked_known: bool = True) -> dict[str, Any
         "tu_compiled": counts.get("compiled", 0),
         "tu_in_progress": counts.get("in_progress", 0),
         "tu_blocked": counts.get("blocked", 0),
+        "tu_external": counts.get("external", 0),
         "tu_todo": counts.get("todo", 0),
         "tu_linked": linked if linked_known else None,
         "funcs_total": funcs_total,
         "funcs_done": done_funcs,
-        "funcs_named_uncovered": max(0, funcs_total - done_funcs - unidentified),
+        "funcs_external": external_funcs,
+        "funcs_named_uncovered": max(0, funcs_total - done_funcs - external_funcs - unidentified),
         "funcs_unidentified": unidentified,
     }
 

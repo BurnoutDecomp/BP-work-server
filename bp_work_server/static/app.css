@@ -27,6 +27,7 @@
   --accent-2: var(--gold);
 
   --green: #6fcf57;
+  --purple: #b294df;
   --blue: #57a8e0;
   --amber: #e3a52c;
 
@@ -726,6 +727,7 @@ h2::before {
   filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.18));
 }
 .seg-green { stroke: var(--green); }
+.seg-purple { stroke: var(--purple); }
 .seg-gold { stroke: var(--gold); }
 .seg-blue { stroke: var(--blue); }
 .seg-red { stroke: var(--red-bright); }
@@ -734,6 +736,13 @@ h2::before {
 .seg-grey { stroke: #4a423b; }
 .seg-dim { stroke: #2e2926; }
 .sw-green { background: var(--green); }
+.sw-purple { background: var(--purple); }
+
+.pill.external, .chip.external {
+  color: var(--purple);
+  border-color: var(--purple);
+  background-color: rgba(178, 148, 223, 0.1);
+}
 .sw-gold { background: var(--gold); }
 .sw-blue { background: var(--blue); }
 .sw-red { background: var(--red-bright); }

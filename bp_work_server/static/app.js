@@ -304,6 +304,7 @@ function render(data) {
   const tus = Number(totals.tus || 0);
   setDonut("tu", [
     { label: "done", value: counts.done, color: "green" },
+    { label: "external", value: counts.external, color: "purple", title: "Supplied by existing vendor source or a host platform implementation; not counted as decompiled." },
     { label: "compiled", value: counts.compiled, color: "gold" },
     { label: "in progress", value: counts.in_progress, color: "blue" },
     { label: "blocked", value: counts.blocked, color: "red" },
@@ -312,11 +313,13 @@ function render(data) {
 
   const funcs = Number(totals.funcs || 0);
   const covered = Number(totals.done_funcs || 0);
+  const external = Number(totals.external_funcs || 0);
   const unidentified = Number(totals.unidentified_funcs || 0);
   state.funcTotals = { funcs, unidentified };
   setDonut("fn", [
     { label: "recorded", value: covered, color: "gold" },
-    { label: "named, unrecorded", value: Math.max(0, funcs - covered - unidentified), color: "grey" },
+    { label: "external", value: external, color: "purple", title: "Provided by vendor source or the host platform; excluded from recorded reconstruction coverage." },
+    { label: "named, unrecorded", value: Math.max(0, funcs - covered - external - unidentified), color: "grey" },
     { label: "unidentified", value: unidentified, color: "dim",
       title: "Functions IDA found in the binary that nobody has named: no DWARF file, no RTTI class, so no translation unit — but still code to write." },
   ], totals.func_percent, `${fmtInt(covered)} / ${fmtInt(funcs)} recorded`);
@@ -337,8 +340,8 @@ function render(data) {
       : "";
   }
   text("tuEvidenceNote", ledgerEvidence.done_tus_with_missing_bodies
-    ? `Ledger status · ${fmtInt(ledgerEvidence.done_tus_with_missing_bodies)} done TUs have missing-body audit findings.`
-    : "Recorded status from the work ledger.");
+    ? `Ledger status · ${fmtInt(ledgerEvidence.done_tus_with_missing_bodies)} done TUs have missing-body audit findings. ${fmtInt(counts.external)} external TUs are supplied separately.`
+    : `Ledger status · ${fmtInt(counts.external)} external TUs are supplied separately, outside the done count.`);
   text("fnEvidenceNote", ledgerEvidence.recorded_funcs_with_missing_bodies
     ? `${fmtInt(ledgerEvidence.recorded_funcs_with_missing_bodies)} recorded functions have missing-body audit findings; these require source review.`
     : "");
@@ -1302,6 +1305,7 @@ const STATUS_LABELS = {
   compiled: "compiled",
   done: "done",
   blocked: "blocked",
+  external: "external",
 };
 
 function statusPill(status) {
@@ -2336,7 +2340,7 @@ function renderGoalDetail(goal) {
   body.appendChild(overview);
 
   const status = detailSection("Status Breakdown");
-  for (const key of ["todo", "in_progress", "compiled", "blocked", "done"]) {
+  for (const key of ["todo", "in_progress", "compiled", "blocked", "done", "external"]) {
     const row = div("dep-row");
     row.appendChild(statusPill(key));
     row.appendChild(span("dep-name", `${fmtInt(counts[key] || 0)} TUs`));
@@ -3221,9 +3225,11 @@ const EVOLUTION_SERIES = [
   { group: "Translation units", key: "tu_compiled", label: "compiled", color: "#e3a52c", of: "tu_total" },
   { group: "Translation units", key: "tu_in_progress", label: "in progress", color: "#57a8e0", of: "tu_total" },
   { group: "Translation units", key: "tu_blocked", label: "blocked", color: "#ec1c24", of: "tu_total" },
+  { group: "Translation units", key: "tu_external", label: "external", color: "#b294df", of: "tu_total" },
   { group: "Translation units", key: "tu_todo", label: "todo", color: "#8a7f72", of: "tu_total" },
   { group: "Translation units", key: "tu_total", label: "tracked", color: "#d9cfc0", of: null },
   { group: "Functions", key: "funcs_done", label: "covered", color: "#f2b53f", of: "funcs_total" },
+  { group: "Functions", key: "funcs_external", label: "external", color: "#b294df", of: "funcs_total" },
   { group: "Functions", key: "funcs_named_uncovered", label: "named, uncovered", color: "#a08e6c", of: "funcs_total" },
   { group: "Functions", key: "funcs_unidentified", label: "unidentified", color: "#6a6159", of: "funcs_total" },
   { group: "Functions", key: "funcs_total", label: "in the binary", color: "#efe6d2", of: null },

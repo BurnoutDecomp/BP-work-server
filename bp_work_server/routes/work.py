@@ -193,6 +193,24 @@ def unblock(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/tu/{tu_id:path}/external", status_code=status.HTTP_204_NO_CONTENT)
+def external(
+    tu_id: str,
+    req: BlockRequest,
+    request: Request,
+    store: WorkStore = Depends(get_store),
+    identity: str | None = Depends(worker_identity),
+) -> Response:
+    try:
+        store.mark_external(tu_id, identity or req.agent, req.reason)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    invalidate_dashboard_cache(request)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post("/tu/{tu_id:path}/reset", status_code=status.HTTP_204_NO_CONTENT)
 def reset_tu(
     tu_id: str,

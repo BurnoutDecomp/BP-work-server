@@ -10,7 +10,7 @@ from bp_work_server.store import iso
 
 KEY = "source_status_state"
 GAP_NOTE = re.compile(r"un[- ]?homed|not homed|missing|not reconstructed|not bodied|stub|keystone|deferred|nothing committed|blocked on", re.IGNORECASE)
-REVIEW_NOTE = re.compile(r"review (?:fail|reject)|semantic (?:bug|mismatch)|incorrect|regression|\bwrong\b|\bparity\b|divergen", re.IGNORECASE)
+REVIEW_NOTE = re.compile(r"review (?:fail|reject)|semantic (?:bug|mismatch|gap)|incorrect|regression|\bwrong\b|\bparity\b|divergen", re.IGNORECASE)
 
 
 def initial_base(con):
@@ -45,7 +45,7 @@ def apply(store, evidence):
         funcs = {r["name"]: dict(r) for r in con.execute("SELECT name,tu_id,status FROM func")}
         tus = {r["id"]: dict(r) for r in con.execute("SELECT id,status,owner,lease_expires_at,notes FROM tu")}
         protected = {name for name, r in tus.items()
-                     if r["status"] in ("in_progress", "compiled") or r["owner"] or r["lease_expires_at"]}
+                     if r["status"] in ("in_progress", "compiled", "external") or r["owner"] or r["lease_expires_at"]}
         present = evidence["functions"]
         complete = evidence["tus"]
         required = {}
