@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { buildTree, layoutTree, colorKey } = require("../bp_work_server/static/progress-map.js");
+const { buildTree, layoutTree, colorKey, MapController } = require("../bp_work_server/static/progress-map.js");
 
 const snapshot = { units: [
   { id: "GameSource/Open.cpp", status: "blocked", linked: true, source: "decfigs", goals: ["boot"],
@@ -15,6 +15,16 @@ const snapshot = { units: [
     function_count: 1, recorded_funcs: 0, functions: [{ name: "sub_100", status: "todo" }] },
 ] };
 const leaves = (tree) => tree.children ? tree.children.flatMap(leaves) : [tree];
+
+test("returning from a list restores the map count on an unchanged snapshot", () => {
+  const controller = Object.create(MapController.prototype);
+  const filters = {};
+  controller.signature = JSON.stringify(["linked", filters, snapshot.units]);
+  let summaryRefreshes = 0;
+  controller.renderSummary = () => { summaryRefreshes++; };
+  controller.update(snapshot, "linked", filters);
+  assert.equal(summaryRefreshes, 1);
+});
 
 test("build view uses confirmed providers and counts overlap once", () => {
   const units = [

@@ -222,7 +222,12 @@
 
     update(snapshot, mode, filters) {
       const signature = JSON.stringify([mode, filters, snapshot.units]);
-      if (signature === this.signature) return;
+      if (signature === this.signature) {
+        // List view may have replaced the shared results badge while this map
+        // was hidden. Restore its summary even when geometry is unchanged.
+        this.renderSummary();
+        return;
+      }
       this.signature = signature;
       if (mode !== this.mode) this.selectedId = null;
       this.mode = mode;
