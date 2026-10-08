@@ -19,6 +19,7 @@ def sync_workflow_repo(
     workflow_root: str | Path | None = None,
     branch: str | None = None,
     reset: bool = False,
+    metadata_only: bool = False,
 ) -> dict[str, Any]:
     repo_url = repo_url or os.environ.get("BP_WORKFLOW_REPO", DEFAULT_WORKFLOW_REPO)
     workflow_root = Path(
@@ -45,7 +46,9 @@ def sync_workflow_repo(
         )
 
     commit = _run(["git", "-C", str(workflow_root), "rev-parse", "HEAD"]).strip()
-    result = store.import_workflow(workflow_root, reset=reset)
+    if metadata_only and reset:
+        raise ValueError("metadata-only sync cannot reset live state")
+    result = store.import_workflow(workflow_root, reset=reset, restore_status=not metadata_only)
     return {
         **result,
         "repo_url": repo_url,

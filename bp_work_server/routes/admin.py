@@ -9,6 +9,7 @@ from bp_work_server.models import (
     ImportResponse,
     SyncRequest,
     SyncResponse,
+    SourceStatusRequest,
     WorkerCreateRequest,
     WorkerListResponse,
     WorkerResponse,
@@ -18,6 +19,23 @@ from bp_work_server.store import WorkStore
 
 router = APIRouter(prefix="/admin")
 log = logging.getLogger(__name__)
+
+
+@router.post("/source-status")
+def reconcile_source_status(
+    req: SourceStatusRequest,
+    request: Request,
+    _admin: str = Depends(require_admin_worker),
+    store: WorkStore = Depends(get_store),
+) -> dict:
+    from bp_work_server import source_status
+
+    try:
+        result = source_status.apply(store, req.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    invalidate_dashboard_cache(request)
+    return result
 
 
 @router.post("/workers", response_model=WorkerResponse, status_code=status.HTTP_201_CREATED)
@@ -92,7 +110,10 @@ def sync_workflow(
     try:
         import bp_work_server.api as api
 
-        result = api.sync_workflow_repo(store, branch=req.branch, reset=req.reset)
+        options = {"branch": req.branch, "reset": req.reset}
+        if req.metadata_only:
+            options["metadata_only"] = True
+        result = api.sync_workflow_repo(store, **options)
         # Bring the attribution clone to the same tip the workflow just advanced to,
         # so contribution numbers reflect the synced revision (not a TTL-stale clone).
         decomp = getattr(request.app.state, "decomp", None)
@@ -103,5 +124,7 @@ def sync_workflow(
         return result
     except RuntimeError as exc:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc

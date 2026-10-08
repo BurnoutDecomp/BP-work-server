@@ -324,6 +324,16 @@ function render(data) {
     ? `Ledger: ${recordedStates.map(([status, count]) => `${fmtInt(count)} ${status === "compiles" ? "compiled" : status}`).join(" · ")}`
     : "Coverage recorded in the work ledger.");
   const ledgerEvidence = data.ledger_evidence || {};
+  const syncNote = el("sourceSyncNote");
+  if (syncNote) {
+    syncNote.hidden = !ledgerEvidence.source_commit;
+    const latestSource = (data.decomp_repo || {}).revision;
+    syncNote.textContent = ledgerEvidence.source_commit
+      ? (latestSource && latestSource !== ledgerEvidence.source_commit
+        ? `Source update pending · showing b5 ${String(ledgerEvidence.source_commit).slice(0, 10)}`
+        : `Source reconciled: b5 ${String(ledgerEvidence.source_commit).slice(0, 10)} · ${relTime(ledgerEvidence.reconciled_at)}`)
+      : "";
+  }
   text("tuEvidenceNote", ledgerEvidence.done_tus_with_missing_bodies
     ? `Ledger status · ${fmtInt(ledgerEvidence.done_tus_with_missing_bodies)} done TUs have missing-body audit findings.`
     : "Recorded status from the work ledger.");

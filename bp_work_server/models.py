@@ -128,6 +128,7 @@ class SyncRequest(BaseModel):
     branch: str | None = None
     commit: str | None = None
     reset: bool = False
+    metadata_only: bool = False
 
 
 class SyncResponse(ImportResponse):
@@ -135,6 +136,26 @@ class SyncResponse(ImportResponse):
     workflow_root: str
     branch: str
     commit: str
+
+
+class SourceFunctionEvidence(BaseModel):
+    digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    file: str = Field(min_length=1)
+    line: int = Field(ge=1)
+
+
+class SourceTuEvidence(BaseModel):
+    digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    functions: list[str] = Field(min_length=1)
+
+
+class SourceStatusRequest(BaseModel):
+    version: Literal[1]
+    source_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
+    base_source_commit: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    inputs_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    functions: dict[str, SourceFunctionEvidence]
+    tus: dict[str, SourceTuEvidence]
 
 
 class WorkerCreateRequest(BaseModel):

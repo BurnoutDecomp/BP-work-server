@@ -237,7 +237,8 @@ class WorkStore:
             con.execute("DROP TABLE IF EXISTS worker")
 
     def import_workflow(
-        self, workflow_root: str | Path, reset: bool = False, record_history: bool = True
+        self, workflow_root: str | Path, reset: bool = False, record_history: bool = True,
+        restore_status: bool = True,
     ) -> dict[str, int]:
         progress = Path(workflow_root) / "progress"
         tu_index_path = progress / "tu_index.json"
@@ -360,7 +361,7 @@ class WorkStore:
             unidentified_count = self._restore_unidentified(
                 con, unidentified_tu_id, unidentified
             )
-            status_rows = self._restore_status(con, status)
+            status_rows = self._restore_status(con, status) if restore_status else 0
             dep_count = self._restore_deps(con, deps)
             goal_count = self._restore_goals(con, goals)
             linked_count = self._restore_linked(con, workflow_root)
@@ -1344,6 +1345,11 @@ class WorkStore:
                 WHERE json_array_length(a.findings_json, '$.NO_BODY') > 0
                 """
             ).fetchone()
+            source_sync = con.execute(
+                """SELECT json_extract(value, '$.source_commit') AS commit_hash,
+                          json_extract(value, '$.applied_at') AS applied_at
+                   FROM meta WHERE key='source_status_state'"""
+            ).fetchone()
             linked_tus = con.execute(
                 f"SELECT COUNT(*) FROM tu WHERE linked=1 AND {NOT_UNIDENTIFIED_BARE}"
             ).fetchone()[0]
@@ -1564,6 +1570,8 @@ class WorkStore:
                 "ledger_evidence": {
                     "done_tus_with_missing_bodies": missing_body_status["done_tus"],
                     "recorded_funcs_with_missing_bodies": missing_body_status["recorded_funcs"],
+                    "source_commit": source_sync["commit_hash"] if source_sync else None,
+                    "reconciled_at": source_sync["applied_at"] if source_sync else None,
                 },
                 "totals": {
                     "tus": total_tus,
@@ -2167,23 +2175,33 @@ class WorkStore:
             # Work with stale, lease-less "claims" carried over from status.json.
             if tu_status not in DURABLE_IMPORT_STATUSES:
                 continue
-            # Durable status wins, but the owner/lease from the snapshot is dropped: a
-            # done/blocked TU holds no live claim. The `status != ?` guard keeps re-syncs
-            # from needlessly bumping updated_at on rows that already match.
+            # Preserve work started since the snapshot was exported, including a
+            # compiled item awaiting its worker's review. Re-syncs of equal durable
+            # states also keep their original timestamps.
             cur = con.execute(
                 """
                 UPDATE tu
                 SET status=?, owner=NULL, notes=?, claimed_at=NULL, lease_expires_at=NULL,
                     updated_at=?
                 WHERE id=? AND status != ?
+                  AND status NOT IN ('in_progress','compiled')
+                  AND COALESCE(owner, '')='' AND lease_expires_at IS NULL
                 """,
                 (tu_status, data.get("notes"), iso(), tu_id, tu_status),
             )
             rows += cur.rowcount
         for name, data in status.get("func", {}).items():
             con.execute(
-                "UPDATE func SET status=? WHERE name=?",
-                (data.get("status", "todo"), name),
+                """UPDATE func SET status=? WHERE name=? AND NOT EXISTS (
+                    SELECT 1 FROM tu WHERE tu.id=func.tu_id AND
+                    (tu.status IN ('in_progress','compiled') OR COALESCE(tu.owner, '')!=''
+                     OR tu.lease_expires_at IS NOT NULL)
+                ) AND
+                CASE ? WHEN 'reviewed' THEN 3 WHEN 'compiles' THEN 2 WHEN 'compiled' THEN 2
+                       WHEN 'recovered' THEN 1 ELSE 0 END >=
+                CASE status WHEN 'reviewed' THEN 3 WHEN 'compiles' THEN 2 WHEN 'compiled' THEN 2
+                            WHEN 'recovered' THEN 1 ELSE 0 END""",
+                (data.get("status", "todo"), name, data.get("status", "todo")),
             )
         return rows
 

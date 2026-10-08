@@ -29,6 +29,13 @@ from bp_work_server.store import WorkStore
 router = APIRouter()
 
 
+@router.get("/api/source-status")
+def source_status_summary(store: WorkStore = Depends(get_store)) -> dict:
+    from bp_work_server import source_status
+
+    return source_status.summary(store)
+
+
 def attribution_service(request: Request, store: WorkStore) -> AttributionService:
     return AttributionService(store, request.app.state.decomp)
 

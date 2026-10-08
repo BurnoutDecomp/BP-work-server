@@ -96,6 +96,8 @@ def test_dashboard_distinguishes_ledger_coverage_and_source_findings(tmp_path):
     assert data["ledger_evidence"] == {
         "done_tus_with_missing_bodies": 1,
         "recorded_funcs_with_missing_bodies": 2,
+        "source_commit": None,
+        "reconciled_at": None,
     }
 
 

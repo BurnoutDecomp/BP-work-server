@@ -329,6 +329,25 @@ in the background. A later request will pick up the warmed attribution data.
 
 ## `work.py` Integration
 
+Committed source also updates the ledger through CI. Each commit pushed to `dev`
+is dispatched to the queued workflow, which runs the source audits, builds
+`progress/source_status.json`, and calls `POST /admin/source-status` with the admin
+publisher token. Only exact, unambiguous scoped definitions without stub-inventory
+findings count as new `recovered` functions; complete named TU sets can close
+source-reconstruction gaps. This does not create a review verdict.
+
+`GET /api/source-status` exposes the last reconciled source commit, input fingerprint,
+timestamp and changes. Replays are idempotent and stale compare-and-swap revisions
+are rejected. Claims, compiled work, semantic review blockers and later explicit
+review decisions are preserved. Only automatically managed records are reopened
+when their source disappears or becomes a stub candidate.
+
+`POST /admin/sync` accepts `metadata_only: true` to refresh ledger membership before
+source reconciliation without replaying an older status mirror. The reconciled
+durable ledger is then exported, committed, and synced normally. An hourly
+freshness check repairs missed deliveries, failed publication, or changed inputs.
+Executable instruction metrics continue to describe the most recently published build.
+
 The server is **optional and invite-only**: the local workflow runs fully standalone and
 is only coordinated when `WORK_SERVER` is set. Config lives in a repo-root `.env` (copy
 `.env.example`), which `work` auto-loads — not shell exports. Only people given the URL
