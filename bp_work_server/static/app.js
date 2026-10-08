@@ -1356,6 +1356,7 @@ function syncStatusOptions() {
   const list =
     state.explorer.tab === "funcs" ? state.explorer.funcStatuses : state.explorer.tuStatuses;
   fillSelect("filterStatus", list, "All statuses");
+  el("filterStatus").value = state.explorer.status;
 }
 
 function explorerParams() {
@@ -1722,7 +1723,8 @@ function initExplorer() {
     const btn = e.target.closest(".tab");
     if (!btn) return;
     ex.tab = btn.dataset.tab;
-    ex.status = "";
+    const statuses = ex.tab === "funcs" ? ex.funcStatuses : ex.tuStatuses;
+    if (!statuses.includes(ex.status)) ex.status = "";
     saveExplorerView();
     syncExplorerView();
     syncStatusOptions();
@@ -2449,6 +2451,11 @@ function enhanceSelect(sel) {
   const markSelected = () => {
     [...menu.children].forEach((li, i) => li.classList.toggle("selected", i === sel.selectedIndex));
   };
+
+  sel.addEventListener("change", () => {
+    syncLabel();
+    markSelected();
+  });
 
   const buildMenu = () => {
     menu.replaceChildren();
