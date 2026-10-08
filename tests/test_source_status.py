@@ -148,3 +148,13 @@ def test_metadata_import_adds_membership_without_replaying_old_statuses(store, t
     assert tus["A"]["status"] == "done" and funcs["A::Run"] == "reviewed"
     assert tus["New"]["status"] == "todo"
     assert tus["Claim"]["status"] == "in_progress"
+
+
+def test_initial_snapshot_uses_the_existing_audit_revision_as_its_base(store):
+    with store.connect() as con:
+        con.execute("INSERT INTO audit_run(kind,commit_hash,imported_at,stats_json) VALUES('funcaudit',?,?,?)",
+                    ("b" * 40, iso(), "{}"))
+    assert source_status.summary(store)["base_source_commit"] == "b" * 40
+    with pytest.raises(ValueError, match="advanced"):
+        source_status.apply(store, evidence())
+    source_status.apply(store, evidence("c", "b"))

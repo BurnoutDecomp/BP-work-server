@@ -13,11 +13,19 @@ GAP_NOTE = re.compile(r"un[- ]?homed|not homed|missing|not reconstructed|not bod
 REVIEW_NOTE = re.compile(r"review (?:fail|reject)|semantic (?:bug|mismatch)|incorrect|regression|\bwrong\b|\bparity\b|divergen", re.IGNORECASE)
 
 
+def initial_base(con):
+    row = con.execute("SELECT commit_hash FROM audit_run WHERE kind='funcaudit' ORDER BY imported_at DESC,id DESC LIMIT 1").fetchone()
+    value = row[0] if row else None
+    return value if value and re.fullmatch(r"[0-9a-f]{40}", value) else None
+
+
 def summary(store):
     with store.connect() as con:
         row = con.execute("SELECT value FROM meta WHERE key=?", (KEY,)).fetchone()
+        base = initial_base(con)
     state = json.loads(row[0]) if row else {}
-    return {key: state.get(key) for key in ("source_commit", "inputs_hash", "applied_at", "counts")}
+    return {**{key: state.get(key) for key in ("source_commit", "inputs_hash", "applied_at", "counts")},
+            "base_source_commit": state.get("source_commit") or base}
 
 
 def apply(store, evidence):
@@ -32,7 +40,7 @@ def apply(store, evidence):
         previous = json.loads(row[0]) if row else {}
         if previous.get("report_hash") == report_hash:
             return {"source_commit": previous["source_commit"], "unchanged": True}
-        if previous.get("source_commit") != evidence.get("base_source_commit"):
+        if (previous.get("source_commit") or initial_base(con)) != evidence.get("base_source_commit"):
             raise ValueError("Source status advanced while this snapshot was being generated; retry from the current revision")
         funcs = {r["name"]: dict(r) for r in con.execute("SELECT name,tu_id,status FROM func")}
         tus = {r["id"]: dict(r) for r in con.execute("SELECT id,status,owner,lease_expires_at,notes FROM tu")}
