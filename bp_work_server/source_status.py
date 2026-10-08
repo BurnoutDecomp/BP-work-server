@@ -62,6 +62,7 @@ def apply(store, evidence):
                                  and current["tu_id"] in source_tus)
             managed_tus.update({name: tus[name]["notes"] for name in source_tus
                                 if tus[name]["status"] == "done" and name in complete})
+        prior_managed_tus = dict(managed_tus)
         counts = {"functions_recovered": 0, "functions_removed": 0, "tus_completed": 0,
                   "tus_reopened": 0, "protected_tus": len(protected)}
         old_functions = previous.get("functions", {})
@@ -99,9 +100,6 @@ def apply(store, evidence):
             con.execute("UPDATE tu SET status='done',notes=?,updated_at=? WHERE id=?", (note, iso(), name))
             managed_tus[name] = note
             counts["tus_completed"] += 1
-        prior_managed_tus = dict(previous.get("auto_tus", {}))
-        if not previous:
-            prior_managed_tus.update(managed_tus)
         for name, note in prior_managed_tus.items():
             current = tus.get(name)
             if not current:
