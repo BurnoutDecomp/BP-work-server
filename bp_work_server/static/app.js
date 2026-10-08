@@ -2427,6 +2427,9 @@ function verifiedTrend(history) {
   if (points.length < 2) return null;
   const last = points[points.length - 1];
   const prev = points[points.length - 2];
+  if (Number(last.audit_version || 1) !== Number(prev.audit_version || 1)) {
+    return { text: "Audit matching updated; this change in totals is not decomp progress.", cls: "" };
+  }
   const dClean = Number(last.clean || 0) - Number(prev.clean || 0);
   const dWeight = Number(last.weight || 0) - Number(prev.weight || 0);
   // plain words, not signed deltas: "-2 findings" reads as a negative count

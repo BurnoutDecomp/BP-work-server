@@ -738,6 +738,7 @@ def summary(con: sqlite3.Connection, history_limit: int = HISTORY_LIMIT) -> dict
             point.update(
                 {
                     "paired": p,
+                    "audit_version": int(stats.get("audit_version") or 1),
                     "clean": c,
                     "no_body": int(stats.get("no_body") or 0),
                     "weight": int(stats.get("weight") or 0),

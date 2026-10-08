@@ -181,6 +181,7 @@ def test_corrected_same_commit_replaces_rows_without_history_or_credit(tmp_path)
     assert summary["funcaudit"]["weight"] == 1
     assert summary["stubs"]["stubs"] == 1
     assert summary["funcaudit"]["imported_at"] == before["funcaudit"]["imported_at"]
+    assert summary["history"][-1]["audit_version"] == 2
     with store.connect() as con:
         assert con.execute("SELECT COUNT(*) FROM audit_run").fetchone()[0] == 2
         assert con.execute("SELECT COUNT(*) FROM audit_finding").fetchone()[0] == 2
