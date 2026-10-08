@@ -58,6 +58,28 @@ The reason must explain the provider/source. Active or compiled work is protecte
 `POST /tu/{tu_id}/unblock` explicitly returns the TU to reconstruction. External
 decisions survive durable exports, metadata imports and per-commit source audits.
 
+### Build availability
+
+The **Available in Build** view separates linked source (blue), a confirmed
+external provider (purple), and no inclusion evidence (grey). An `external` TU
+status alone is insufficient. `external_build_provider` contains the provider
+name, kind and evidence from active link inputs or mounted/staged PC backends.
+Mappings are explicit; existing source files, dependency checks and comments do
+not establish linkage. Unverified capture, effect and crypto implementations
+remain grey. Provider availability does not certify console SDK feature parity.
+
+Every workflow import refreshes provider evidence from the current build script.
+Removing its library/backend/staged runtime revokes the evidence; an unavailable
+checkout preserves the last imported snapshot. Neither reconstruction statuses
+nor the original `linked` flag are changed to represent an external provider.
+
+Dashboard/map totals expose `source_linked_tus`, `external_build_tus`,
+`available_tus` and `available_percent` (dashboard). `available_tus` is the union:
+a TU supplied externally and also marked linked contributes once, in purple.
+Legacy `linked_tus`/`linked_percent` retain their source-inclusion meaning.
+History adds `tu_source_linked`, `tu_external_build` and `tu_available`; earlier
+points are left unknown rather than inventing historical provider coverage.
+
 ## Endpoints
 
 ### `GET /health`

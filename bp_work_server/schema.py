@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS tu(
   -- compile line (tools/build/build_game_exe.bat) or included by a file that is
   -- (progress/linked_files.json); refreshed on every workflow import.
   linked INTEGER NOT NULL DEFAULT 0,
+  -- JSON evidence for a vendor/platform provider used by the PC build. This does
+  -- not change linked or the reconstruction status; refreshed during import.
+  build_provider TEXT,
   owner TEXT,
   notes TEXT,
   updated_at TEXT,

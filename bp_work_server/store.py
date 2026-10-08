@@ -16,6 +16,7 @@ from typing import Any, Iterable
 
 from bp_work_server import audit, history
 from bp_work_server.build_link import compiled_files, is_linked
+from bp_work_server.build_providers import availability_counts, read_build_providers
 from bp_work_server.models import ClaimResponse, NextTu, StatusCounts, TuRecord
 from bp_work_server.schema import (
     DB_BUSY_TIMEOUT_MS,
@@ -176,6 +177,8 @@ class WorkStore:
                 # Stays 0 until the next workflow import parses the build script.
                 con.execute("ALTER TABLE tu ADD COLUMN linked INTEGER NOT NULL DEFAULT 0")
             self._migrate_external_status(con)
+            if "build_provider" not in tu_cols:
+                con.execute("ALTER TABLE tu ADD COLUMN build_provider TEXT")
             self._backfill_missing_dest_paths(con)
         self._migrate_users()
 
@@ -554,15 +557,19 @@ class WorkStore:
         because a checkout was incomplete.
         """
         compiled = compiled_files(workflow_root)
-        if not compiled:
-            return 0
         linked_ids = [
             (row["id"],)
             for row in con.execute("SELECT id, dest_path FROM tu")
             if is_linked(row["dest_path"], compiled)
         ]
-        con.execute("UPDATE tu SET linked=0 WHERE linked!=0")
-        con.executemany("UPDATE tu SET linked=1 WHERE id=?", linked_ids)
+        if compiled:
+            con.execute("UPDATE tu SET linked=0 WHERE linked!=0")
+            con.executemany("UPDATE tu SET linked=1 WHERE id=?", linked_ids)
+        providers = read_build_providers(workflow_root)
+        if providers is not None:
+            con.execute("UPDATE tu SET build_provider=NULL WHERE build_provider IS NOT NULL")
+            con.executemany("UPDATE tu SET build_provider=? WHERE id=?",
+                            [(json.dumps(proof, sort_keys=True), tu) for tu, proof in providers.items()])
         return len(linked_ids)
 
     def next_tus(self, n: int = 1, goal: str | None = None) -> tuple[str | None, list[NextTu]]:
@@ -1418,9 +1425,8 @@ class WorkStore:
                           json_extract(value, '$.applied_at') AS applied_at
                    FROM meta WHERE key='source_status_state'"""
             ).fetchone()
-            linked_tus = con.execute(
-                f"SELECT COUNT(*) FROM tu WHERE linked=1 AND {NOT_UNIDENTIFIED_BARE}"
-            ).fetchone()[0]
+            build_counts = availability_counts(con)
+            linked_tus = build_counts["linked_tus"]
 
             active_work = [
                 self._dashboard_tu(row)
@@ -1652,7 +1658,8 @@ class WorkStore:
                     "external_funcs": function_status_counts.get("external", 0),
                     "unidentified_funcs": unidentified_funcs,
                     "identified_funcs": total_funcs - unidentified_funcs,
-                    "linked_tus": linked_tus,
+                    **build_counts,
+                    "available_percent": self._percent(build_counts["available_tus"], total_tus),
                     "tu_percent": self._percent(counts["done"], total_tus),
                     "func_percent": self._percent(done_funcs, total_funcs),
                     "linked_percent": self._percent(linked_tus, total_tus),
@@ -1699,19 +1706,22 @@ class WorkStore:
                     functions[row["tu_id"]].append({"name": row["name"], "status": row["status"]})
             units = []
             totals = dict(tus=0, funcs=0, done_tus=0, done_funcs=0,
-                          linked_tus=0, unidentified_funcs=0, external_tus=0, external_funcs=0)
+                          linked_tus=0, unidentified_funcs=0, external_tus=0, external_funcs=0,
+                          source_linked_tus=0, external_build_tus=0, available_tus=0)
             for row in con.execute(
-                "SELECT id, source, dest_path, status, linked FROM tu ORDER BY id"
+                "SELECT id, source, dest_path, status, linked, build_provider FROM tu ORDER BY id"
             ):
                 tu_id = row["id"]
                 n_funcs, recorded, external = counts.get(tu_id, (0, 0, 0))
                 unidentified = row["source"] == UNIDENTIFIED_SOURCE
+                provider = json.loads(row["build_provider"]) if row["status"] == "external" and row["build_provider"] else None
                 units.append({
                     "id": tu_id, "source": row["source"], "dest_path": row["dest_path"],
                     "status": row["status"], "linked": bool(row["linked"]),
                     "unidentified": unidentified, "function_count": n_funcs,
                     "recorded_funcs": recorded, "goals": goals.get(tu_id, []),
                     "external_funcs": external,
+                    "external_build_provider": provider,
                     "functions": functions.get(tu_id, []) if include_functions else None,
                 })
                 totals["funcs"] += n_funcs
@@ -1724,6 +1734,9 @@ class WorkStore:
                     totals["done_tus"] += row["status"] == "done"
                     totals["external_tus"] += row["status"] == "external"
                     totals["linked_tus"] += bool(row["linked"])
+                    totals["external_build_tus"] += bool(provider)
+                    totals["source_linked_tus"] += bool(row["linked"]) and not provider
+                    totals["available_tus"] += bool(row["linked"]) or bool(provider)
             return {"units": units, "totals": totals,
                     "include_functions": include_functions, "server_time": iso()}
 
@@ -2581,6 +2594,8 @@ class WorkStore:
             "n_funcs": row["n_funcs"],
             "n_decfigs": row["n_decfigs"],
             "dest_path": row["dest_path"],
+            "linked": bool(row["linked"]),
+            "external_build_provider": json.loads(row["build_provider"]) if row["status"] == "external" and row["build_provider"] else None,
             "owner": row["owner"] if has_live_claim else None,
             "notes": row["notes"],
             "updated_at": row["updated_at"],

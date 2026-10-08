@@ -3571,6 +3571,7 @@ html::-webkit-scrollbar-corner,
 .explorer-list { padding: 0 20px 18px; }
 .link-state { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .link-state.is-linked { color: var(--blue); }
+.link-state.is-external { color: var(--purple); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 @media (max-width: 700px) {
   /* The tall mobile brand header must scroll away from the map's controls. */

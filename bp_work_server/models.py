@@ -305,6 +305,7 @@ class ProgressMapUnit(BaseModel):
     dest_path: str | None = None
     status: str
     linked: bool
+    external_build_provider: dict[str, Any] | None = None
     unidentified: bool
     function_count: int
     recorded_funcs: int
@@ -321,6 +322,9 @@ class ProgressMapTotals(BaseModel):
     external_tus: int = 0
     external_funcs: int = 0
     linked_tus: int
+    source_linked_tus: int = 0
+    external_build_tus: int = 0
+    available_tus: int = 0
     unidentified_funcs: int
 
 

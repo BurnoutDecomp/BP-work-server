@@ -347,11 +347,15 @@ function render(data) {
     : "");
 
   const linked = Number(totals.linked_tus || 0);
+  const externalBuild = Number(totals.external_build_tus || 0);
+  const sourceLinked = Number(totals.source_linked_tus ?? linked);
+  const available = Number(totals.available_tus ?? (sourceLinked + externalBuild));
   setDonut("exe", [
-    { label: "linked", value: linked, color: "blue" },
-    { label: "not linked", value: Math.max(0, tus - linked), color: "grey",
-      title: "Translation units whose file is not compiled into the game exe yet: not on the compile line, and not included by a file that is." },
-  ], totals.linked_percent, `${fmtInt(linked)} / ${fmtInt(tus)} linked`);
+    { label: "linked source", value: sourceLinked, color: "blue", title: "Source files compiled or included by the build." },
+    { label: "external provider", value: externalBuild, color: "purple", title: "External TUs supplied by a confirmed library or host backend in the build inputs. Separate from reconstructed source; each TU counts once." },
+    { label: "not included", value: Math.max(0, tus - available), color: "grey",
+      title: "No source inclusion or verified external provider found in the build inputs." },
+  ], totals.available_percent ?? totals.linked_percent, `${fmtInt(available)} / ${fmtInt(tus)} available`);
 
   renderAudit(data.audit || {});
   text("activeGoal", data.active_goal || "Whole program");
@@ -1477,7 +1481,7 @@ function setHead(cols) {
 function renderTuRows(items) {
   const linkage = state.explorer.tab === "linked";
   const columns = ["Translation Unit", "Status", "Funcs", "Source", "Unresolved Deps", "Actor"];
-  if (linkage) columns.splice(2, 0, "In executable");
+  if (linkage) columns.splice(2, 0, "Available in build");
   setHead(columns);
   const body = el("explorerBody");
   clearNode(body);
@@ -1518,7 +1522,11 @@ function renderTuRows(items) {
     row.append(name, status, fn, src, deps, owner);
     if (linkage) {
       const linked = document.createElement("td");
-      linked.appendChild(span(`link-state${item.linked ? " is-linked" : ""}`, item.linked ? "Linked" : "Not linked"));
+      const provider = item.external_build_provider;
+      const badge = span(`link-state${provider ? " is-external" : item.linked ? " is-linked" : ""}`,
+                         provider ? "External provider" : item.linked ? "Linked source" : "Not included");
+      badge.title = provider ? provider.name : "Source inclusion evidence from the build.";
+      linked.appendChild(badge);
       row.insertBefore(linked, fn);
     }
     row.addEventListener("click", () => openDetail(item.id));
@@ -2254,6 +2262,13 @@ function renderDetail(d) {
   const facts = detailSection("Overview");
   facts.appendChild(kv("Source", d.source));
   facts.appendChild(kv("Functions", fmtInt(d.n_funcs)));
+  facts.appendChild(kv("Build availability", d.external_build_provider ? "External provider" : d.linked ? "Linked source" : "Not included"));
+  if (d.external_build_provider) {
+    facts.appendChild(kv("Provider", d.external_build_provider.name));
+    for (const proof of d.external_build_provider.evidence || []) {
+      facts.appendChild(kv("Build evidence", `${proof.file}${proof.line ? `:${proof.line}` : ""} · ${proof.detail}`));
+    }
+  }
   facts.appendChild(kv("Decfigs", fmtInt(d.n_decfigs)));
   facts.appendChild(kv("Active claim", d.owner ? actorNode(d.owner) : null));
   if (d.primary_contributor) {
@@ -3241,6 +3256,9 @@ const EVOLUTION_SERIES = [
   { group: "Functions", key: "funcs_unidentified", label: "unidentified", color: "#6a6159", of: "funcs_total" },
   { group: "Functions", key: "funcs_total", label: "in the binary", color: "#efe6d2", of: null },
   { group: "Executable", key: "tu_linked", label: "linked", color: "#57a8e0", of: "tu_total" },
+  { group: "Executable", key: "tu_available", label: "available in build", color: "#d9cfc0", of: "tu_total" },
+  { group: "Executable", key: "tu_source_linked", label: "linked source", color: "#57a8e0", of: "tu_total" },
+  { group: "Executable", key: "tu_external_build", label: "external provider", color: "#b294df", of: "tu_total" },
   { group: "Verified vs console", key: "paired", label: "paired bodies", color: "#b9ad9e", of: "funcs_total" },
   { group: "Verified vs console", key: "clean", label: "clean", color: "#8be07a", of: "paired" },
   { group: "Verified vs console", key: "no_body", label: "named, no body", color: "#ff6b6b", of: "funcs_total" },

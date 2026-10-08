@@ -16,6 +16,20 @@ const snapshot = { units: [
 ] };
 const leaves = (tree) => tree.children ? tree.children.flatMap(leaves) : [tree];
 
+test("build view uses confirmed providers and counts overlap once", () => {
+  const units = [
+    { id: "Source", status: "done", linked: true },
+    { id: "vendor:lua", status: "external", linked: false, external_build_provider: { name: "Lua" } },
+    { id: "class:D3D", status: "external", linked: true, external_build_provider: { name: "D3D9" } },
+    { id: "vendor:crypto", status: "external", linked: false },
+  ].map((u) => ({ ...u, goals: [], function_count: 1, recorded_funcs: 0 }));
+  const map = buildTree({ units }, "linked");
+  assert.deepEqual(map.summary.states, { linked: 1, external: 2, unlinked: 1 });
+  assert.equal(map.summary.items, 4);
+  assert.deepEqual(buildTree({ units }, "linked", { status: "external" }).summary.states,
+                   { external: 2, unlinked: 1 });
+});
+
 test("external source has a distinct color and does not inflate recorded functions", () => {
   const external = { units: [{ id: "vendor:lua", status: "external", linked: false,
     goals: [], function_count: 2, recorded_funcs: 1, external_funcs: 1,

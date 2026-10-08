@@ -56,6 +56,9 @@ SERIES: dict[str, str | None] = {
     "tu_external": "tu_total",
     "tu_todo": "tu_total",
     "tu_linked": "tu_total",
+    "tu_available": "tu_total",
+    "tu_source_linked": "tu_total",
+    "tu_external_build": "tu_total",
     "funcs_done": "funcs_total",
     "funcs_external": "funcs_total",
     "funcs_named_uncovered": "funcs_total",
@@ -91,6 +94,8 @@ def metrics(con: sqlite3.Connection, linked_known: bool = True) -> dict[str, Any
     linked = con.execute(
         f"SELECT COUNT(*) FROM tu WHERE linked=1 AND {NOT_UNIDENTIFIED_BARE}"
     ).fetchone()[0]
+    from bp_work_server.build_providers import availability_counts
+    build_counts = availability_counts(con)
     return {
         "tu_total": tu_total,
         "tu_done": counts.get("done", 0),
@@ -100,6 +105,9 @@ def metrics(con: sqlite3.Connection, linked_known: bool = True) -> dict[str, Any
         "tu_external": counts.get("external", 0),
         "tu_todo": counts.get("todo", 0),
         "tu_linked": linked if linked_known else None,
+        "tu_available": build_counts["available_tus"] if linked_known else None,
+        "tu_source_linked": build_counts["source_linked_tus"] if linked_known else None,
+        "tu_external_build": build_counts["external_build_tus"] if linked_known else None,
         "funcs_total": funcs_total,
         "funcs_done": done_funcs,
         "funcs_external": external_funcs,

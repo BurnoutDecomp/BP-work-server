@@ -20,7 +20,7 @@
     blocked: "Blocked", todo: "Todo", recorded: "Recorded",
     external: "External",
     unrecorded: "Named, unrecorded", unidentified: "Unidentified",
-    linked: "Linked", unlinked: "Not linked",
+    linked: "Linked source", unlinked: "Not included",
   };
   const number = (n) => Number(n || 0).toLocaleString();
   const statusLabel = (s) => s === "compiles" ? "compiled" : String(s).replaceAll("_", " ");
@@ -32,7 +32,7 @@
       if (data.status === "external") return "external";
       return data.status === "todo" ? "unrecorded" : "recorded";
     }
-    if (mode === "linked") return data.linked ? "linked" : "unlinked";
+    if (mode === "linked") return data.unit?.external_build_provider ? "external" : data.linked ? "linked" : "unlinked";
     return data.status;
   }
 
@@ -143,7 +143,7 @@
       }
       return { type: "Translation unit", name: data.tuId,
         meta: `TU status: ${statusLabel(data.status)} · ${number(data.unit.function_count)} tracked functions` +
-          (mode === "linked" ? ` · ${data.linked ? "linked" : "not linked"}` : "") };
+          (mode === "linked" ? ` · ${data.unit.external_build_provider ? `external provider: ${data.unit.external_build_provider.name}` : data.linked ? "linked source" : "no confirmed build provider"}` : "") };
     }
     return { type: "Group", name: data.name,
       meta: `${number(node.value)} ${mode === "funcs" ? "functions" : "function-weighted area"} · select to zoom` };
@@ -255,7 +255,8 @@
       const unitMode = this.mode !== "funcs";
       this.options.onSummary(this.summary, this.mode);
       document.getElementById("mapExplanation").textContent = unitMode
-        ? "One tile = one translation unit. Area = tracked function count; headline percentages count units."
+        ? "One tile = one translation unit. Area = tracked function count; headline percentages count units." +
+          (this.mode === "linked" ? " Purple means a confirmed external provider is included in the PC build inputs." : "")
         : "One tile = one function. Equal weight; colors use each function’s own recorded status.";
       const zero = document.getElementById("mapZeroNote");
       zero.hidden = !unitMode || !this.summary.zeroFunctions;
@@ -263,14 +264,14 @@
       const legend = document.getElementById("mapLegend");
       legend.replaceChildren();
       const keys = this.mode === "funcs" ? ["recorded", "external", "unrecorded", "unidentified"] :
-        this.mode === "linked" ? ["linked", "unlinked"] : ["done", "external", "compiled", "in_progress", "blocked", "todo"];
+        this.mode === "linked" ? ["linked", "external", "unlinked"] : ["done", "external", "compiled", "in_progress", "blocked", "todo"];
       for (const key of keys) {
         const item = document.createElement("span");
         item.className = "map-legend-item";
         const swatch = document.createElement("i");
         swatch.style.background = this.palette[key];
         const label = document.createElement("span");
-        label.textContent = `${labels[key]} ${number(this.summary.states[key])}`;
+        label.textContent = `${this.mode === "linked" && key === "external" ? "External provider" : labels[key]} ${number(this.summary.states[key])}`;
         item.append(swatch, label);
         legend.appendChild(item);
       }

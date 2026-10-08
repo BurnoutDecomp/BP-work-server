@@ -158,7 +158,7 @@
               <small class="metric-note" id="fnEvidenceNote"></small>
             </div>
           </article>
-          <article class="card metric ring-card" title="Translation units whose file is on the game build's compile line (tools/build/build_game_exe.bat)">
+          <article class="card metric ring-card" title="Translation units available through compiled source or a verified external provider in the PC build inputs.">
             <div class="ring" id="exeRing">
               <svg viewBox="0 0 120 120" aria-hidden="true">
                 <circle class="ring-track" cx="60" cy="60" r="52" />
@@ -166,11 +166,11 @@
               </svg>
               <div class="ring-label">
                 <strong id="exePercent">0%</strong>
-                <span>linked</span>
+                <span>available</span>
               </div>
             </div>
             <div class="metric-body">
-              <span class="label">In Executable</span>
+              <span class="label">Available in Build</span>
               <div class="metric-total" id="exeCount">—</div>
               <div class="legend" id="exeLegend"></div>
             </div>
@@ -184,7 +184,7 @@
             <div class="explorer-tabs" id="explorerTabs">
               <button class="tab active" type="button" data-tab="tus" aria-pressed="true">Translation Units</button>
               <button class="tab" type="button" data-tab="funcs" aria-pressed="false">Functions</button>
-              <button class="tab" type="button" data-tab="linked" aria-pressed="false">In Executable</button>
+              <button class="tab" type="button" data-tab="linked" aria-pressed="false">Available in Build</button>
             </div>
             <div class="explorer-view-tools">
               <span id="explorerCount" class="badge">Loading…</span>

@@ -65,6 +65,7 @@ def test_snapshot_distinguishes_unit_status_from_individual_function_status(tmp_
         "tus": 3, "funcs": 6, "done_tus": 1, "done_funcs": 3,
         "linked_tus": 1, "unidentified_funcs": 1,
         "external_tus": 0, "external_funcs": 0,
+        "source_linked_tus": 1, "external_build_tus": 0, "available_tus": 1,
     }
     dashboard = store.dashboard_state()["totals"]
     for key, value in full["totals"].items():
