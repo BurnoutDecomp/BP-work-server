@@ -117,9 +117,9 @@
       </header>
 
       <main>
-        <!-- Headline metrics: four donuts, each split into the states that make up its total -->
+        <!-- Headline metrics: three donuts, each split into the states that make up its total -->
         <section class="metrics" aria-label="Progress summary">
-          <article class="card metric ring-card" title="Every translation unit the ledger tracks, by its declared status.">
+          <article class="card metric ring-card" title="Completion includes done translation units and external implementations, shown separately in the legend.">
             <div class="ring" id="tuRing">
               <svg viewBox="0 0 120 120" aria-hidden="true">
                 <circle class="ring-track" cx="60" cy="60" r="52" />
@@ -127,7 +127,7 @@
               </svg>
               <div class="ring-label">
                 <strong id="tuPercent">0%</strong>
-                <span>done</span>
+                <span>complete</span>
               </div>
             </div>
             <div class="metric-body">
@@ -139,7 +139,7 @@
               <small class="metric-note" id="sourceSyncNote" hidden></small>
             </div>
           </article>
-          <article class="card metric ring-card" title="Every function in the shipped X360 binary, including the ones IDA found but nobody has named yet. Those carry no DWARF file and no RTTI class, so they belong to no translation unit — but they are still code that has to be written.">
+          <article class="card metric ring-card" title="Coverage includes recorded functions and external implementations. The total includes every function in the shipped X360 binary, including unidentified functions.">
             <div class="ring" id="fnRing">
               <svg viewBox="0 0 120 120" aria-hidden="true">
                 <circle class="ring-track" cx="60" cy="60" r="52" />
@@ -147,7 +147,7 @@
               </svg>
               <div class="ring-label">
                 <strong id="fnPercent">0%</strong>
-                <span>recorded</span>
+                <span>covered</span>
               </div>
             </div>
             <div class="metric-body">
@@ -570,6 +570,6 @@
 
     <script src="/static/d3-hierarchy.min.js?v=3.1.2" defer></script>
     <script src="/static/progress-map.js?v=1" defer></script>
-    <script src="/static/app.js?v=38" defer></script>
+    <script src="/static/app.js?v=39" defer></script>
   </body>
 </html>

@@ -302,27 +302,30 @@ function render(data) {
   const counts = data.counts || {};
   text("subtitle", `${fmtInt(totals.tus)} translation units · ${fmtInt(totals.funcs)} functions`);
   const tus = Number(totals.tus || 0);
+  const externalTus = Number(totals.external_tus ?? counts.external ?? 0);
+  const complete = Number(totals.done_tus || 0) + externalTus;
   setDonut("tu", [
     { label: "done", value: counts.done, color: "green" },
-    { label: "external", value: counts.external, color: "purple", title: "Supplied by existing vendor source or a host platform implementation; not counted as decompiled." },
+    { label: "external", value: externalTus, color: "purple", title: "Supplied by existing vendor source or a host platform implementation; counts toward completion." },
     { label: "compiled", value: counts.compiled, color: "gold" },
     { label: "in progress", value: counts.in_progress, color: "blue" },
     { label: "blocked", value: counts.blocked, color: "red" },
     { label: "todo", value: counts.todo, color: "grey" },
-  ], totals.tu_percent, `${fmtInt(totals.done_tus)} / ${fmtInt(tus)} done`);
+  ], tus ? (complete / tus) * 100 : 0, `${fmtInt(complete)} / ${fmtInt(tus)} complete`);
 
   const funcs = Number(totals.funcs || 0);
-  const covered = Number(totals.done_funcs || 0);
+  const recorded = Number(totals.done_funcs || 0);
   const external = Number(totals.external_funcs || 0);
+  const covered = recorded + external;
   const unidentified = Number(totals.unidentified_funcs || 0);
   state.funcTotals = { funcs, unidentified };
   setDonut("fn", [
-    { label: "recorded", value: covered, color: "gold" },
-    { label: "external", value: external, color: "purple", title: "Provided by vendor source or the host platform; excluded from recorded reconstruction coverage." },
-    { label: "named, unrecorded", value: Math.max(0, funcs - covered - external - unidentified), color: "grey" },
+    { label: "recorded", value: recorded, color: "gold" },
+    { label: "external", value: external, color: "purple", title: "Provided by vendor source or the host platform; counts toward coverage." },
+    { label: "named, unrecorded", value: Math.max(0, funcs - covered - unidentified), color: "grey" },
     { label: "unidentified", value: unidentified, color: "dim",
       title: "Functions IDA found in the binary that nobody has named: no DWARF file, no RTTI class, so no translation unit — but still code to write." },
-  ], totals.func_percent, `${fmtInt(covered)} / ${fmtInt(funcs)} recorded`);
+  ], funcs ? (covered / funcs) * 100 : 0, `${fmtInt(covered)} / ${fmtInt(funcs)} covered`);
   const functionStates = data.function_status_counts || {};
   const recordedStates = Object.entries(functionStates).filter(([status, count]) => status !== "todo" && count);
   text("fnStatusNote", recordedStates.length
@@ -340,8 +343,8 @@ function render(data) {
       : "";
   }
   text("tuEvidenceNote", ledgerEvidence.done_tus_with_missing_bodies
-    ? `Ledger status · ${fmtInt(ledgerEvidence.done_tus_with_missing_bodies)} done TUs have missing-body audit findings. ${fmtInt(counts.external)} external TUs are supplied separately.`
-    : `Ledger status · ${fmtInt(counts.external)} external TUs are supplied separately, outside the done count.`);
+    ? `Ledger status · ${fmtInt(ledgerEvidence.done_tus_with_missing_bodies)} done TUs have missing-body audit findings. ${fmtInt(externalTus)} external TUs count toward completion.`
+    : `Ledger status · ${fmtInt(externalTus)} external TUs count toward completion.`);
   text("fnEvidenceNote", ledgerEvidence.recorded_funcs_with_missing_bodies
     ? `${fmtInt(ledgerEvidence.recorded_funcs_with_missing_bodies)} recorded functions have missing-body audit findings; these require source review.`
     : "");
@@ -355,7 +358,7 @@ function render(data) {
     { label: "external provider", value: externalBuild, color: "purple", title: "External TUs supplied by a confirmed library or host backend in the build inputs. Separate from reconstructed source; each TU counts once." },
     { label: "not included", value: Math.max(0, tus - available), color: "grey",
       title: "No source inclusion or verified external provider found in the build inputs." },
-  ], totals.available_percent ?? totals.linked_percent, `${fmtInt(available)} / ${fmtInt(tus)} available`);
+  ], tus ? (available / tus) * 100 : 0, `${fmtInt(available)} / ${fmtInt(tus)} available`);
 
   renderAudit(data.audit || {});
   text("activeGoal", data.active_goal || "Whole program");
@@ -3057,7 +3060,7 @@ function tuAuditSection(d) {
 /* ---------------- Donut rings ---------------- */
 
 // One arc per state. `segments` = [{label, value, color, title}], drawn in order from
-// 12 o'clock; the first segment is the state the centre percentage is about.
+// 12 o'clock. Callers can pass an aggregate percentage for several segments.
 function setDonut(id, segments, percent, totalText) {
   const ring = el(`${id}Ring`);
   if (!ring) return;

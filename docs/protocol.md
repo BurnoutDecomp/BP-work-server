@@ -49,9 +49,14 @@ ids and hands them out privately.
 External TUs satisfy dependency availability. Their unrecorded functions become
 `external`; actual recovered/compiled/reviewed functions retain their statuses.
 `totals.external_tus` and `totals.external_funcs` report these separately from
-`done_tus` and `done_funcs`. They remain in the denominators. Rings, maps,
-filters, goal counts and history use the same distinction. The classification
-identifies the provider; it does not certify parity of every console SDK API.
+`done_tus` and `done_funcs`. They remain in the denominators. Headline TU
+completion combines `done_tus` and `external_tus`; function coverage combines
+`done_funcs` and `external_funcs`. The legends, maps, filters, goal counts and
+history keep reconstruction and external implementations separate. Legacy
+`tu_percent` and `func_percent` still measure reconstruction alone. Headline
+percentages are calculated from the raw counts and rounded once for display.
+The classification identifies the provider; it does not certify parity of
+every console SDK API.
 
 `POST /tu/{tu_id}/external` accepts the same `{agent, reason}` shape as blocking.
 The reason must explain the provider/source. Active or compiled work is protected.
