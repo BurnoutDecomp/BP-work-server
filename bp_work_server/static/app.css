@@ -803,13 +803,6 @@ h2::before {
   text-align: right;
 }
 
-#gapsCard {
-  cursor: default;
-}
-#gapsCard:hover {
-  border-top-color: var(--green);
-}
-
 .ring-fill.tu {
   stroke: var(--red-bright);
 }
