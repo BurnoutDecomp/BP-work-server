@@ -52,6 +52,16 @@ This repo contains an MVP server:
   instruction shape) with per-file drawers that list every function, filterable and
   sortable. The per-TU drawer carries its "Console audit"; one Live Event per commit or
   build that moved the numbers is blamed on the b5-decomp author.
+- The byte-match layer (2026-11-19): b5-decomp's `x360` branch is compiled with the Xbox 360
+  XDK and compared with ARTIST function by function (the workflow repo's `tools/bytematch/`,
+  `work match`). Contributors commit per-object records under `progress/bytematch/`; the
+  workflow repo's `bytematch.yml` joins them with the branch head after every push to `x360`
+  or to the records and publishes `progress/bytematch.json`. The import loads it (skipped when
+  its content is unchanged) into `bytematch_func` / `bytematch_file` / `bytematch_area` /
+  `bytematch_meta`, appends one `bytematch_run` per distinct summary (the history), and logs a
+  `bytematch` event. The dashboard's **Byte matching** panel draws the state ring, the facts,
+  the history, the recently matched functions, the X360 treemap (the progress map's renderer
+  in two X360 modes, units and functions), per-area bars and a filterable function list.
 - Downloads: every build keeps the exe-only bundle CI uploaded beside the merged zip; the
   Download button is a chooser (full game, or the exe/DLL update for anyone who already
   has the assets, with a note on whether the assets changed). Downloads count unique

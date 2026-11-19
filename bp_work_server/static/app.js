@@ -285,6 +285,7 @@ async function refresh() {
     render(await fetchJson("/dashboard/state", 45000));
     setConnection("online", "Live");
     loadEvolution();
+    loadBytematch();
   } catch (error) {
     setConnection("offline", "Disconnected");
     text("subtitle", `Dashboard update failed: ${error.message}`);
@@ -3269,6 +3270,9 @@ const EVOLUTION_SERIES = [
   { group: "Verified vs console", key: "asm_a", label: "same shape (A)", color: "#3ec9b0", of: "asm_scoreable" },
   { group: "Stubs", key: "stubs", label: "stubs", color: "#c084fc", of: null },
   { group: "Stubs", key: "stubs_live", label: "live stubs", color: "#e07aa8", of: null },
+  { group: "Byte matching (X360)", key: "bm_exact", label: "exact functions", color: "#6fcf57", of: "bm_functions" },
+  { group: "Byte matching (X360)", key: "bm_nonmatching", label: "compiled, not matching", color: "#d7742a", of: "bm_functions" },
+  { group: "Byte matching (X360)", key: "bm_exact_bytes", label: "exact code bytes", color: "#3ec9b0", of: "bm_bytes" },
 ];
 const EVOLUTION_DEFAULT_ON = ["tu_done", "funcs_done", "tu_linked", "paired", "clean"];
 const EVOLUTION_STORE_KEY = "bp.evolution";
@@ -4136,4 +4140,447 @@ function initEvidence() {
     state.historyResizeTimer = setTimeout(() => renderVerifiedHistory(state.verifiedHistory || []), 150);
   });
   loadEvidenceList(true);
+}
+
+/* ---------------- Byte matching: the native x360 tree against ARTIST ---------------- */
+// Everything below runs from loadBytematch(), which refresh() calls after its first await:
+// the whole script has evaluated by then, so these consts are initialised.
+const BM_STATES = [
+  { key: "exact", label: "exact", color: "green", pill: "done",
+    title: "The same bytes as ARTIST outside the fields the linker fills in, with the same callees and constants. Click: newest first." },
+  { key: "nonmatching", label: "compiled, not matching", color: "amber", pill: "compiled",
+    title: "The native tree compiles a body for it, but the instructions differ. Click: closest to matching first." },
+  { key: "missing", label: "no compiled body", color: "crimson", pill: "blocked",
+    title: "No object of the native tree defines this function yet. Click: smallest first." },
+  { key: "sdk", label: "XDK library", color: "purple", pill: "external",
+    title: "Byte-identical to a function of the XDK's own libraries: linked, never written." },
+  { key: "unnamed", label: "not yet named", color: "dim", pill: "todo",
+    title: "Functions of the console image without a name; nothing can be paired with them yet." },
+];
+const BM_SORT = { exact: ["first_exact", "desc"], nonmatching: ["score", "desc"], missing: ["size", "asc"] };
+
+function bmState() {
+  if (!state.bytematch) {
+    state.bytematch = {
+      summary: null, loadedAt: 0, wired: false, status: "", area: "", tu: "", q: "",
+      offset: 0, limit: 25, total: 0, items: [], listSeq: 0,
+      map: null, mapMode: "x360tus", mapSnapshot: null, mapLoadedAt: 0, mapInFlight: false,
+    };
+  }
+  return state.bytematch;
+}
+
+async function loadBytematch(force = false) {
+  if (!el("bytematchCard")) return;
+  const bm = bmState();
+  // the summary moves when someone pushes records or the native branch: once a minute is plenty
+  if (!force && bm.loadedAt && Date.now() - bm.loadedAt < 60 * 1000) return;
+  try {
+    const summary = await fetchJson("/api/bytematch/summary", 20000);
+    const changed = !bm.summary || JSON.stringify(bm.summary.meta) !== JSON.stringify(summary.meta);
+    bm.summary = summary;
+    bm.loadedAt = Date.now();
+    wireBytematch();
+    renderBytematch(summary);
+    if (changed || force) {
+      loadBytematchList();
+      loadX360Map(true);
+    }
+  } catch (error) {
+    text("bytematchCount", `Byte-match summary unavailable: ${error.message}`);
+  }
+}
+
+function wireBytematch() {
+  const bm = bmState();
+  if (bm.wired) return;
+  bm.wired = true;
+  const search = el("bytematchSearch");
+  search.addEventListener("input", () => {
+    clearTimeout(bm.searchTimer);
+    bm.searchTimer = setTimeout(() => {
+      bm.q = search.value.trim();
+      bm.offset = 0;
+      loadBytematchList();
+      loadX360Map();
+    }, 250);
+  });
+  el("bmPagePrev").addEventListener("click", () => {
+    bm.offset = Math.max(0, bm.offset - bm.limit);
+    loadBytematchList();
+  });
+  el("bmPageNext").addEventListener("click", () => {
+    if (bm.offset + bm.limit < bm.total) bm.offset += bm.limit;
+    loadBytematchList();
+  });
+  el("x360MapTabs").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-x360mode]");
+    if (!button) return;
+    bm.mapMode = button.dataset.x360mode;
+    for (const b of el("x360MapTabs").querySelectorAll("[data-x360mode]")) {
+      const on = b === button;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
+    loadX360Map();
+  });
+  initX360Map();
+  // the history chart is drawn at its box's width
+  window.addEventListener("resize", () => {
+    clearTimeout(bm.resizeTimer);
+    bm.resizeTimer = setTimeout(() => renderBytematchHistory((bm.summary || {}).history || []), 150);
+  });
+}
+
+function bmFilter(opts = {}) {
+  const bm = bmState();
+  bm.status = opts.status ?? "";
+  bm.area = opts.area ?? "";
+  bm.tu = opts.tu ?? "";
+  bm.q = opts.q ?? "";
+  bm.offset = 0;
+  const search = el("bytematchSearch");
+  if (search) search.value = bm.q;
+  loadBytematchList();
+  loadX360Map();
+  if (opts.scroll !== false) el("bytematchExplorer")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderBytematch(s) {
+  if (!s.available) {
+    setDonut("bytematch", [{ label: "nothing measured yet", value: 1, color: "dim" }], 0, "not measured yet");
+    text("bytematchPercent", "0%");
+    clearNode(el("bytematchFacts"));
+    renderBytematchHistory([]);
+    renderBytematchRecent([]);
+    renderBytematchAreas([]);
+    return;
+  }
+  const game = (s.totals || {}).game || {};
+  const counts = s.status_counts || {};
+  setDonut("bytematch", BM_STATES.map((st) => ({
+    label: st.label, value: Number((counts[st.key] || {}).functions || 0), color: st.color, title: st.title,
+    onClick: () => bmFilter({ status: st.key }),
+  })), Number((s.percent || {}).exact_bytes || 0),
+  `${fmtInt(game.exact)} / ${fmtInt(game.functions)} game functions exact`);
+  renderBytematchFacts(s);
+  renderBytematchHistory(s.history || []);
+  renderBytematchRecent(s.recent || []);
+  renderBytematchAreas(s.areas || []);
+  renderBytematchChips();
+}
+
+function renderBytematchFacts(s) {
+  const host = el("bytematchFacts");
+  if (!host) return;
+  clearNode(host);
+  const meta = s.meta || {};
+  const objects = (s.totals || {}).objects || {};
+  if (meta.b5_commit) {
+    const b = span("badge", `x360 ${String(meta.b5_commit).slice(0, 10)} · ${relTime(meta.generated_at)}`);
+    b.title = `summary built ${fmtTime(meta.generated_at)}${meta.toolchain ? ` · ${meta.toolchain}` : ""}`;
+    host.appendChild(b);
+  }
+  const fact = (n, label, title, cls, onClick) => {
+    const c = document.createElement("button");
+    c.type = "button";
+    c.className = `chip ${cls}`;
+    c.appendChild(span("", n));
+    const l = document.createElement("label");
+    l.textContent = label;
+    c.appendChild(l);
+    if (title) c.title = title;
+    if (onClick) c.addEventListener("click", onClick);
+    host.appendChild(c);
+  };
+  const pctOf = (k) => `${Number((s.percent || {})[k] || 0).toFixed(2)}%`;
+  fact(pctOf("fuzzy_bytes"), "fuzzy code match", "Every game function's fuzzy instruction score, weighted by its size. Exact functions count 100%, missing ones 0%.", "progress");
+  fact(pctOf("image_bytes"), "of the whole image", "Exact game code plus XDK library code, over every function of the console image.", "done");
+  if (objects.sources) {
+    fact(fmtInt(objects.sources - (objects.compiled || 0)), "objects fail to compile",
+      `${fmtInt(objects.sources)} native sources measured; these failed the XDK compile.`, "blocked");
+  }
+  if (objects.stale) {
+    fact(fmtInt(objects.stale), "measured before a source change",
+      "Records whose source file changed on the branch since it was measured. Their verdicts stand until the next measurement.", "todo");
+  }
+  if (meta.verified_commit) {
+    const behind = meta.behind;
+    fact(behind == null ? "?" : fmtInt(behind), "commits since the last full refresh",
+      `Every record was last proven current at x360 ${String(meta.verified_commit).slice(0, 10)}${meta.verified_at ? ` (${fmtTime(meta.verified_at)})` : ""}.`,
+      behind ? "todo" : "compiled");
+  }
+}
+
+function renderBytematchHistory(history) {
+  const host = el("bytematchHistory");
+  if (!host) return;
+  clearNode(host);
+  const points = (history || []).filter((p) => p.functions != null).slice(-365);
+  if (points.length < 2) {
+    const p = points[0];
+    host.appendChild(div("muted-text vh-empty", p
+      ? `One published summary so far (x360 ${String(p.commit || "").slice(0, 10)}: ${fmtInt(p.exact)} exact of ${fmtInt(p.functions)}). The lines start with the next one.`
+      : "No summary published yet."));
+    return;
+  }
+  const ns = "http://www.w3.org/2000/svg";
+  const W = Math.max(220, Math.round(host.clientWidth || 320)), H = 96, padL = 40, padR = 8, padT = 6, padB = 14;
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("width", String(W));
+  svg.setAttribute("height", String(H));
+  const value = (p, key) => key === "compiled" ? Number(p.exact || 0) + Number(p.nonmatching || 0) : Number(p[key] || 0);
+  const series = [
+    { key: "compiled", cls: "vh-paired", area: true },
+    { key: "exact", cls: "vh-clean", area: true },
+    { key: "missing", cls: "vh-nobody", area: false },
+  ];
+  const top = Math.max(1, ...points.map((p) => Math.max(value(p, "compiled"), value(p, "missing"))));
+  const stamps = points.map((p) => Date.parse(p.imported_at || ""));
+  const timed = stamps.every((t) => Number.isFinite(t)) && stamps[stamps.length - 1] > stamps[0];
+  const t0 = timed ? stamps[0] : 0, tSpan = timed ? stamps[stamps.length - 1] - stamps[0] : 1;
+  const x = (i) => padL + ((timed ? (stamps[i] - t0) / tSpan : i / (points.length - 1)) * (W - padL - padR));
+  const y = (v) => padT + (1 - v / top) * (H - padT - padB);
+  for (const sr of series) {
+    const d = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(value(p, sr.key)).toFixed(1)}`).join(" ");
+    if (sr.area) {
+      const a = document.createElementNS(ns, "path");
+      a.setAttribute("class", `${sr.cls}-area`);
+      a.setAttribute("d", `${d} L${x(points.length - 1).toFixed(1)},${(H - padB).toFixed(1)} L${x(0).toFixed(1)},${(H - padB).toFixed(1)} Z`);
+      svg.appendChild(a);
+    }
+    const l = document.createElementNS(ns, "path");
+    l.setAttribute("class", `vh-line ${sr.cls}`);
+    l.setAttribute("d", d);
+    svg.appendChild(l);
+  }
+  for (const [v, label] of [[top, fmtInt(top)], [0, "0"]]) {
+    const t = document.createElementNS(ns, "text");
+    t.setAttribute("x", "0"); t.setAttribute("y", (y(v) + (v ? 3 : 0)).toFixed(1)); t.setAttribute("class", "vh-axis");
+    t.textContent = label;
+    svg.appendChild(t);
+  }
+  points.forEach((p, i) => {
+    const c = document.createElementNS(ns, "circle");
+    c.setAttribute("class", "vh-dot");
+    c.setAttribute("cx", x(i).toFixed(1)); c.setAttribute("cy", y(value(p, "exact")).toFixed(1)); c.setAttribute("r", "2");
+    const title = document.createElementNS(ns, "title");
+    title.textContent = `x360 ${String(p.commit || "").slice(0, 10)} · ${String(p.imported_at || "").slice(0, 16).replace("T", " ")}: ` +
+      `${fmtInt(p.exact)} exact, ${fmtInt(p.nonmatching)} not matching, ${fmtInt(p.missing)} missing of ${fmtInt(p.functions)}`;
+    c.appendChild(title);
+    svg.appendChild(c);
+  });
+  host.appendChild(svg);
+  const lg = div("vp-shape-legend");
+  const a = points[0], b = points[points.length - 1];
+  for (const [cls, label, key] of [["vh-sw-paired", "compiled bodies", "compiled"], ["vh-sw-clean", "exact", "exact"],
+    ["vh-sw-nobody", "no compiled body", "missing"]]) {
+    const item = span("", "");
+    item.appendChild(span(`vh-sw ${cls}`, ""));
+    item.appendChild(document.createTextNode(` ${label} ${fmtInt(value(a, key))} → ${fmtInt(value(b, key))}`));
+    lg.appendChild(item);
+  }
+  host.appendChild(lg);
+}
+
+function renderBytematchRecent(recent) {
+  const host = el("bytematchRecent");
+  if (!host) return;
+  clearNode(host);
+  if (!recent.length) {
+    host.appendChild(div("muted-text", "No function has matched yet."));
+    return;
+  }
+  for (const r of recent.slice(0, 5)) {
+    const li = document.createElement("li");
+    li.appendChild(span("top-n", fmtCompact(r.size)));
+    const body = div("");
+    body.appendChild(div("evidence-file-path", r.name || r.artist));
+    body.appendChild(div("evidence-file-meta", `ARTIST ${r.artist} · ${r.size} bytes · ${relTime(r.at)}`));
+    li.appendChild(body);
+    li.title = `first exact ${fmtTime(r.at)} at x360 ${String(r.commit || "").slice(0, 10)}${r.source ? ` · ${r.source}` : ""}`;
+    li.addEventListener("click", () => bmFilter({ q: r.artist }));
+    host.appendChild(li);
+  }
+}
+
+function renderBytematchAreas(areas) {
+  const host = el("bytematchAreas");
+  if (!host) return;
+  clearNode(host);
+  if (!areas.length) {
+    host.appendChild(div("muted-text", "No areas yet."));
+    return;
+  }
+  for (const a of areas.slice(0, 30)) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "bm-area-row";
+    const exact = a.bytes ? (100 * a.exact_bytes) / a.bytes : 0;
+    const fuzzy = a.bytes ? (100 * a.fuzzy_bytes) / a.bytes : 0;
+    row.appendChild(span("bm-area-name", a.area));
+    const bar = div("bm-bar");
+    const fz = div("bm-bar-fuzzy");
+    fz.style.width = `${Math.min(100, fuzzy).toFixed(2)}%`;
+    const ex = div("bm-bar-exact");
+    ex.style.width = `${Math.min(100, exact).toFixed(2)}%`;
+    bar.append(fz, ex);
+    row.appendChild(bar);
+    row.appendChild(span("bm-area-nums", `${fmtInt(a.exact)} / ${fmtInt(a.functions)} · ${exact.toFixed(1)}%`));
+    row.title = `${a.area}: ${fmtInt(a.exact)} exact, ${fmtInt(a.nonmatching)} not matching, ${fmtInt(a.missing)} missing; ` +
+      `${fmtInt(a.exact_bytes)} of ${fmtInt(a.bytes)} bytes exact, ${fuzzy.toFixed(1)}% fuzzy`;
+    row.addEventListener("click", () => bmFilter({ area: a.area }));
+    host.appendChild(row);
+  }
+  if (areas.length > 30) host.appendChild(div("muted-text", `${fmtInt(areas.length - 30)} smaller areas in the list below.`));
+}
+
+function renderBytematchChips() {
+  const bm = bmState();
+  const host = el("bytematchChips");
+  if (!host) return;
+  clearNode(host);
+  const counts = (bm.summary || {}).status_counts || {};
+  host.appendChild(evidenceChip("all", null, !bm.status, null, () => bmFilter({ area: bm.area, tu: bm.tu, q: bm.q, scroll: false })));
+  for (const st of BM_STATES) {
+    host.appendChild(evidenceChip(st.label, (counts[st.key] || {}).functions || 0, bm.status === st.key, st.color,
+      () => bmFilter({ status: st.key, area: bm.area, tu: bm.tu, q: bm.q, scroll: false })));
+  }
+  for (const [key, label] of [["area", "area"], ["tu", "unit"]]) {
+    if (!bm[key]) continue;
+    host.appendChild(evidenceChip(`${label}: ${bm[key]} ✕`, null, true, null,
+      () => bmFilter({ status: bm.status, q: bm.q, area: key === "area" ? "" : bm.area, tu: key === "tu" ? "" : bm.tu, scroll: false })));
+  }
+}
+
+async function loadBytematchList() {
+  const bm = bmState();
+  const [sort, order] = BM_SORT[bm.status] || ["size", "desc"];
+  const params = new URLSearchParams({ sort, order, limit: String(bm.limit), offset: String(bm.offset) });
+  for (const key of ["status", "area", "tu", "q"]) if (bm[key]) params.set(key, bm[key]);
+  const seq = ++bm.listSeq;
+  renderBytematchChips();
+  try {
+    const page = await fetchJson(`/api/bytematch/functions?${params}`, 20000);
+    if (seq !== bm.listSeq) return;   // a newer filter already asked
+    bm.items = page.items || [];
+    bm.total = page.total || 0;
+    renderBytematchList();
+  } catch (error) {
+    clearNode(el("bytematchList"));
+    el("bytematchList").appendChild(div("muted-text", `Function list unavailable: ${error.message}`));
+  }
+}
+
+function renderBytematchList() {
+  const bm = bmState();
+  const list = el("bytematchList");
+  clearNode(list);
+  list.scrollTop = 0;
+  if (!bm.items.length) {
+    list.appendChild(div("muted-text", (bm.summary || {}).available ? "No functions match." : "Nothing measured yet."));
+  }
+  const pills = Object.fromEntries(BM_STATES.map((s) => [s.key, s]));
+  for (const item of bm.items) {
+    const card = div("evidence-file bm-row");
+    const head = div("evidence-file-head");
+    const left = div("evidence-file-left");
+    left.appendChild(div("evidence-file-path", item.name));
+    const meta = div("evidence-file-meta", "");
+    meta.appendChild(document.createTextNode(`ARTIST ${item.artist} · ${fmtInt(item.size)} bytes`));
+    if (item.source) {
+      meta.appendChild(document.createTextNode(" · "));
+      const a = document.createElement("a");
+      a.href = `https://github.com/${state.repo.owner}/${state.repo.name}/blob/x360/${item.source}`;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = item.source;
+      meta.appendChild(a);
+    } else if (item.tu) {
+      meta.appendChild(document.createTextNode(` · ${item.tu}`));
+    }
+    if (item.first_exact) meta.appendChild(document.createTextNode(` · exact since ${relTime(item.first_exact)}`));
+    left.appendChild(meta);
+    head.appendChild(left);
+    const nums = div("evidence-file-nums");
+    const st = pills[item.status] || { pill: "todo", label: item.status };
+    nums.appendChild(span(`pill ${st.pill}`, st.label));
+    if (item.status === "nonmatching") nums.appendChild(span("pill todo", `${Number(item.score || 0).toFixed(1)}%`));
+    if (item.stale) {
+      const s = span("pill live", "source changed");
+      s.title = "Its source file changed on the branch after this verdict was measured.";
+      nums.appendChild(s);
+    }
+    head.appendChild(nums);
+    card.appendChild(head);
+    list.appendChild(card);
+  }
+  const from = bm.total ? bm.offset + 1 : 0;
+  const to = Math.min(bm.total, bm.offset + bm.limit);
+  text("bytematchRange", `${fmtInt(from)}–${fmtInt(to)} of ${fmtInt(bm.total)} functions`);
+  const pages = Math.max(1, Math.ceil(bm.total / bm.limit));
+  text("bmPageStatus", `Page ${fmtInt(Math.floor(bm.offset / bm.limit) + 1)} of ${fmtInt(pages)}`);
+  el("bmPagePrev").disabled = bm.offset <= 0;
+  el("bmPageNext").disabled = bm.offset + bm.limit >= bm.total;
+}
+
+/* The X360 treemap: the PC progress map's renderer on the byte-match states. */
+function initX360Map() {
+  const bm = bmState();
+  if (bm.map || !window.BPProgressMap) return;
+  try {
+    bm.map = new BPProgressMap.MapController({
+      prefix: "x360",
+      title: "X360 map",
+      onSummary(summary, mode) {
+        text("x360MapCount", `${fmtInt(summary.items)} ${mode === "x360funcs" ? "functions" : "translation units"}`);
+      },
+      onOpen(data) {
+        if (data.kind === "function") bmFilter({ q: data.artist || data.name });
+        else if (data.tuId) bmFilter({ tu: data.tuId });
+      },
+    });
+  } catch (error) {
+    text("x360MapStatusText", `X360 map unavailable: ${error.message}. The function list below has the same data.`);
+  }
+}
+
+async function loadX360Map(force = false) {
+  const bm = bmState();
+  if (!bm.map) return;
+  const needsFunctions = bm.mapMode === "x360funcs";
+  const render = () => {
+    bm.map.update(bm.mapSnapshot, bm.mapMode, { q: bm.q, status: bm.mapMode === "x360funcs" ? bm.status : "" });
+    el("x360MapStatus").hidden = true;
+    el("x360ProgressMapViewport").classList.remove("is-loading");
+  };
+  const fresh = bm.mapSnapshot && Date.now() - bm.mapLoadedAt < 60 * 1000;
+  if (!force && fresh && (!needsFunctions || bm.mapSnapshot.include_functions)) {
+    render();
+    return;
+  }
+  if (bm.mapInFlight) { bm.mapPending = true; return; }
+  bm.mapInFlight = true;
+  if (!bm.mapSnapshot || (needsFunctions && !bm.mapSnapshot.include_functions)) {
+    el("x360MapStatus").hidden = false;
+    text("x360MapStatusText", needsFunctions ? "Loading every function…" : "Loading translation units…");
+    el("x360ProgressMapViewport").classList.add("is-loading");
+  }
+  try {
+    bm.mapSnapshot = await fetchJson(`/api/bytematch/map?include_functions=${needsFunctions}`, 30000);
+    bm.mapLoadedAt = Date.now();
+    if (!bm.mapSnapshot.units.length) {
+      el("x360MapStatus").hidden = false;
+      text("x360MapStatusText", "No byte-match summary has been imported yet.");
+    } else {
+      render();
+    }
+  } catch (error) {
+    el("x360MapStatus").hidden = false;
+    text("x360MapStatusText", `X360 map unavailable: ${error.message}. The function list below has the same data.`);
+  } finally {
+    bm.mapInFlight = false;
+    if (bm.mapPending) { bm.mapPending = false; loadX360Map(); }
+  }
 }

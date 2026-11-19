@@ -481,6 +481,32 @@ tier-C count, blamed on the b5-decomp author of the commit the exe was built fro
 - `GET /api/asm/top?tier=C&limit=` -- the largest console bodies in a tier.
 - `GET /api/tu` carries `audit.asm` (per function) and `audit.asm_rollup`.
 
+## Byte matching (`progress/bytematch.json`)
+
+The native Xbox 360 tree (b5-decomp `x360`) compiled with the XDK and compared with ARTIST, one
+verdict per ARTIST function: `exact`, `nonmatching` (with a 0-100 fuzzy score), `missing` (no
+compiled body), `sdk` (an XDK library body) or `unnamed`. Published by the workflow repo's
+`.github/workflows/bytematch.yml`; read on every sync/import, skipped when the content (less its
+timestamp) was already imported. Each distinct summary appends one `bytematch_run` history row
+and one `bytematch` event (`delta_exact`).
+
+- `GET /api/bytematch/summary` -- `available`, `meta` (x360 head, verified commit, `behind`,
+  toolchain), `totals` (`game`, `sdk`, `unnamed`, `objects`), `status_counts` (functions and bytes
+  per verdict), `percent` (`exact_functions`, `exact_bytes`, `fuzzy_bytes`, `image_bytes`),
+  `areas`, `recent` (newest first exact) and `history` (one point per imported summary).
+- `GET /api/bytematch/functions?q=&status=&area=&source=&tu=&stale=&sort=size|score|name|artist|status|source|first_exact&order=&limit=&offset=`
+  -- one row per ARTIST function: `artist`, `name`, `size`, `status`, `score`, `source`,
+  `stale`, `area`, `tu`, `first_exact`. `q` matches the name, the address (with or without `0x`)
+  and the source.
+- `GET /api/bytematch/files?q=&stale=current|changed|deleted&sort=&order=&limit=&offset=` -- one
+  row per measured native source with its rollup and `fuzzy` percent.
+- `GET /api/bytematch/map?include_functions=` -- the X360 treemap, in `/api/progress-map`'s shape:
+  the ledger's TUs as `units` with byte-match `status` (`matched`, `partial`, `compiled`, `missing`,
+  `sdk`, `unnamed`), `recorded_funcs` = exact functions, `bytes` / `exact_bytes`, and per function
+  `status`, `score`, `size`, `artist`, `source`. Gzipped.
+- `GET /api/history` points carry `bm_exact`, `bm_nonmatching`, `bm_functions`, `bm_exact_bytes`,
+  `bm_bytes`, `bm_commit`.
+
 ## Evolution: every ring over time (`snapshot` table, `GET /api/history`)
 
 Before 2026-09-20 only the console evidence had a history; the three ledger rings were live

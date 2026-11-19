@@ -123,6 +123,8 @@ class ImportResponse(BaseModel):
     status_rows: int
     # TUs whose destination file the game build compiles into the exe.
     linked: int = 0
+    # ARTIST functions in the byte-match summary just imported (0: absent or unchanged).
+    bytematch: int = 0
 
 
 class SyncRequest(BaseModel):

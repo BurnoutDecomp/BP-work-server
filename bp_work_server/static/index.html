@@ -39,7 +39,7 @@
       href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/app.css?v=43" />
+    <link rel="stylesheet" href="/static/app.css?v=44" />
   </head>
   <body>
     <div class="bp-bg" aria-hidden="true">
@@ -371,6 +371,126 @@
         </section>
 
 
+        <!-- Byte matching: the native Xbox 360 tree compiled with the XDK, function by function
+             against the console's own bytes. Fed by the workflow repo's bytematch.yml. -->
+        <section class="card verified-panel bytematch-panel" id="bytematchCard" aria-label="Byte matching">
+          <div class="vp-head">
+            <div>
+              <span class="label">Byte matching</span>
+              <div class="metric-total" id="bytematchCount">&middot;</div>
+              <p class="vp-intro">The native Xbox 360 tree (b5-decomp <code>x360</code>) compiled with the console's own XDK compiler and compared with the shipped game, function by function. Exact means the same bytes outside the fields the linker fills in, with the same callees and constants. Contributors measure where the XDK is installed; every push to the branch or to the records refreshes this panel.</p>
+            </div>
+            <div class="vp-facts" id="bytematchFacts" aria-label="Byte-match facts"></div>
+          </div>
+          <div class="vp-grid">
+            <div class="ring big" id="bytematchRing">
+              <svg viewBox="0 0 120 120" aria-hidden="true">
+                <circle class="ring-track" cx="60" cy="60" r="52" />
+                <g class="ring-segments"></g>
+              </svg>
+              <div class="ring-label">
+                <strong id="bytematchPercent">0%</strong>
+                <span>code exact</span>
+              </div>
+            </div>
+            <div class="vp-legend">
+              <div class="legend" id="bytematchLegend"></div>
+              <small class="vp-hint">The percentage is exact code over the code we write: XDK library bodies and functions not yet named are left out. Legend shares count functions. Click a state to list them.</small>
+            </div>
+            <div class="vp-side">
+              <div class="vp-block">
+                <span class="label">Functions over published summaries</span>
+                <div id="bytematchHistory" class="vp-history"></div>
+              </div>
+              <div class="vp-block">
+                <span class="label">Recently matched</span>
+                <ol id="bytematchRecent" class="evidence-top bm-recent"></ol>
+              </div>
+            </div>
+          </div>
+          <!-- The PC progress map's renderer (progress-map.js), on the X360 byte-match states.
+               Element ids carry the x360 prefix the MapController maps them through. -->
+          <div class="bm-map">
+            <div class="panel-head bm-map-head">
+              <div class="explorer-tabs" id="x360MapTabs">
+                <button class="tab active" type="button" data-x360mode="x360tus" aria-pressed="true">Translation Units</button>
+                <button class="tab" type="button" data-x360mode="x360funcs" aria-pressed="false">Functions</button>
+              </div>
+              <span id="x360MapCount" class="badge">Loading&hellip;</span>
+            </div>
+            <div id="x360ProgressMap" class="progress-map">
+              <div class="map-toolbar">
+                <nav id="x360MapBreadcrumbs" class="map-breadcrumbs" aria-label="X360 map location"></nav>
+                <div class="map-navigation">
+                  <button id="x360MapUp" type="button" class="filter" disabled>Up</button>
+                  <button id="x360MapReset" type="button" class="filter" disabled>Reset zoom</button>
+                </div>
+              </div>
+              <p id="x360MapExplanation" class="map-explanation"></p>
+              <div id="x360MapLegend" class="map-legend" aria-label="X360 map legend"></div>
+              <div id="x360MapStatus" class="map-status" role="status">
+                <span id="x360MapStatusText">Loading the X360 map&hellip;</span>
+              </div>
+              <div id="x360ProgressMapViewport" class="map-viewport">
+                <canvas id="x360ProgressMapCanvas" tabindex="0" role="group"
+                  aria-label="Interactive X360 byte-match map" aria-describedby="x360MapKeyboardHelp">
+                  The function list below browses the same states.
+                </canvas>
+                <div id="x360MapHighlight" class="map-highlight" hidden></div>
+                <div id="x360ProgressMapTooltip" class="map-tooltip" hidden></div>
+                <div id="x360MapEmpty" class="map-empty" hidden>No results match these filters.</div>
+              </div>
+              <div class="map-selection">
+                <div class="map-selection-content">
+                  <span id="x360MapSelectionType" class="map-selection-type">X360 map</span>
+                  <strong id="x360MapSelectionName">Whole program</strong>
+                  <span id="x360MapSelectionMeta">Select a tile to inspect it; select a group to zoom.</span>
+                </div>
+                <div class="map-selection-actions">
+                  <button id="x360MapActivate" type="button" class="filter" hidden>Open details</button>
+                  <button id="x360MapUnitDetails" type="button" class="filter" hidden>Unit details</button>
+                </div>
+              </div>
+              <div class="map-footnotes">
+                <span id="x360MapScopeNote"></span>
+                <span id="x360MapZeroNote" hidden></span>
+                <span id="x360MapKeyboardHelp">Groups zoom in. Tiles list their functions below. Keyboard: arrows to select, Enter to open, Escape to go up.</span>
+              </div>
+              <span id="x360MapAnnouncement" class="visually-hidden" aria-live="polite"></span>
+            </div>
+          </div>
+          <div class="bm-areas">
+            <div class="bm-areas-head">
+              <span class="label">By area</span>
+              <small class="muted-text">Exact code (solid) and fuzzy match (light) of each area, largest first. Click an area to list its functions.</small>
+            </div>
+            <div id="bytematchAreas" class="bm-area-list"></div>
+          </div>
+          <div class="vp-evidence bm-explorer" id="bytematchExplorer" aria-label="Byte-match functions">
+            <div class="evidence-body">
+              <div class="evidence-controls">
+                <input
+                  type="search"
+                  id="bytematchSearch"
+                  class="search-input"
+                  placeholder="Filter by function, ARTIST address or source&hellip;"
+                  autocomplete="off"
+                />
+                <div id="bytematchChips" class="evidence-chips" role="group" aria-label="Filter by state"></div>
+              </div>
+              <div id="bytematchList" class="evidence-list bm-list"></div>
+              <div class="evidence-foot">
+                <span id="bytematchRange" class="muted-text">&mdash;</span>
+                <div class="pager">
+                  <button id="bmPagePrev" class="filter" type="button">Prev</button>
+                  <span id="bmPageStatus" class="page-status">Page 1 of 1</span>
+                  <button id="bmPageNext" class="filter" type="button">Next</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- Evolution: every ring's totals over time -->
         <section class="card evolution-panel" id="evolutionCard" aria-label="Evolution">
           <div class="vp-head">
@@ -569,7 +689,7 @@
     </div>
 
     <script src="/static/d3-hierarchy.min.js?v=3.1.2" defer></script>
-    <script src="/static/progress-map.js?v=1" defer></script>
-    <script src="/static/app.js?v=39" defer></script>
+    <script src="/static/progress-map.js?v=3" defer></script>
+    <script src="/static/app.js?v=41" defer></script>
   </body>
 </html>

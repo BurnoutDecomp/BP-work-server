@@ -14,6 +14,10 @@
     external: "#b294df",
     unrecorded: "#4a423b", unidentified: "#2e2926", linked: "#57a8e0",
     unlinked: "#4a423b",
+    // X360 byte matching (the native tree against ARTIST)
+    bm_exact: "#6fcf57", bm_close: "#e3a52c", bm_nonmatching: "#d7742a", bm_missing: "#4a423b",
+    bm_sdk: "#b294df", bm_unnamed: "#2e2926",
+    bm_matched: "#6fcf57", bm_partial: "#e3a52c", bm_compiled: "#d7742a",
   };
   const labels = {
     done: "Done", compiled: "Compiled", in_progress: "In progress",
@@ -21,11 +25,28 @@
     external: "External",
     unrecorded: "Named, unrecorded", unidentified: "Unidentified",
     linked: "Linked source", unlinked: "Not included",
+    bm_exact: "Exact", bm_close: "Close (90%+)", bm_nonmatching: "Compiled, not matching",
+    bm_missing: "No compiled body", bm_sdk: "XDK library", bm_unnamed: "Not yet named",
+    bm_matched: "Every function exact", bm_partial: "Some functions exact", bm_compiled: "Compiled, none exact",
   };
+  const X360_MODES = new Set(["x360tus", "x360funcs"]);
+  const FUNCTION_MODES = new Set(["funcs", "x360funcs"]);
+  const DARK_KEYS = new Set(["todo", "unrecorded", "unidentified", "unlinked", "bm_missing", "bm_unnamed"]);
+  // a function at or above this fuzzy score is drawn as "close"
+  const CLOSE_SCORE = 90;
   const number = (n) => Number(n || 0).toLocaleString();
   const statusLabel = (s) => s === "compiles" ? "compiled" : String(s).replaceAll("_", " ");
 
   function colorKey(data, mode) {
+    if (mode === "x360funcs") {
+      if (data.unidentified || data.status === "unnamed") return "bm_unnamed";
+      if (data.status === "nonmatching") return Number(data.score || 0) >= CLOSE_SCORE ? "bm_close" : "bm_nonmatching";
+      return `bm_${["exact", "missing", "sdk"].includes(data.status) ? data.status : "missing"}`;
+    }
+    if (mode === "x360tus") {
+      const state = data.unit?.status ?? data.status;
+      return `bm_${["matched", "partial", "compiled", "missing", "sdk", "unnamed"].includes(state) ? state : "missing"}`;
+    }
     if (mode === "funcs") {
       // A function's category is always its own status, never its unit's status.
       if (data.unidentified) return "unidentified";
@@ -47,14 +68,15 @@
       summary.states[key] = (summary.states[key] || 0) + 1;
     };
     for (const unit of snapshot.units || []) {
-      if (mode !== "funcs" && unit.unidentified) continue;
-      if (mode !== "funcs") {
+      const fnMode = FUNCTION_MODES.has(mode);
+      if (!fnMode && unit.unidentified) continue;
+      if (!fnMode) {
         if (!matches([unit.id, unit.source, unit.dest_path].join(" "))) continue;
         if (filters.status && unit.status !== filters.status) continue;
         if (filters.source && unit.source !== filters.source) continue;
         if (filters.goal && !(unit.goals || []).includes(filters.goal)) continue;
       }
-      const functions = mode === "funcs" ? (unit.functions || []).filter((fn) =>
+      const functions = fnMode ? (unit.functions || []).filter((fn) =>
         matches(fn.name) && (!filters.status || fn.status === filters.status)) : null;
       if (functions && !functions.length) continue;
       // Original DWARF identifiers sometimes contain Unity/../ paths. Keep
@@ -89,13 +111,15 @@
         if (!container.children) container.children = [];
         for (const fn of functions) {
           const leaf = {
-            id: `fn:${JSON.stringify([unit.id, fn.name])}`, name: fn.name, kind: "function",
+            id: `fn:${JSON.stringify([unit.id, fn.artist || fn.name])}`, name: fn.name, kind: "function",
             tuId: unit.id, unit, status: fn.status, unidentified: unit.unidentified, weight: 1,
+            score: fn.score, size: fn.size, artist: fn.artist, source: fn.source,
           };
           container.children.push(leaf);
           summary.items++;
           summary.functions++;
-          summary.recorded += !["todo", "external"].includes(fn.status) ? 1 : 0;
+          summary.recorded += mode === "x360funcs" ? (fn.status === "exact" ? 1 : 0)
+            : !["todo", "external"].includes(fn.status) ? 1 : 0;
           countState(leaf);
         }
         if (!unit.unidentified) parent.children.push(unitNode);
@@ -125,7 +149,29 @@
     return root;
   }
 
+  function describeX360(node, mode) {
+    const data = node.data;
+    if (data.kind === "function") {
+      const state = data.status === "nonmatching" ? `not matching, ${Number(data.score || 0).toFixed(1)}% fuzzy`
+        : data.status === "missing" ? "no compiled body" : data.status === "sdk" ? "provided by an XDK library"
+        : data.status === "unnamed" ? "not yet named" : "exact";
+      const where = data.source ? data.source : data.unidentified ? "Console image" : data.tuId;
+      return { type: data.unidentified ? "Unnamed function" : "Function", name: data.name,
+        meta: `${state} \u00b7 ARTIST ${data.artist || "?"} \u00b7 ${number(data.size)} bytes \u00b7 ${where}` };
+    }
+    if (data.kind === "unit") {
+      const unit = data.unit;
+      const meta = `${number(unit.recorded_funcs)} of ${number(unit.function_count)} functions exact \u00b7 ` +
+        `${number(unit.exact_bytes)} of ${number(unit.bytes)} bytes exact`;
+      if (mode === "x360funcs") return { type: "Functions in translation unit", name: data.tuId, meta: `${meta} \u00b7 select to zoom` };
+      return { type: "Translation unit", name: data.tuId, meta: `${labels[colorKey(data, mode)]} \u00b7 ${meta}` };
+    }
+    return { type: "Group", name: data.name,
+      meta: `${number(node.value)} ${mode === "x360funcs" ? "functions" : "function-weighted area"} \u00b7 select to zoom` };
+  }
+
   function describe(node, mode) {
+    if (X360_MODES.has(mode)) return describeX360(node, mode);
     const data = node.data;
     if (data.kind === "function") {
       return {
@@ -152,7 +198,11 @@
   class MapController {
     constructor(options) {
       this.options = options;
-      this.canvas = document.getElementById("progressMapCanvas");
+      // Element ids are the progress explorer's; a prefix ("x360") selects a second set
+      // (x360ProgressMapCanvas, x360MapUp, ...), so one renderer draws both maps.
+      const prefix = options.prefix || "";
+      this.$ = (id) => document.getElementById(prefix ? prefix + id[0].toUpperCase() + id.slice(1) : id);
+      this.canvas = this.$("progressMapCanvas");
       this.context = this.canvas.getContext("2d");
       const theme = getComputedStyle(document.documentElement);
       const token = (name, fallback) => theme.getPropertyValue(name).trim() || fallback;
@@ -164,9 +214,9 @@
       this.theme = { background: token("--bg", "#0a0809"), group: "#211c19",
         text: token("--text", "#ece6da"), headFont: token("--font-head", "Oswald, sans-serif"),
         monoFont: token("--font-mono", "'JetBrains Mono', monospace") };
-      this.viewport = document.getElementById("progressMapViewport");
-      this.tooltip = document.getElementById("progressMapTooltip");
-      this.highlight = document.getElementById("mapHighlight");
+      this.viewport = this.$("progressMapViewport");
+      this.tooltip = this.$("progressMapTooltip");
+      this.highlight = this.$("mapHighlight");
       this.mode = "tus";
       this.zoomId = "root";
       this.selectedId = null;
@@ -205,13 +255,13 @@
       this.canvas.addEventListener("focus", () => {
         if (!this.selectedId && this.layout?.children?.length) this.select(this.layout.children[0], true);
       });
-      document.getElementById("mapUp").addEventListener("click", () => this.up());
-      document.getElementById("mapReset").addEventListener("click", () => this.zoom("root"));
-      document.getElementById("mapActivate").addEventListener("click", () => {
+      this.$("mapUp").addEventListener("click", () => this.up());
+      this.$("mapReset").addEventListener("click", () => this.zoom("root"));
+      this.$("mapActivate").addEventListener("click", () => {
         const node = this.layout?.descendants().find((n) => n.data.id === this.selectedId);
         if (node) this.activate(node);
       });
-      document.getElementById("mapUnitDetails").addEventListener("click", () => {
+      this.$("mapUnitDetails").addEventListener("click", () => {
         const node = this.nodes.get(this.selectedId);
         if (node?.data.tuId) this.options.onOpen({ kind: "unit", tuId: node.data.tuId });
       });
@@ -257,18 +307,24 @@
     }
 
     renderSummary() {
-      const unitMode = this.mode !== "funcs";
+      const unitMode = !FUNCTION_MODES.has(this.mode);
       this.options.onSummary(this.summary, this.mode);
-      document.getElementById("mapExplanation").textContent = unitMode
+      this.$("mapExplanation").textContent = this.mode === "x360tus"
+        ? "One tile = one translation unit of the ledger. Area = its function count; color = how much of it matches ARTIST byte for byte."
+        : this.mode === "x360funcs"
+        ? `One tile = one ARTIST function. Equal weight; color = its byte-match state. Close means a fuzzy score of ${CLOSE_SCORE}% or more.`
+        : unitMode
         ? "One tile = one translation unit. Area = tracked function count; headline percentages count units." +
           (this.mode === "linked" ? " Purple means a confirmed external provider is included in the PC build inputs." : "")
         : "One tile = one function. Equal weight; colors use each function’s own recorded status.";
-      const zero = document.getElementById("mapZeroNote");
+      const zero = this.$("mapZeroNote");
       zero.hidden = !unitMode || !this.summary.zeroFunctions;
       zero.textContent = `${number(this.summary.zeroFunctions)} units have no tracked functions and receive minimum-sized tiles.`;
-      const legend = document.getElementById("mapLegend");
+      const legend = this.$("mapLegend");
       legend.replaceChildren();
-      const keys = this.mode === "funcs" ? ["recorded", "external", "unrecorded", "unidentified"] :
+      const keys = this.mode === "x360funcs" ? ["bm_exact", "bm_close", "bm_nonmatching", "bm_missing", "bm_sdk", "bm_unnamed"] :
+        this.mode === "x360tus" ? ["bm_matched", "bm_partial", "bm_compiled", "bm_missing", "bm_sdk"] :
+        this.mode === "funcs" ? ["recorded", "external", "unrecorded", "unidentified"] :
         this.mode === "linked" ? ["linked", "external", "unlinked"] : ["done", "external", "compiled", "in_progress", "blocked", "todo"];
       for (const key of keys) {
         const item = document.createElement("span");
@@ -318,20 +374,20 @@
         ctx.clip();
         ctx.font = node.children ? `600 12px ${this.theme.headFont}` : `11px ${this.theme.monoFont}`;
         ctx.fillStyle = node.children ? this.theme.text : "#10120f";
-        if (!node.children && ["todo", "unrecorded", "unidentified", "unlinked"].includes(colorKey(node.data, this.mode))) {
+        if (!node.children && DARK_KEYS.has(colorKey(node.data, this.mode))) {
           ctx.fillStyle = this.theme.text;
         }
         ctx.fillText(node.data.name, node.x0 + 5, node.y0 + (node.children ? node.header : h) / 2);
         ctx.restore();
       }
       this.updateHighlight(descendants.find((node) => node.data.id === this.selectedId));
-      const empty = document.getElementById("mapEmpty");
+      const empty = this.$("mapEmpty");
       empty.hidden = this.summary.items > 0;
       this.renderBreadcrumbs(zoomNode);
     }
 
     renderBreadcrumbs(node) {
-      const root = document.getElementById("mapBreadcrumbs");
+      const root = this.$("mapBreadcrumbs");
       root.replaceChildren();
       for (const ancestor of node.ancestors().reverse()) {
         const button = document.createElement("button");
@@ -343,11 +399,11 @@
         button.addEventListener("click", () => this.zoom(ancestor.data.id));
         root.appendChild(button);
       }
-      document.getElementById("mapUp").disabled = !node.parent;
-      document.getElementById("mapReset").disabled = !node.parent;
+      this.$("mapUp").disabled = !node.parent;
+      this.$("mapReset").disabled = !node.parent;
       const count = node.children ? node.leaves().length : 0;
-      document.getElementById("mapScopeNote").textContent =
-        `Viewing ${number(count)} ${this.mode === "funcs" ? "functions" : "translation units"}`;
+      this.$("mapScopeNote").textContent =
+        `Viewing ${number(count)} ${FUNCTION_MODES.has(this.mode) ? "functions" : "translation units"}`;
     }
 
     hit(event) {
@@ -368,14 +424,14 @@
       if (this.selectedId === node.data.id && !announce) return;
       this.selectedId = node.data.id;
       const desc = describe(node, this.mode);
-      document.getElementById("mapSelectionType").textContent = desc.type;
-      document.getElementById("mapSelectionName").textContent = desc.name;
-      document.getElementById("mapSelectionMeta").textContent = desc.meta;
-      const activate = document.getElementById("mapActivate");
+      this.$("mapSelectionType").textContent = desc.type;
+      this.$("mapSelectionName").textContent = desc.name;
+      this.$("mapSelectionMeta").textContent = desc.meta;
+      const activate = this.$("mapActivate");
       activate.hidden = false;
       activate.textContent = node.children ? "Zoom into group" : "Open details";
-      document.getElementById("mapUnitDetails").hidden = !node.children || !node.data.tuId;
-      if (announce) document.getElementById("mapAnnouncement").textContent = `${desc.type}: ${desc.name}. ${desc.meta}`;
+      this.$("mapUnitDetails").hidden = !node.children || !node.data.tuId;
+      if (announce) this.$("mapAnnouncement").textContent = `${desc.type}: ${desc.name}. ${desc.meta}`;
       // Selection is a lightweight overlay; hovering must not rebuild or
       // redraw tens of thousands of function rectangles on every mouse move.
       this.updateHighlight(node);
@@ -392,11 +448,11 @@
 
     clearSelection() {
       const name = this.nodes.get(this.zoomId)?.data.name || "Whole program";
-      document.getElementById("mapSelectionType").textContent = "Progress map";
-      document.getElementById("mapSelectionName").textContent = name;
-      document.getElementById("mapSelectionMeta").textContent = "Select a tile to inspect it; select a group to zoom.";
-      document.getElementById("mapActivate").hidden = true;
-      document.getElementById("mapUnitDetails").hidden = true;
+      this.$("mapSelectionType").textContent = this.options.title || "Progress map";
+      this.$("mapSelectionName").textContent = name;
+      this.$("mapSelectionMeta").textContent = "Select a tile to inspect it; select a group to zoom.";
+      this.$("mapActivate").hidden = true;
+      this.$("mapUnitDetails").hidden = true;
     }
 
     activate(node) {
@@ -410,13 +466,13 @@
       this.zoomId = id;
       this.selectedId = null;
       this.hideTooltip();
-      document.getElementById("mapActivate").hidden = true;
-      document.getElementById("mapUnitDetails").hidden = true;
+      this.$("mapActivate").hidden = true;
+      this.$("mapUnitDetails").hidden = true;
       const desc = describe(this.nodes.get(id), this.mode);
-      document.getElementById("mapSelectionType").textContent = "Group";
-      document.getElementById("mapSelectionName").textContent = desc.name;
-      document.getElementById("mapSelectionMeta").textContent = "Select a tile to inspect it; select a group to zoom further.";
-      document.getElementById("mapAnnouncement").textContent = `Zoomed to ${desc.name}`;
+      this.$("mapSelectionType").textContent = "Group";
+      this.$("mapSelectionName").textContent = desc.name;
+      this.$("mapSelectionMeta").textContent = "Select a tile to inspect it; select a group to zoom further.";
+      this.$("mapAnnouncement").textContent = `Zoomed to ${desc.name}`;
       this.draw();
       this.canvas.focus({ preventScroll: true });
     }

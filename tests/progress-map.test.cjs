@@ -108,3 +108,23 @@ test("each actual function remains a unique leaf at full project scale", () => {
   assert.equal(map.leaves().length, 31500);
   assert.equal(new Set(map.leaves().map((n) => n.data.id)).size, 31500);
 });
+
+test("x360 modes color by byte-match state and count exact functions", () => {
+  const units = [
+    { id: "GameSource/A.cpp", status: "partial", function_count: 2, recorded_funcs: 1, goals: [], functions: [
+      { name: "A::f", status: "exact", score: 100, artist: "82000000" },
+      { name: "A::g", status: "nonmatching", score: 95, artist: "82000010" },
+    ] },
+    { id: "vendor:crt", status: "sdk", function_count: 1, recorded_funcs: 0, goals: [],
+      functions: [{ name: "memcpy", status: "sdk", score: 100, artist: "82100000" }] },
+    { id: "unidentified:BURNOUT_X360_ARTIST.XEX", status: "unnamed", unidentified: true, function_count: 1,
+      recorded_funcs: 0, goals: [], functions: [{ name: "sub_82200000", status: "unnamed", score: 0, artist: "82200000" }] },
+  ];
+  const tus = buildTree({ units }, "x360tus");
+  assert.deepEqual(tus.summary.states, { bm_partial: 1, bm_sdk: 1 });
+  const fns = buildTree({ units }, "x360funcs");
+  assert.deepEqual(fns.summary.states, { bm_exact: 1, bm_close: 1, bm_sdk: 1, bm_unnamed: 1 });
+  assert.equal(fns.summary.recorded, 1);
+  assert.equal(colorKey({ status: "nonmatching", score: 40 }, "x360funcs"), "bm_nonmatching");
+  assert.equal(colorKey({ status: "done" }, "tus"), "done");
+});

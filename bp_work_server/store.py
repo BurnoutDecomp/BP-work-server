@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import logging
 import os
 import re
 import secrets
@@ -14,7 +15,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 
-from bp_work_server import audit, history
+from bp_work_server import audit, bytematch, history
 from bp_work_server.build_link import compiled_files, is_linked
 from bp_work_server.build_providers import availability_counts, read_build_providers
 from bp_work_server.models import ClaimResponse, NextTu, StatusCounts, TuRecord
@@ -157,6 +158,7 @@ class WorkStore:
         with self.connect(ensure_wal=True) as con:
             con.executescript(SCHEMA)
             con.executescript(history.SCHEMA)
+            bytematch.migrate(con)
             cols = {r["name"] for r in con.execute("PRAGMA table_info(func)")}
             if "completed_by" not in cols:
                 con.execute("ALTER TABLE func ADD COLUMN completed_by TEXT")
@@ -413,6 +415,18 @@ class WorkStore:
             # The evidence layer: CI's per-commit glue audit and stub inventory. Optional,
             # idempotent per commit, and the one number on the dashboard nobody declared.
             audit_counts = audit.import_audits(con, progress, iso(), self._log)
+            # The byte-match layer: the native x360 tree against ARTIST, function by function.
+            # Optional, so a bad summary is rolled back alone and reported, never allowed to
+            # take the ledger import down with it.
+            con.execute("SAVEPOINT bytematch_import")
+            try:
+                bytematch_count = bytematch.import_bytematch(con, progress, iso(), self._log)
+            except (ValueError, KeyError, IndexError, TypeError) as exc:
+                con.execute("ROLLBACK TO SAVEPOINT bytematch_import")
+                logging.getLogger(__name__).exception("byte-match summary rejected")
+                self._log(con, "server", "bytematch_error", None, {"error": str(exc)[:500]})
+                bytematch_count = -1
+            con.execute("RELEASE SAVEPOINT bytematch_import")
             # the evolution layer: the rings' totals as of this import (skipped when the
             # totals did not move; the backfill imports throwaway stores with this off)
             if record_history:
@@ -429,6 +443,7 @@ class WorkStore:
                 "audit_findings": audit_counts.get("funcaudit", 0),
                 "stubs": audit_counts.get("stubs", 0),
                 "asm_functions": audit_counts.get("asm", 0),
+                "bytematch": bytematch_count,
             }
 
     # ------------------------------------------------------------ evolution layer
@@ -470,6 +485,22 @@ class WorkStore:
         with self.connect() as con:
             log = self._log if events else (lambda *_args, **_kw: None)
             return audit.import_audits(con, progress, stamp, log, history_only=history_only)
+
+    def bytematch_summary(self) -> dict[str, Any]:
+        with self.connect() as con:
+            return bytematch.summary(con)
+
+    def bytematch_functions(self, **kwargs: Any) -> dict[str, Any]:
+        with self.connect() as con:
+            return bytematch.functions(con, **kwargs)
+
+    def bytematch_files(self, **kwargs: Any) -> dict[str, Any]:
+        with self.connect() as con:
+            return bytematch.files(con, **kwargs)
+
+    def bytematch_map(self, include_functions: bool = False) -> dict[str, Any]:
+        with self.connect() as con:
+            return bytematch.map_snapshot(con, include_functions)
 
     def audit_summary(self) -> dict[str, Any]:
         with self.connect() as con:

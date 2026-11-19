@@ -70,6 +70,10 @@ SERIES: dict[str, str | None] = {
     "stubs": None,
     "stubs_live": None,
     "asm_a": "asm_scoreable",
+    "bm_exact": "bm_functions",
+    "bm_nonmatching": "bm_functions",
+    "bm_exact_bytes": "bm_bytes",
+    "bm_functions": None,
 }
 
 
@@ -199,6 +203,23 @@ def points(con: sqlite3.Connection, days: int | None = None) -> list[dict[str, A
             }
         ts = _utc(row["imported_at"])
         rows.append((ts, f"{ts}#a", f"audit:{row['kind']}", values))
+    # the byte-match layer: one point per distinct published summary
+    try:
+        bytematch_runs = con.execute(
+            "SELECT b5_commit, imported_at, stats_json FROM bytematch_run ORDER BY imported_at, id").fetchall()
+    except sqlite3.OperationalError:
+        bytematch_runs = []
+    for row in bytematch_runs:
+        stats = json.loads(row["stats_json"] or "{}")
+        ts = _utc(row["imported_at"])
+        rows.append((ts, f"{ts}#b", "bytematch", {
+            "bm_commit": row["b5_commit"],
+            "bm_exact": int(stats.get("exact") or 0),
+            "bm_nonmatching": int(stats.get("nonmatching") or 0),
+            "bm_functions": int(stats.get("functions") or 0),
+            "bm_exact_bytes": int(stats.get("exact_bytes") or 0),
+            "bm_bytes": int(stats.get("bytes") or 0),
+        }))
     rows.sort(key=lambda r: (r[0], r[1]))
 
     # carry each source's latest values forward so every line is continuous

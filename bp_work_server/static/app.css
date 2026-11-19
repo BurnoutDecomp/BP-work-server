@@ -3585,3 +3585,34 @@ html::-webkit-scrollbar-corner,
   .map-navigation .filter, .map-selection-actions .filter { min-height: 40px; }
   .explorer-list { padding: 0 12px 12px; }
 }
+
+/* ---- Byte matching: the native x360 tree against ARTIST ---- */
+.bytematch-panel code { font-family: var(--font-mono); font-size: 0.92em; color: var(--gold); }
+.bm-map { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+.bm-map-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+#x360MapSelectionName { font: 500 13px var(--font-mono); }
+#x360MapSelectionMeta { color: var(--muted); font-size: 11px; line-height: 1.6; }
+.bm-areas { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+.bm-areas-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.bm-area-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 4px 18px; }
+.bm-area-row {
+  display: grid; grid-template-columns: minmax(0, 15em) minmax(60px, 1fr) auto; gap: 10px; align-items: center;
+  padding: 5px 8px; border: 1px solid var(--line-soft); background: var(--surface-2); color: var(--text);
+  font: inherit; text-align: left; cursor: pointer; border-radius: var(--radius);
+}
+.bm-area-row:hover { background: var(--surface-hover); }
+.bm-area-name { font: 12px var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bm-area-nums { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.bm-bar { position: relative; height: 8px; background: rgba(255, 255, 255, 0.06); border-radius: 2px; overflow: hidden; }
+.bm-bar-fuzzy, .bm-bar-exact { position: absolute; left: 0; top: 0; bottom: 0; }
+.bm-bar-fuzzy { background: rgba(111, 207, 87, 0.28); }
+.bm-bar-exact { background: var(--green); }
+.bm-explorer .evidence-list.bm-list { flex: none; height: auto; min-height: 120px; max-height: 560px; }
+.bm-row .evidence-file-meta a { color: var(--muted); text-decoration: underline dotted; }
+.bm-row .evidence-file-meta a:hover { color: var(--text); }
+.bm-recent li { grid-template-columns: auto minmax(0, 1fr); }
+.bm-recent .evidence-file-path { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 720px) {
+  .bm-area-list { grid-template-columns: 1fr; }
+  .bm-area-row { grid-template-columns: minmax(0, 1fr) 70px auto; }
+}

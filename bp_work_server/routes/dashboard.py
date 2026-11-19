@@ -71,6 +71,55 @@ async def audit_summary(store: WorkStore = Depends(get_store)) -> dict:
     return await asyncio.to_thread(store.audit_summary)
 
 
+# ---- the byte-match layer: the native x360 tree against ARTIST, function by function ----
+@router.get("/api/bytematch/summary")
+async def bytematch_summary(store: WorkStore = Depends(get_store)) -> dict:
+    return await asyncio.to_thread(store.bytematch_summary)
+
+
+@router.get("/api/bytematch/functions", response_model=SearchResponse)
+async def bytematch_functions(
+    q: str | None = Query(None),
+    status: str | None = Query(None, pattern="^(exact|nonmatching|missing|sdk|unnamed)$"),
+    area: str | None = Query(None),
+    source: str | None = Query(None),
+    tu: str | None = Query(None),
+    stale: bool | None = Query(None),
+    sort: str = Query("size", pattern="^(size|score|name|artist|status|source|first_exact)$"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    store: WorkStore = Depends(get_store),
+) -> dict:
+    return await asyncio.to_thread(
+        store.bytematch_functions, q=q, status=status, area=area, source=source, tu=tu, stale=stale,
+        sort=sort, order=order, limit=limit, offset=offset,
+    )
+
+
+@router.get("/api/bytematch/map")
+async def bytematch_map(
+    include_functions: bool = Query(False),
+    store: WorkStore = Depends(get_store),
+) -> dict:
+    return await asyncio.to_thread(store.bytematch_map, include_functions)
+
+
+@router.get("/api/bytematch/files", response_model=SearchResponse)
+async def bytematch_files(
+    q: str | None = Query(None),
+    stale: str | None = Query(None, pattern="^(current|changed|deleted)$"),
+    sort: str = Query("bytes", pattern="^(source|functions|exact|nonmatching|bytes|exact_bytes|fuzzy|measured)$"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    store: WorkStore = Depends(get_store),
+) -> dict:
+    return await asyncio.to_thread(
+        store.bytematch_files, q=q, stale=stale, sort=sort, order=order, limit=limit, offset=offset,
+    )
+
+
 # ---- the evolution layer: every ring's totals over time ----
 @router.get("/api/history", response_model=HistoryResponse)
 async def history_points(
