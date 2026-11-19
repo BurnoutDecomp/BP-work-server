@@ -530,17 +530,9 @@ class WorkStore:
         with self.connect() as con:
             return audit.top_stubs(con, live_only, limit)
 
-    def asm_files(self, **kwargs: Any) -> dict[str, Any]:
-        with self.connect() as con:
-            return audit.asm_files(con, **kwargs)
-
     def asm_functions(self, file: str) -> dict[str, Any]:
         with self.connect() as con:
             return audit.asm_functions(con, file)
-
-    def asm_top(self, tier: str = "C", limit: int = 12) -> list[dict[str, Any]]:
-        with self.connect() as con:
-            return audit.asm_top(con, tier, limit)
 
     def _restore_unidentified(
         self,
@@ -1519,7 +1511,7 @@ class WorkStore:
                 if actor:
                     completed_funcs_by_agent[actor] += row["completed"]
             attribution_cache_coverage = self._attribution_cache_coverage(con, attribution_repo_rev)
-            audit_block = audit.summary(con, history_limit=180)
+            audit_block = audit.latest(con)
             counts_repo_rev = self._attribution_counts_rev(
                 con, attribution_repo_rev, attribution_cache_coverage
             )

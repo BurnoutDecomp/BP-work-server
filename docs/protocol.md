@@ -349,15 +349,19 @@ The evidence layer's totals: `funcaudit` (the latest glue audit: `paired`, `clea
 `no_body`, `unpaired_no_file`, `weight` = high-signal findings, `verified_percent`,
 `commit`, `author`, `generated_at`, per-category counts), `stubs` (the latest stub
 inventory: `stubs`, `high`, `medium`, `low`, `live`, `console_lines`, `files`) and
-`history` (one point per audited b5-decomp commit, oldest first). Read-only, no auth.
+`history` (one point per audited b5-decomp commit, oldest first). Read-only, no auth. The
+workflow repo's scheduled reconcile reads `funcaudit.commit` to check that the server has
+imported the audit of the current b5-decomp tip.
 
-### `GET /api/audit/files?q=&category=&sort=weight&order=desc&limit=50&offset=0`
+### `GET /api/audit/files?q=&category=&gaps=false&sort=weight&order=desc&limit=50&offset=0`
 
 Per-file rollup of the latest glue audit (`file`, `functions`, `weight`, `no_body`,
 `missing_case`, `extra_case`, `missing_event`, `missing_callee`, `missing_assert`,
 `missing_string`, `uncited_data`). `category` keeps files with at least one item of that
 category (`NO_BODY`, `MISSING_CASE`, `EXTRA_CASE`, `MISSING_EVENT`, `MISSING_CALLEE`,
-`MISSING_ASSERT`, `MISSING_STRING`, `UNCITED_DATA`).
+`MISSING_ASSERT`, `MISSING_STRING`, `UNCITED_DATA`). `gaps=true` keeps files with at least one
+high-signal finding (`weight > 0`): the Console gaps panel's "all files", which leaves out files
+whose only findings are log strings or uncited data.
 
 ### `GET /api/audit/functions?file=...`
 
@@ -379,7 +383,8 @@ Both audits are produced by CI (`BP-Decomp_Workflow/.github/workflows/reconcile-
 from `tools/re/funcaudit.py` / `tools/re/stubaudit.py` and read here from
 `progress/funcaudit.json` / `progress/stubs.json` on every sync/import. `GET /api/tu`
 carries the same data for one TU under `audit`, and `GET /dashboard/state` carries the
-summary under `audit`.
+latest runs under `audit` (`funcaudit` and `stubs`, as above, without `history`): what the
+Console gaps panel labels its filters with.
 
 ### `GET /dashboard/state`
 
@@ -474,12 +479,13 @@ when present (idempotent per build commit) and logs one `asm` event per build th
 tier-C count, blamed on the b5-decomp author of the commit the exe was built from.
 
 - `GET /api/audit/summary` carries `asm` (latest run stats) and `asm_*` history points.
-- `GET /api/asm/files?q=&tier=&flagged=&sort=c|a|b|t|functions|mean_score|file|flagged&order=&limit=&offset=`
-  -- `flagged=true` keeps files with functions whose body carries `[FLAG PC ...]` markers (PC
-  additions that compile in and are meant to differ; each row's `flags` lists them by kind).
-- `GET /api/asm/functions?file=` -- every paired function in the file with its score, counts, diff and notes.
-- `GET /api/asm/top?tier=C&limit=` -- the largest console bodies in a tier.
+- `GET /api/asm/functions?file=` -- every paired function in the file with its score, counts, diff
+  and notes (each function's `flags` lists its `[FLAG PC ...]` markers by kind), plus the file's
+  `rollup`.
 - `GET /api/tu` carries `audit.asm` (per function) and `audit.asm_rollup`.
+
+The per-file and top lists (`/api/asm/files`, `/api/asm/top`) were removed on 2026-11-19 with the
+dashboard's instruction-shape tab: byte matching now compares the code with ARTIST directly.
 
 ## Byte matching (`progress/bytematch.json`)
 
@@ -520,10 +526,11 @@ imports the last ledger commit of every day into a throwaway store (91 days from
 about three minutes), and `bp-work-server history-import snaps.json` loads the file (known
 commits are skipped). `tu_linked` is `null` for days before the build script existed (2026-06-24).
 
-- `GET /api/history?days=` -- `points` (oldest first; snapshots and audit runs merged, each
+- `GET /api/history?days=` -- `points` (oldest first; snapshots and byte-match runs merged, each
   source's latest values carried forward so every series is continuous; `ts` in UTC, `date`,
-  `sources`, `commit` = workflow HEAD, `b5_commit`, the ring totals, `paired/clean/no_body/weight`,
-  `stubs/stubs_live`, `asm_a/asm_scoreable`) and `series` (each key's natural total, or null).
+  `sources`, `commit` = workflow HEAD, the ring totals, `bm_commit` and the `bm_*` byte-match
+  totals) and `series` (each key's natural total, or null). The console audits are not charted
+  (since 2026-11-19): they are leads to check, listed by the Console gaps panel.
   Read-only, no auth. The dashboard's Evolution panel draws it: toggleable series grouped by ring,
   counts on one axis or each series as a share of its own total, 30/90/all-day ranges, hover
   tooltip; the choice is remembered per browser.

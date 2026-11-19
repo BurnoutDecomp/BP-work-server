@@ -27,15 +27,13 @@ const state = {
     requestId: 0,
   },
   progressMap: { controller: null, snapshot: null, inFlight: false, pending: false, restoreFocus: false },
-  // the Console Evidence section: its own tab, filters and paging
+  // the Console gaps panel: its own tab, filters and paging
   evidence: {
     tab: "audit",
     q: "",
     category: "",
     tier: "",
     live: false,
-    asmTier: "",
-    asmFlagged: false,
     offset: 0,
     limit: 25,
     total: 0,
@@ -361,7 +359,7 @@ function render(data) {
       title: "No source inclusion or verified external provider found in the build inputs." },
   ], tus ? (available / tus) * 100 : 0, `${fmtInt(available)} / ${fmtInt(tus)} available`);
 
-  renderAudit(data.audit || {});
+  renderGaps(data.audit || {});
   text("activeGoal", data.active_goal || "Whole program");
   text("serverTime", fmtTime(data.server_time));
 
@@ -2610,31 +2608,6 @@ function fileRepoLink(file) {
   return a;
 }
 
-function verifiedTrend(history) {
-  const points = (history || []).filter((point) => point.paired != null);
-  if (points.length < 2) return null;
-  const last = points[points.length - 1];
-  const prev = points[points.length - 2];
-  if (Number(last.audit_version || 1) !== Number(prev.audit_version || 1)) {
-    return { text: "Audit matching updated; this change in totals is not decomp progress.", cls: "" };
-  }
-  const dClean = Number(last.clean || 0) - Number(prev.clean || 0);
-  const dWeight = Number(last.weight || 0) - Number(prev.weight || 0);
-  // plain words, not signed deltas: "-2 findings" reads as a negative count
-  const parts = [];
-  if (dClean > 0) parts.push(`${fmtInt(dClean)} more clean ${dClean === 1 ? "body" : "bodies"}`);
-  if (dClean < 0) parts.push(`${fmtInt(-dClean)} fewer clean ${dClean === -1 ? "body" : "bodies"}`);
-  if (dWeight < 0) parts.push(`${fmtInt(-dWeight)} ${dWeight === -1 ? "finding" : "findings"} resolved`);
-  if (dWeight > 0) parts.push(`${fmtInt(dWeight)} new ${dWeight === 1 ? "finding" : "findings"}`);
-  const since = prev.imported_at ? `since ${String(prev.imported_at).slice(0, 10)}` : "since the previous audited commit";
-  if (!parts.length) return { text: `unchanged ${since}`, cls: "" };
-  const good = dClean > 0 || dWeight < 0;
-  return {
-    text: `${parts.join(", ")} ${since}`,
-    cls: good ? "up" : "down",
-  };
-}
-
 async function openAuditFile(file, options = {}) {
   setCurrentDetail({ type: "audit", id: file }, options);
   showDetailOverlay();
@@ -2664,9 +2637,10 @@ async function openStubFile(file, options = {}) {
 function auditRollupChips(rollup) {
   const wrap = div("audit-summary");
   const chips = [
-    ["weight", "Findings", "done"],
+    ["weight", "Gaps", "done"],
     ["no_body", "No body", "blocked"],
-    ["missing_case", "Case ids", "progress"],
+    // one MISSING_CASE item is a function's whole list of missing ids: a switch, not an id
+    ["missing_case", "Switch gaps", "progress"],
     ["missing_event", "Event posts", "progress"],
     ["missing_callee", "Callees", "progress"],
     ["missing_assert", "Asserts", "todo"],
@@ -3127,121 +3101,11 @@ function setDonut(id, segments, percent, totalText) {
   }
 }
 
-function renderAudit(audit) {
-  const fa = audit.funcaudit || {};
-  const seg = audit.segments || {};
-  const paired = Number(fa.paired || 0);
-  const clean = Number(fa.clean || 0);
-  const trend = el("verifiedTrend");
-  const ft = state.funcTotals || { funcs: 0, unidentified: 0 };
-  // every named function the audit did not select: templates, operators, compiler-generated
-  const selected = Number(fa.selected || 0);
-  const notComparable = ft.funcs && selected ? Math.max(0, ft.funcs - ft.unidentified - selected) : 0;
-  if (!paired) {
-    setDonut("verified", [{ label: "no audit imported yet", value: 1, color: "dim" }], 0, "no audit yet");
-    if (trend) trend.hidden = true;
-  } else {
-    setDonut("verified", [
-      { label: "clean", value: seg.clean, color: "green",
-        title: "Nothing the static audit can name differs: case ids, event posts, callees, asserts, cited data. Click: the glue audit.",
-        onClick: () => openEvidence("audit") },
-      { label: "high-signal findings", value: seg.high, color: "red",
-        title: "A missing case id, event post, callee or assert the console has and the body does not. Click: files by findings.",
-        onClick: () => openEvidence("audit", { category: "MISSING_CASE" }) },
-      { label: "context-only findings", value: seg.soft, color: "amber",
-        title: "Only log strings, uncited data symbols or the parameter hint differ. Click: missing log strings.",
-        onClick: () => openEvidence("audit", { category: "MISSING_STRING" }) },
-      { label: "named, no body", value: seg.no_body, color: "crimson",
-        title: "The ledger names a PC file for the function but no definition exists anywhere. Click: the no-body list.",
-        onClick: () => openEvidence("audit", { category: "NO_BODY" }) },
-      { label: "not audited", value: seg.unpaired, color: "dim",
-        title: "Console functions with no known PC file; not compared. Click: the stub inventory (the bodies that do exist but are stand-ins).",
-        onClick: () => openEvidence("stubs") },
-      { label: "not comparable by name", value: notComparable, color: "dim",
-        title: "Named functions the audit skips: template instantiations, operators and compiler-generated bodies." },
-      { label: "not yet identified", value: ft.unidentified, color: "dim",
-        title: "Functions of the console image that have no name in the ledger yet." },
-    ], fa.verified_percent, `${fmtInt(clean)} / ${fmtInt(paired)} comparable bodies` +
-      (ft.funcs ? ` \u00b7 of ${fmtInt(ft.funcs)} functions` : ""));
-    renderVerifiedHistory(audit.history || []);
-    if (trend) {
-      const t = verifiedTrend(audit.history);
-      trend.hidden = !t;
-      if (t) {
-        trend.textContent = t.text;
-        trend.className = `metric-note audit-trend ${t.cls}`;
-      }
-    }
-  }
-  const asmNote = el("verifiedAsm");
-  if (asmNote) {
-    const asm = audit.asm || {};
-    const scoreable = Number(asm.scoreable || 0);
-    asmNote.hidden = !scoreable;
-    if (scoreable) {
-      asmNote.textContent = `${fmtInt(asm.A)} of ${fmtInt(scoreable)} scoreable functions have the console's shape (${asm.shape_percent}%)` +
-        (asm.commit ? ` \u00b7 build of b5 ${String(asm.commit).slice(0, 10)}` : "") +
-        (asm.generated_at ? ` \u00b7 audited ${fmtTime(asm.generated_at)}` : "") +
-        (fa.commit && asm.commit && String(asm.commit).split("@")[0] !== fa.commit
-          ? " \u00b7 source audit is newer" : "");
-      asmNote.title = "tools/re/asmaudit.py on every published build: the exe's callees, branch counts and constants against the console's machine code";
-    }
-    renderShapeBar(audit.asm || {});
-  }
-  renderVerifiedFacts(audit);
+// The Console gaps panel: the latest audits' totals label its filters; the lists load
+// themselves (initEvidence). No score: a gap is a lead to check, not a measure of progress.
+function renderGaps(audit) {
   state.evidence.summary = audit;
   renderEvidenceSummary();
-}
-
-// The panel's top right: which commit the audits are from, and the few totals the
-// legend and the tier bar do not already say. Each opens its evidence view.
-function renderVerifiedFacts(audit) {
-  const host = el("verifiedFacts");
-  if (!host) return;
-  clearNode(host);
-  const fa = audit.funcaudit || {};
-  const st = audit.stubs || {};
-  const asm = audit.asm || {};
-  if (fa.commit) {
-    const b = span("badge", `b5-decomp ${String(fa.commit).slice(0, 10)} \u00b7 ${relTime(fa.generated_at || fa.imported_at)}`);
-    b.title = fa.generated_at ? `audited ${fmtTime(fa.generated_at)}` : "";
-    host.appendChild(b);
-  }
-  const fact = (n, label, title, cls, onClick) => {
-    const c = document.createElement("button");
-    c.type = "button";
-    c.className = `chip ${cls}`;
-    c.appendChild(span("", fmtInt(n)));
-    const l = document.createElement("label");
-    l.textContent = label;
-    c.appendChild(l);
-    if (title) c.title = title;
-    c.addEventListener("click", onClick);
-    host.appendChild(c);
-  };
-  if (fa.files) fact(fa.files, "files with findings", "Files with at least one function the glue audit flagged. Opens the glue audit.", "blocked", () => openEvidence("audit"));
-  if (st.stubs) fact(st.stubs, "stub candidates", `${fmtInt(st.high || 0)} high, ${fmtInt(st.medium || 0)} medium, ${fmtInt(st.low || 0)} low confidence; includes platform leaves. ${fmtInt(st.live || 0)} have reconstructed callers. Audited b5 ${String(st.commit || "").slice(0, 10)}. Opens the inventory.`, "compiled", () => openEvidence("stubs"));
-  if (asm.paired_in_exe) fact(asm.paired_in_exe, "in the built exe", "Named functions with a symbol in the exe CI built. Opens the instruction shape.", "progress", () => openEvidence("asm"));
-  if (asm.flagged) fact(asm.flagged, "flagged in source", "Functions whose body carries [FLAG PC ...] markers. Opens the instruction shape, flagged only.", "todo", () => { openEvidence("asm"); state.evidence.asmFlagged = true; loadEvidenceList(true); renderEvidenceSummary(); });
-}
-
-/* ---- the Verified vs Console band: history chart, shape bar, click-through ---- */
-
-function openEvidence(tab, opts = {}) {
-  const ev = state.evidence;
-  ev.category = opts.category || "";
-  ev.asmTier = opts.asmTier || "";
-  ev.asmFlagged = false;
-  ev.tier = opts.tier || "";
-  ev.live = false;
-  ev.q = "";
-  const search = el("evidenceSearch");
-  if (search) search.value = "";
-  const tabs = el("evidenceTabs");
-  const btn = tabs && tabs.querySelector(`.tab[data-tab="${tab}"]`);
-  if (btn) btn.click();       // initEvidence's handler: sets the tab, re-renders, reloads
-  const section = el("evidence");
-  if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 /* ---------------- Evolution: every ring over time ---------------- */
@@ -3263,18 +3127,11 @@ const EVOLUTION_SERIES = [
   { group: "Executable", key: "tu_available", label: "available in build", color: "#d9cfc0", of: "tu_total" },
   { group: "Executable", key: "tu_source_linked", label: "linked source", color: "#57a8e0", of: "tu_total" },
   { group: "Executable", key: "tu_external_build", label: "external provider", color: "#b294df", of: "tu_total" },
-  { group: "Verified vs console", key: "paired", label: "paired bodies", color: "#b9ad9e", of: "funcs_total" },
-  { group: "Verified vs console", key: "clean", label: "clean", color: "#8be07a", of: "paired" },
-  { group: "Verified vs console", key: "no_body", label: "named, no body", color: "#ff6b6b", of: "funcs_total" },
-  { group: "Verified vs console", key: "weight", label: "high-signal findings", color: "#d7742a", of: null },
-  { group: "Verified vs console", key: "asm_a", label: "same shape (A)", color: "#3ec9b0", of: "asm_scoreable" },
-  { group: "Stubs", key: "stubs", label: "stubs", color: "#c084fc", of: null },
-  { group: "Stubs", key: "stubs_live", label: "live stubs", color: "#e07aa8", of: null },
   { group: "Byte matching (X360)", key: "bm_exact", label: "exact functions", color: "#6fcf57", of: "bm_functions" },
   { group: "Byte matching (X360)", key: "bm_nonmatching", label: "compiled, not matching", color: "#d7742a", of: "bm_functions" },
   { group: "Byte matching (X360)", key: "bm_exact_bytes", label: "exact code bytes", color: "#3ec9b0", of: "bm_bytes" },
 ];
-const EVOLUTION_DEFAULT_ON = ["tu_done", "funcs_done", "tu_linked", "paired", "clean"];
+const EVOLUTION_DEFAULT_ON = ["tu_done", "funcs_done", "tu_linked"];
 const EVOLUTION_STORE_KEY = "bp.evolution";
 
 state.evolution = { points: [], range: 0, mode: "count", on: new Set(EVOLUTION_DEFAULT_ON), loadedAt: 0, wired: false, hot: null };
@@ -3283,7 +3140,10 @@ try {
   if (saved && typeof saved === "object") {
     if (Number.isFinite(saved.range)) state.evolution.range = saved.range;
     if (saved.mode === "share" || saved.mode === "count") state.evolution.mode = saved.mode;
-    if (Array.isArray(saved.on) && saved.on.length) state.evolution.on = new Set(saved.on);
+    // a saved choice may name series that no longer exist: keep the ones that do
+    const known = new Set(EVOLUTION_SERIES.map((s) => s.key));
+    const on = Array.isArray(saved.on) ? saved.on.filter((key) => known.has(key)) : [];
+    if (on.length) state.evolution.on = new Set(on);
   }
 } catch (_) { /* a private window or blocked storage: defaults */ }
 
@@ -3592,140 +3452,16 @@ function drawEvolutionChart() {
   }
 }
 
-function renderVerifiedHistory(history) {
-  const host = el("verifiedHistory");
-  if (!host) return;
-  clearNode(host);
-  const points = (history || []).filter((p) => p.paired != null).slice(-180);
-  state.verifiedHistory = history;
-  if (points.length < 2) {
-    const p = points[0];
-    host.appendChild(div("muted-text vh-empty", points.length
-      ? `One audited commit so far (b5 ${String(p.commit).slice(0, 10)}: ${fmtInt(p.clean)} clean of ${fmtInt(p.paired)} paired). The lines start with the next one.`
-      : "No audited commits yet."));
-    return;
-  }
-  // Three COUNTS, not a ratio: a ratio falls every time a new body is written (it starts
-  // with findings), which reads as regress when it is the opposite. Grey = bodies the audit
-  // could pair, green = of those, clean; red = named functions still without a body.
-  const ns = "http://www.w3.org/2000/svg";
-  const W = Math.max(220, Math.round(host.clientWidth || 320)), H = 96, padL = 40, padR = 8, padT = 6, padB = 14;
-  const svg = document.createElementNS(ns, "svg");
-  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  svg.setAttribute("width", String(W));
-  svg.setAttribute("height", String(H));
-  const series = [
-    { key: "paired", cls: "vh-paired", area: true },
-    { key: "clean", cls: "vh-clean", area: true },
-    { key: "no_body", cls: "vh-nobody", area: false },
-  ];
-  const top = Math.max(1, ...points.map((p) => Math.max(Number(p.paired || 0), Number(p.no_body || 0))));
-  // the x axis is TIME (a point per audited day since the backfill; a build day may add
-  // more), so a day nobody audited is a gap, not a step -- index spacing only as a fallback
-  const stamps = points.map((p) => Date.parse(p.imported_at || ""));
-  const timed = stamps.every((t) => Number.isFinite(t)) && stamps[stamps.length - 1] > stamps[0];
-  const t0 = timed ? stamps[0] : 0, tSpan = timed ? stamps[stamps.length - 1] - stamps[0] : 1;
-  const x = (i) => padL + ((timed ? (stamps[i] - t0) / tSpan : i / (points.length - 1)) * (W - padL - padR));
-  const days = timed ? Math.round(tSpan / 86400000) + 1 : points.length;
-  const y = (v) => padT + (1 - v / top) * (H - padT - padB);
-  for (const sr of series) {
-    const d = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(Number(p[sr.key] || 0)).toFixed(1)}`).join(" ");
-    if (sr.area) {
-      const a = document.createElementNS(ns, "path");
-      a.setAttribute("class", `${sr.cls}-area`);
-      a.setAttribute("d", `${d} L${x(points.length - 1).toFixed(1)},${(H - padB).toFixed(1)} L${x(0).toFixed(1)},${(H - padB).toFixed(1)} Z`);
-      svg.appendChild(a);
-    }
-    const l = document.createElementNS(ns, "path");
-    l.setAttribute("class", `vh-line ${sr.cls}`);
-    l.setAttribute("d", d);
-    svg.appendChild(l);
-  }
-  for (const [v, label] of [[top, fmtInt(top)], [0, "0"]]) {
-    const t = document.createElementNS(ns, "text");
-    t.setAttribute("x", "0"); t.setAttribute("y", (y(v) + (v ? 3 : 0)).toFixed(1)); t.setAttribute("class", "vh-axis");
-    t.textContent = label;
-    svg.appendChild(t);
-  }
-  points.forEach((p, i) => {
-    const c = document.createElementNS(ns, "circle");
-    c.setAttribute("class", "vh-dot");
-    c.setAttribute("cx", x(i).toFixed(1)); c.setAttribute("cy", y(Number(p.clean || 0)).toFixed(1)); c.setAttribute("r", "2");
-    const title = document.createElementNS(ns, "title");
-    title.textContent = `${String(p.commit).slice(0, 10)}${p.imported_at ? ` \u00b7 ${String(p.imported_at).slice(0, 10)}` : ""}: ${fmtInt(p.clean)} clean of ${fmtInt(p.paired)} paired (${Number(p.verified_percent || 0).toFixed(1)}%), ${fmtInt(p.no_body)} named with no body, ${fmtInt(p.weight)} high-signal findings`;
-    c.appendChild(title);
-    svg.appendChild(c);
-  });
-  const first = document.createElementNS(ns, "text");
-  first.setAttribute("x", padL.toFixed(1)); first.setAttribute("y", (H - 3).toFixed(1)); first.setAttribute("class", "vh-axis");
-  first.textContent = points[0].imported_at ? String(points[0].imported_at).slice(0, 10) : String(points[0].commit).slice(0, 7);
-  svg.appendChild(first);
-  const last = document.createElementNS(ns, "text");
-  last.setAttribute("x", (W - padR).toFixed(1)); last.setAttribute("y", (H - 3).toFixed(1)); last.setAttribute("class", "vh-axis");
-  last.setAttribute("text-anchor", "end");
-  const lastP = points[points.length - 1];
-  last.textContent = `${lastP.imported_at ? String(lastP.imported_at).slice(0, 10) : String(lastP.commit).slice(0, 7)} \u00b7 ${fmtInt(days)} days, ${fmtInt(points.length)} audited`;
-  svg.appendChild(last);
-  host.appendChild(svg);
-  const lg = div("vp-shape-legend");
-  const a = points[0], b = points[points.length - 1];
-  for (const [cls, label, va, vb] of [
-    ["vh-sw-paired", "paired bodies", a.paired, b.paired],
-    ["vh-sw-clean", "clean", a.clean, b.clean],
-    ["vh-sw-nobody", "named, no body", a.no_body, b.no_body],
-  ]) {
-    const item = span("", "");
-    item.appendChild(span(`vh-sw ${cls}`, ""));
-    item.appendChild(document.createTextNode(` ${label} ${fmtInt(va)} \u2192 ${fmtInt(vb)}`));
-    lg.appendChild(item);
-  }
-  host.appendChild(lg);
-}
-
-function renderShapeBar(asm) {
-  const host = el("verifiedShape");
-  if (!host) return;
-  clearNode(host);
-  const legend = host.parentNode.querySelector(".vp-shape-legend");
-  if (legend) legend.remove();
-  const tiers = [["A", "same shape", Number(asm.A || 0)], ["B", "close", Number(asm.B || 0)],
-                 ["C", "diverges", Number(asm.C || 0)], ["T", "trivial", Number(asm.T || 0)]];
-  const total = tiers.reduce((n, t) => n + t[2], 0);
-  if (!total) {
-    host.appendChild(span("", ""));
-    return;
-  }
-  for (const [tier, label, n] of tiers) {
-    const part = span(`sh-${tier}`);
-    part.style.width = `${(n / total) * 100}%`;
-    part.title = `${tier} ${label}: ${fmtInt(n)} (${((n / total) * 100).toFixed(1)}%)`;
-    part.addEventListener("click", () => openEvidence("asm", { asmTier: tier }));
-    host.appendChild(part);
-  }
-  const lg = div("vp-shape-legend");
-  for (const [tier, label, n] of tiers) {
-    const item = span("", "");
-    const b = document.createElement("b");
-    b.textContent = `${tier} `;
-    item.appendChild(b);
-    item.appendChild(document.createTextNode(`${label} ${fmtInt(n)}`));
-    lg.appendChild(item);
-  }
-  host.after(lg);
-}
-
-/* ---------------- Console Evidence section ---------------- */
+/* ---------------- Console gaps: the per-file lists ---------------- */
 
 const EVIDENCE_AUDIT_CHIPS = [
   ["", "all files", "", ""],
   ["NO_BODY", "no body", "crimson", "NO_BODY"],
-  ["MISSING_CASE", "missing case ids", "red", "MISSING_CASE"],
+  ["MISSING_CASE", "switch gaps", "red", "MISSING_CASE"],
   ["EXTRA_CASE", "misfiled case ids", "red", "EXTRA_CASE"],
   ["MISSING_EVENT", "missing event posts", "red", "MISSING_EVENT"],
   ["MISSING_CALLEE", "missing callees", "red", "MISSING_CALLEE"],
   ["MISSING_ASSERT", "missing asserts", "amber", "MISSING_ASSERT"],
-  ["MISSING_STRING", "missing log strings", "grey", "MISSING_STRING"],
-  ["UNCITED_DATA", "uncited data", "grey", "UNCITED_DATA"],
 ];
 
 function evidenceChip(label, count, active, color, onClick) {
@@ -3736,15 +3472,6 @@ function evidenceChip(label, count, active, color, onClick) {
   chip.appendChild(span("", label));
   if (count != null) chip.appendChild(span("n", fmtInt(count)));
   chip.addEventListener("click", onClick);
-  return chip;
-}
-
-function evidenceTile(label, value, cls) {
-  const chip = div(`chip ${cls || "todo"}`);
-  chip.appendChild(span("", typeof value === "number" ? fmtInt(value) : value));
-  const l = document.createElement("label");
-  l.textContent = label;
-  chip.appendChild(l);
   return chip;
 }
 
@@ -3766,7 +3493,7 @@ function renderEvidenceSummary() {
   clearNode(chips);
   if (ev.tab === "audit") {
     intro.textContent =
-      "Every reconstructed body (plus the PC-only helpers it calls) compared with the console's own pseudocode, per file. A missing switch case id, event post, callee or body is a difference the console's code has and ours does not; missing log strings and uncited data symbols are context. Rebuilt by CI on every commit — nothing here is declared by hand.";
+      "Files ranked by their gaps. Open one to see each function and what the console's version has that ours lacks.";
     const cats = fa.categories || {};
     for (const [key, label, color, catKey] of EVIDENCE_AUDIT_CHIPS) {
       const count = catKey ? (cats[catKey] ? cats[catKey].functions : 0) : null;
@@ -3777,39 +3504,9 @@ function renderEvidenceSummary() {
         renderEvidenceSummary();
       }));
     }
-  } else if (ev.tab === "asm") {
-    const asm = audit.asm || {};
-    if (meta) {
-      meta.textContent = asm.commit
-        ? `build of b5 ${String(asm.commit).slice(0, 10)} \u00b7 ${relTime(asm.generated_at || asm.imported_at)}`
-        : "no build audited yet";
-      meta.title = asm.exe_mtime ? `exe built ${fmtTime(asm.exe_mtime)}` : "";
-    }
-    intro.textContent =
-      "The exe CI built, function by function, against the console's own machine code: the same named callees, the same number of conditional branches, the same constants. Byte-matching is impossible across the x64 widening, so this is shape, not identity \u2014 tier A is the same shape, C diverges, and a divergence is a diff to read (which callees and constants exist on one side only), not a verdict. Recomputed on every published build.";
-    for (const [key, label, color, count] of [
-      ["", "all tiers", "", null],
-      ["A", "same shape", "green", asm.A],
-      ["B", "close", "amber", asm.B],
-      ["C", "diverges", "red", asm.C],
-      ["T", "trivial", "grey", asm.T],
-    ]) {
-      chips.appendChild(evidenceChip(label, count, ev.asmTier === key, color, () => {
-        ev.asmTier = key;
-        loadEvidenceList(true);
-        renderEvidenceSummary();
-      }));
-    }
-    const flaggedChip = evidenceChip("flagged in source only", asm.flagged, ev.asmFlagged, "blue", () => {
-      ev.asmFlagged = !ev.asmFlagged;
-      loadEvidenceList(true);
-      renderEvidenceSummary();
-    });
-    flaggedChip.title = "Functions whose body carries [FLAG PC ...] markers: bring-up gates, boot gates, witnesses, diagnostics. They compile into the exe and are meant to differ from the console; the score does not discount them, this only says which divergences are known.";
-    chips.appendChild(flaggedChip);
   } else {
     intro.textContent =
-      "Every body in the tree that is still a stand-in, per file. High: the file or the body says so, or it traps. Medium: a trivial body under a softer marker. Low: a trivial, unmarked body whose console function does real work — possibly a legitimate empty default. \"Live today\" means a body we have reconstructed calls the stub right now.";
+      "Bodies that are still stand-ins, by file. High: the code says so, or it traps. Medium: a trivial body under a softer marker. Low: a trivial, unmarked body whose console function does real work (possibly a legitimate empty default). Called today: reconstructed code calls it right now.";
     for (const [key, label, color, count] of [
       ["", "all tiers", "", null],
       ["HIGH", "high", "red", st.high],
@@ -3822,29 +3519,12 @@ function renderEvidenceSummary() {
         renderEvidenceSummary();
       }));
     }
-    chips.appendChild(evidenceChip("live today only", st.live, ev.live, "blue", () => {
+    chips.appendChild(evidenceChip("called today only", st.live, ev.live, "blue", () => {
       ev.live = !ev.live;
       loadEvidenceList(true);
       renderEvidenceSummary();
     }));
   }
-}
-
-function evidenceSparkline(history) {
-  const existing = document.querySelector(".evidence-spark");
-  if (existing) existing.remove();
-  const points = history.filter((p) => p.paired != null);
-  if (points.length < 2) return null;
-  const wrap = div("evidence-spark");
-  wrap.title = "verified % per audited commit";
-  const max = Math.max(...points.map((p) => Number(p.verified_percent || 0)), 1);
-  for (const p of points.slice(-40)) {
-    const bar = div("bar");
-    bar.style.height = `${Math.max(4, (Number(p.verified_percent || 0) / max) * 44)}px`;
-    bar.title = `${String(p.commit).slice(0, 10)}: ${Number(p.verified_percent || 0).toFixed(1)}% verified, ${fmtInt(p.clean)} clean`;
-    wrap.appendChild(bar);
-  }
-  return wrap;
 }
 
 function evidenceParams(reset) {
@@ -3856,11 +3536,8 @@ function evidenceParams(reset) {
   p.set("order", "desc");
   if (ev.tab === "audit") {
     if (ev.category) p.set("category", ev.category);
+    else p.set("gaps", "true");   // a file with only context (log strings, data) has no gap
     p.set("sort", "weight");
-  } else if (ev.tab === "asm") {
-    if (ev.asmTier) p.set("tier", ev.asmTier);
-    if (ev.asmFlagged) p.set("flagged", "true");
-    p.set("sort", ev.asmFlagged ? "flagged" : ev.asmTier ? ev.asmTier.toLowerCase() : "c");
   } else {
     if (ev.tier) p.set("tier", ev.tier);
     if (ev.live) p.set("live", "true");
@@ -3932,7 +3609,7 @@ async function loadEvidenceList(reset) {
     ev.items = [];
   }
   const requestId = ++ev.requestId;
-  const path = ev.tab === "audit" ? "/api/audit/files" : ev.tab === "asm" ? "/api/asm/files" : "/api/stubs/files";
+  const path = ev.tab === "audit" ? "/api/audit/files" : "/api/stubs/files";
   try {
     const data = await fetchJson(`${path}?${evidenceParams(reset)}`, 15000);
     if (requestId !== ev.requestId) return;
@@ -3955,10 +3632,8 @@ function renderEvidenceList() {
   clearNode(list);
   list.scrollTop = 0;   // the list is its own scroller: a new page starts at its top
   if (!ev.items.length) {
-    const have = ev.tab === "asm"
-      ? ((ev.summary || {}).asm || {}).paired_in_exe
-      : ev.summary && (ev.summary.funcaudit || {}).paired;
-    list.appendChild(div("muted-text", have ? "No files match." : ev.tab === "asm" ? "No build has been audited yet." : "No audit has been imported yet."));
+    const have = ev.summary && (ev.summary.funcaudit || {}).paired;
+    list.appendChild(div("muted-text", have ? "No files match." : "No audit has been imported yet."));
   }
   for (const item of ev.items) {
     const card = div("evidence-file");
@@ -3966,37 +3641,24 @@ function renderEvidenceList() {
     const left = div("evidence-file-left");
     left.appendChild(div("evidence-file-path", item.file || "(functions the ledger files nowhere)"));
     const nums = div("evidence-file-nums");
+    const count = (n, one, many) => `${fmtInt(n)} ${Number(n) === 1 ? one : many}`;
     if (ev.tab === "audit") {
-      const meta = [];
-      if (item.functions) meta.push(`${fmtInt(item.functions)} functions with findings`);
-      if (item.missing_string) meta.push(`${fmtInt(item.missing_string)} log strings`);
-      if (item.uncited_data) meta.push(`${fmtInt(item.uncited_data)} uncited data`);
-      left.appendChild(div("evidence-file-meta", meta.join(" · ")));
-      nums.appendChild(span("pill cat-high", `${fmtInt(item.weight)} findings`));
+      if (item.functions) left.appendChild(div("evidence-file-meta", `${count(item.functions, "function", "functions")} to review`));
+      nums.appendChild(span("pill cat-high", count(item.weight, "gap", "gaps")));
       if (item.no_body) nums.appendChild(span("pill tier-HIGH", `${fmtInt(item.no_body)} no body`));
-      if (item.missing_case) nums.appendChild(span("pill cat-mid", `${fmtInt(item.missing_case)} case ids`));
-      if (item.missing_event) nums.appendChild(span("pill cat-mid", `${fmtInt(item.missing_event)} events`));
-      if (item.missing_callee) nums.appendChild(span("pill cat-low", `${fmtInt(item.missing_callee)} callees`));
-      if (item.missing_assert) nums.appendChild(span("pill cat-low", `${fmtInt(item.missing_assert)} asserts`));
-    } else if (ev.tab === "asm") {
-      const meta = [];
-      if (item.mean_score) meta.push(`mean score ${item.mean_score}`);
-      left.appendChild(div("evidence-file-meta", meta.join(" \u00b7 ")));
-      nums.appendChild(span("pill todo", `${fmtInt(item.functions)} in exe`));
-      if (item.a) nums.appendChild(span("pill done", `${fmtInt(item.a)} A`));
-      if (item.b) nums.appendChild(span("pill compiled", `${fmtInt(item.b)} B`));
-      if (item.c) nums.appendChild(span("pill blocked", `${fmtInt(item.c)} C`));
-      if (item.t) nums.appendChild(span("pill todo", `${fmtInt(item.t)} T`));
-      if (item.flagged) nums.appendChild(span("pill live", `${fmtInt(item.flagged)} flagged`));
+      if (item.missing_case) nums.appendChild(span("pill cat-mid", count(item.missing_case, "switch gap", "switch gaps")));
+      if (item.missing_event) nums.appendChild(span("pill cat-mid", count(item.missing_event, "event", "events")));
+      if (item.missing_callee) nums.appendChild(span("pill cat-low", count(item.missing_callee, "callee", "callees")));
+      if (item.missing_assert) nums.appendChild(span("pill cat-low", count(item.missing_assert, "assert", "asserts")));
     } else {
       const meta = [];
-      if (item.console_lines) meta.push(`${fmtInt(item.console_lines)} console lines behind them`);
+      if (item.console_lines) meta.push(`${count(item.console_lines, "console line", "console lines")} behind them`);
       left.appendChild(div("evidence-file-meta", meta.join(" · ")));
-      nums.appendChild(span("pill cat-high", `${fmtInt(item.stubs)} stubs`));
+      nums.appendChild(span("pill cat-high", count(item.stubs, "stub", "stubs")));
       if (item.high) nums.appendChild(span("pill tier-HIGH", `${fmtInt(item.high)} high`));
       if (item.medium) nums.appendChild(span("pill tier-MEDIUM", `${fmtInt(item.medium)} medium`));
       if (item.low) nums.appendChild(span("pill tier-LOW", `${fmtInt(item.low)} low`));
-      if (item.live) nums.appendChild(span("pill live", `${fmtInt(item.live)} live`));
+      if (item.live) nums.appendChild(span("pill live", `${fmtInt(item.live)} called today`));
     }
     head.append(left, nums);
     head.title = "Open every function of this file in the drawer";
@@ -4044,7 +3706,6 @@ function goToEvidencePage(page) {
 function openEvidenceFile(file) {
   const ev = state.evidence;
   if (ev.tab === "audit") openAuditFile(file);
-  else if (ev.tab === "asm") openAsmFile(file);
   else openStubFile(file);
 }
 
@@ -4073,23 +3734,8 @@ async function loadEvidenceTop() {
         li.addEventListener("click", () => openAuditFile(item.file));
         list.appendChild(li);
       }
-    } else if (ev.tab === "asm") {
-      title.textContent = "Largest divergences";
-      note.textContent = "Tier C functions by the size of the console body: the biggest bodies whose calls, branches or constants do not line up with the console's machine code. Click one to open its file.";
-      const data = await fetchJson(`/api/asm/top?tier=C&limit=12`, 15000);
-      clearNode(list);
-      for (const item of data.items || []) {
-        const li = document.createElement("li");
-        li.appendChild(span("top-n", item.score != null ? String(item.score) : "?"));
-        const name = span("top-name", item.name);
-        const c = item.counts || {};
-        name.appendChild(span("top-meta", `${item.file || "(no file)"} \u00b7 ${fmtInt(c.n ? c.n[0] : 0)} console insns`));
-        li.appendChild(name);
-        li.addEventListener("click", () => openAsmFile(item.file));
-        list.appendChild(li);
-      }
     } else {
-      title.textContent = "Biggest stubs on live paths";
+      title.textContent = "Biggest stubs called today";
       note.textContent = "Stand-ins a reconstructed body calls today, by the size of the console function behind them — the work that is running wrong right now.";
       const data = await fetchJson(`/api/stubs/top?live=true&limit=12`, 15000);
       clearNode(list);
@@ -4130,14 +3776,6 @@ function initEvidence() {
   el("evPageJump").addEventListener("change", (e) => goToEvidencePage(e.target.value));
   el("evPageJump").addEventListener("keydown", (e) => {
     if (e.key === "Enter") goToEvidencePage(e.target.value);
-  });
-  for (const btn of document.querySelectorAll("#verifiedCard .vp-actions [data-open]")) {
-    btn.addEventListener("click", () => openEvidence(btn.dataset.open));
-  }
-  // the history chart is drawn at the box's pixel width: redraw when that changes
-  window.addEventListener("resize", () => {
-    clearTimeout(state.historyResizeTimer);
-    state.historyResizeTimer = setTimeout(() => renderVerifiedHistory(state.verifiedHistory || []), 150);
   });
   loadEvidenceList(true);
 }

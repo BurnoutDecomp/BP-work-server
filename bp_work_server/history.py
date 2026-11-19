@@ -1,13 +1,14 @@
 """The evolution layer: one snapshot of every ring's totals per import, and the merged
 time series the Evolution chart draws.
 
-Only the console evidence (audit_run) carried a history before 2026-09-20; the three
-ledger rings (translation units, functions, executable) were live totals with no past.
-``record`` stores their totals on every workflow import; ``backfill`` rebuilds the past
-from the workflow repo's own git history (status.json changed on 91 days between
-2026-06-11 and 2026-09-19) by importing each day's last ledger into a throwaway store.
-``points`` merges both sources into one list, oldest first, one point per snapshot or
-audited commit, with every series the dashboard can toggle.
+The three ledger rings (translation units, functions, executable) were live totals with
+no past before 2026-09-20. ``record`` stores their totals on every workflow import;
+``backfill`` rebuilds the past from the workflow repo's own git history (status.json
+changed on 91 days between 2026-06-11 and 2026-09-19) by importing each day's last ledger
+into a throwaway store. ``points`` merges the snapshots with the byte-match runs into one
+list, oldest first, one point per snapshot or published byte-match summary, with every
+series the dashboard can toggle. (The console audits are not charted: they are leads to
+check, listed by the Console gaps panel, not progress.)
 """
 
 from __future__ import annotations
@@ -63,13 +64,6 @@ SERIES: dict[str, str | None] = {
     "funcs_external": "funcs_total",
     "funcs_named_uncovered": "funcs_total",
     "funcs_unidentified": "funcs_total",
-    "paired": "funcs_total",
-    "clean": "paired",
-    "no_body": "funcs_total",
-    "weight": None,
-    "stubs": None,
-    "stubs_live": None,
-    "asm_a": "asm_scoreable",
     "bm_exact": "bm_functions",
     "bm_nonmatching": "bm_functions",
     "bm_exact_bytes": "bm_bytes",
@@ -167,42 +161,20 @@ def seconds_until_daily_tick(now: datetime, hour: int = 0, minute: int = 10) -> 
 
 
 def points(con: sqlite3.Connection, days: int | None = None) -> list[dict[str, Any]]:
-    """Snapshots and audit runs merged into one oldest-first series.
+    """Snapshots and byte-match runs merged into one oldest-first series.
 
     Each point carries ``ts`` (ISO), ``date`` (YYYY-MM-DD), the ring totals of the
-    snapshot and the evidence totals of the audit runs. Several snapshots or runs on
+    snapshot and the totals of the byte-match summary. Several snapshots or runs on
     one day stay separate points; a day with only one of the two sources carries the
     other source's most recent values, so every visible line is continuous."""
     con.executescript(SCHEMA)
     # stamps arrive with mixed offsets (git commit dates, server UTC): sort and date them in UTC
-    # rows = (utc ts, point key, source, values): every snapshot is its own point, the
-    # audit runs of one import (same stamp) share one
+    # rows = (utc ts, point key, source, values): every snapshot and every byte-match run is
+    # its own point
     rows: list[tuple[str, str, str, dict[str, Any]]] = []
     for row in con.execute("SELECT id, ts, commit_hash, metrics_json FROM snapshot ORDER BY ts, id"):
         ts = _utc(row["ts"])
         rows.append((ts, f"{ts}#s{row['id']}", "snapshot", {"commit": row["commit_hash"], **json.loads(row["metrics_json"])}))
-    for row in con.execute("SELECT kind, commit_hash, imported_at, stats_json FROM audit_run ORDER BY imported_at, id"):
-        stats = json.loads(row["stats_json"] or "{}")
-        if row["kind"] == "funcaudit":
-            values = {
-                "b5_commit": row["commit_hash"],
-                "paired": int(stats.get("paired") or 0),
-                "clean": int(stats.get("clean") or 0),
-                "no_body": int(stats.get("no_body") or 0),
-                "weight": int(stats.get("weight") or 0),
-            }
-        elif row["kind"] == "asm":
-            values = {
-                "asm_a": int(stats.get("A") or 0),
-                "asm_scoreable": int(stats.get("scoreable") or 0),
-            }
-        else:
-            values = {
-                "stubs": int(stats.get("stubs") or 0),
-                "stubs_live": int(stats.get("live") or 0),
-            }
-        ts = _utc(row["imported_at"])
-        rows.append((ts, f"{ts}#a", f"audit:{row['kind']}", values))
     # the byte-match layer: one point per distinct published summary
     try:
         bytematch_runs = con.execute(

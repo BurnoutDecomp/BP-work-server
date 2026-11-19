@@ -221,10 +221,13 @@ def test_tu_detail_and_dashboard_carry_the_audit(tmp_path):
     assert run["audit_weight"] == 2
     assert "MISSING_CASE" in run["audit_findings"]
 
+    # the dashboard carries what the Console gaps panel labels its filters with: no score,
+    # no history
     state = client.get("/dashboard/state").json()
-    assert state["audit"]["funcaudit"]["verified_percent"] == 33.3
+    assert state["audit"]["funcaudit"]["commit"] == "aaaa1111"
+    assert state["audit"]["funcaudit"]["categories"]["MISSING_CASE"]["functions"] == 1
     assert state["audit"]["stubs"]["live"] == 1
-    assert state["audit"]["history"][0]["commit"] == "aaaa1111"
+    assert "history" not in state["audit"] and "segments" not in state["audit"]
 
     facets = client.get("/api/facets").json()
     assert "MISSING_CASE" in facets["audit_categories"]
@@ -319,7 +322,18 @@ def _asm_workflow(tmp_path, commit="aaaa1111"):
     return root
 
 
-def test_asm_import_summary_files_functions_and_top(tmp_path):
+def test_gaps_only_drops_files_whose_findings_are_only_context(tmp_path):
+    store = WorkStore(tmp_path / "work.sqlite3")
+    store.migrate()
+    store.import_workflow(_workflow(tmp_path, weight_variant=1))   # A.cpp keeps only a log string
+    client = TestClient(create_app(store))
+    every = client.get("/api/audit/files").json()
+    gaps = client.get("/api/audit/files", params={"gaps": "true"}).json()
+    assert {i["file"] for i in every["items"]} == {"GameSource/World/A.cpp", "GameSource/World/B.cpp"}
+    assert gaps["total"] == 1 and [i["file"] for i in gaps["items"]] == ["GameSource/World/B.cpp"]
+
+
+def test_asm_import_summary_and_file_functions(tmp_path):
     store = WorkStore(tmp_path / "work.sqlite3")
     store.migrate()
     root = _asm_workflow(tmp_path)
@@ -334,32 +348,25 @@ def test_asm_import_summary_files_functions_and_top(tmp_path):
     assert summary["history"][-1]["asm_a"] == 1
     assert summary["history"][-1]["asm_shape_percent"] == 50.0
 
-    files = store.asm_files()
-    assert files["total"] == 2
-    assert files["items"][0]["file"] == "GameSource/World/A.cpp"
-    assert files["items"][0]["c"] == 1 and files["items"][0]["a"] == 1
-    assert files["items"][0]["mean_score"] == 65.0
-    assert [i["file"] for i in store.asm_files(tier="T")["items"]] == ["GameSource/World/B.cpp"]
-    assert files["items"][0]["flagged"] == 1
-    assert [i["file"] for i in store.asm_files(flagged_only=True)["items"]] == ["GameSource/World/A.cpp"]
     assert summary["asm"]["flagged"] == 1
 
     functions = store.asm_functions("GameSource/World/A.cpp")
     assert functions["tu_id"] == "GameSource/World/A.cpp"
+    assert functions["rollup"]["c"] == 1 and functions["rollup"]["a"] == 1
+    assert functions["rollup"]["mean_score"] == 65.0 and functions["rollup"]["flagged"] == 1
     assert [f["tier"] for f in functions["items"]] == ["C", "A"]
     assert functions["items"][0]["diff"]["calls_only_console"] == ["BrnWorld::RemoveRivals", "BrnWorld::Tick"]
     assert functions["items"][0]["flags"]["kinds"] == {"PC boot gate": 2, "PC witness": 1}
     assert functions["items"][1]["notes"][0].startswith("folded")
 
-    assert [t["name"] for t in store.asm_top("C")] == ["BrnWorld::A::Run"]
-
     # a re-import of the same build changes nothing; a new build logs a delta on tier C
     assert store.import_workflow(root)["asm_functions"] == 0
 
     client = TestClient(create_app(store))
-    assert client.get("/api/asm/files").json()["total"] == 2
-    assert client.get("/api/asm/files", params={"flagged": "true"}).json()["total"] == 1
-    assert client.get("/api/asm/top", params={"tier": "C"}).json()["items"][0]["name"] == "BrnWorld::A::Run"
+    # the per-file lists went with the dashboard's instruction-shape tab; a TU's detail keeps
+    # one file's functions
+    assert client.get("/api/asm/files").status_code == 404
+    assert client.get("/api/asm/top", params={"tier": "C"}).status_code == 404
     assert client.get("/api/asm/functions", params={"file": "GameSource/World/A.cpp"}).json()["items"][0]["score"] == 40.0
     assert "asm_tiers" in client.get("/api/facets").json()
 

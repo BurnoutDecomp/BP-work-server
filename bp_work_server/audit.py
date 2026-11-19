@@ -83,8 +83,6 @@ STUB_TIERS = ("HIGH", "MEDIUM", "LOW")
 # against the console's machine code. A same shape, B close, C diverges, T trivial. X (named
 # but not in the exe) is counted in the run's stats and never stored per row.
 ASM_TIERS = ("A", "B", "C", "T")
-ASM_FILE_SORTS = {"c": "c", "a": "a", "b": "b", "t": "t", "functions": "functions",
-                  "mean_score": "mean_score", "file": "file", "flagged": "flagged"}
 SRC_PREFIX = "b5-decomp/src/"
 HISTORY_LIMIT = 120
 DELTA_LIST_LIMIT = 5
@@ -708,8 +706,14 @@ def _stats(row: sqlite3.Row | None) -> dict[str, Any]:
     return stats
 
 
+def latest(con: sqlite3.Connection) -> dict[str, Any]:
+    """The newest glue audit and stub inventory: what the Console gaps panel labels its
+    filters with (per-category counts, tiers) and the commit it names."""
+    return {"funcaudit": _stats(_last_run(con, "funcaudit")), "stubs": _stats(_last_run(con, "stubs"))}
+
+
 def summary(con: sqlite3.Connection, history_limit: int = HISTORY_LIMIT) -> dict[str, Any]:
-    """Latest totals per kind plus the per-commit history behind the verified ring."""
+    """Latest totals per kind plus the per-commit history (``GET /api/audit/summary``)."""
     funcaudit = _stats(_last_run(con, "funcaudit"))
     stubs = _stats(_last_run(con, "stubs"))
     asm = _stats(_last_run(con, "asm"))
@@ -773,9 +777,9 @@ def summary(con: sqlite3.Connection, history_limit: int = HISTORY_LIMIT) -> dict
 
 
 def segments(con: sqlite3.Connection, funcaudit: dict[str, Any]) -> dict[str, int]:
-    """The states that make up the verified ring, over every console function the audit
-    selected: clean, high-signal findings, soft-only findings (log strings / uncited data /
-    the parameter hint), named-with-no-body, and not audited (no PC file known)."""
+    """The states the latest audit sorts every selected console function into: clean,
+    high-signal findings, soft-only findings (log strings / uncited data / the parameter
+    hint), named-with-no-body, and not audited (no PC file known)."""
     row = con.execute(
         """
         SELECT
@@ -853,11 +857,15 @@ def files(
     *,
     q: str | None = None,
     category: str | None = None,
+    gaps_only: bool = False,
     sort: str = "weight",
     order: str = "desc",
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
+    """Per-file rollup of the latest glue audit. ``gaps_only`` keeps the files with at least
+    one high-signal finding: a file whose only findings are context (log strings, uncited
+    data) has no gap to show."""
     clauses: list[str] = []
     params: list[Any] = []
     if q:
@@ -866,6 +874,8 @@ def files(
     col = FILE_COLUMNS.get(category or "")
     if col:
         clauses.append(f"{col} > 0")
+    if gaps_only:
+        clauses.append("weight > 0")
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     sort_col = FILE_SORTS.get(sort, "weight")
     if col and sort == "weight":
@@ -992,41 +1002,6 @@ def _asm_row(row: sqlite3.Row) -> dict[str, Any]:
     return item
 
 
-def asm_files(
-    con: sqlite3.Connection,
-    *,
-    q: str | None = None,
-    tier: str | None = None,
-    flagged_only: bool = False,
-    sort: str = "c",
-    order: str = "desc",
-    limit: int = 50,
-    offset: int = 0,
-) -> dict[str, Any]:
-    clauses: list[str] = []
-    params: list[Any] = []
-    if q:
-        clauses.append("file LIKE ?")
-        params.append(f"%{q}%")
-    tier_col = (tier or "").lower()
-    if tier_col in ("a", "b", "c", "t"):
-        clauses.append(f"{tier_col} > 0")
-    if flagged_only:
-        clauses.append("flagged > 0")
-    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
-    sort_col = ASM_FILE_SORTS.get(sort, "c")
-    direction = "ASC" if order == "asc" else "DESC"
-    total = con.execute(f"SELECT COUNT(*) FROM asm_file{where}", params).fetchone()[0]
-    items = [
-        dict(row)
-        for row in con.execute(
-            f"SELECT * FROM asm_file{where} ORDER BY {sort_col} {direction}, functions DESC, file ASC LIMIT ? OFFSET ?",
-            [*params, limit, offset],
-        )
-    ]
-    return {"total": total, "limit": limit, "offset": offset, "items": items}
-
-
 def asm_functions(con: sqlite3.Connection, file: str) -> dict[str, Any]:
     rollup = con.execute("SELECT * FROM asm_file WHERE file=?", (file,)).fetchone()
     items = [
@@ -1045,20 +1020,6 @@ def asm_functions(con: sqlite3.Connection, file: str) -> dict[str, Any]:
         (SRC_PREFIX + file, file),
     ).fetchone()
     return {"file": file, "rollup": dict(rollup) if rollup else None, "tu_id": tu["id"] if tu else None, "items": items}
-
-
-def asm_top(con: sqlite3.Connection, tier: str = "C", limit: int = 12) -> list[dict[str, Any]]:
-    """The largest console bodies in one tier -- for C, the biggest divergences."""
-    tier = (tier or "C").upper()
-    if tier not in ASM_TIERS:
-        return []
-    return [
-        _asm_row(row)
-        for row in con.execute(
-            "SELECT * FROM asm_function WHERE tier=? ORDER BY console_n DESC, name ASC LIMIT ?",
-            (tier, limit),
-        )
-    ]
 
 
 def tu_audit(

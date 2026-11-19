@@ -133,6 +133,7 @@ async def history_points(
 async def audit_files(
     q: str | None = Query(None),
     category: str | None = Query(None),
+    gaps: bool = Query(False),
     sort: str = Query(
         "weight",
         pattern="^(weight|functions|no_body|missing_case|missing_event|missing_callee|missing_assert|file)$",
@@ -146,6 +147,7 @@ async def audit_files(
         store.audit_files,
         q=q,
         category=category,
+        gaps_only=gaps,
         sort=sort,
         order=order,
         limit=limit,
@@ -202,39 +204,13 @@ async def stub_top(
     return {"live": live, "items": await asyncio.to_thread(store.stub_top, live, limit)}
 
 
-# ---- the instruction-shape tier: the built exe vs the console's machine code ----
-@router.get("/api/asm/files", response_model=SearchResponse)
-async def asm_files(
-    q: str | None = Query(None),
-    tier: str | None = Query(None, pattern="^(A|B|C|T|a|b|c|t)$"),
-    flagged: bool = Query(False),
-    sort: str = Query("c", pattern="^(c|a|b|t|functions|mean_score|file|flagged)$"),
-    order: str = Query("desc", pattern="^(asc|desc)$"),
-    limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    store: WorkStore = Depends(get_store),
-) -> dict:
-    return await asyncio.to_thread(
-        store.asm_files, q=q, tier=tier, flagged_only=flagged, sort=sort, order=order,
-        limit=limit, offset=offset,
-    )
-
-
+# ---- the instruction-shape tier: one file's functions, for a TU's detail ----
 @router.get("/api/asm/functions", response_model=AuditFileResponse)
 async def asm_functions(
     file: str = Query(..., min_length=1),
     store: WorkStore = Depends(get_store),
 ) -> dict:
     return await asyncio.to_thread(store.asm_functions, file)
-
-
-@router.get("/api/asm/top")
-async def asm_top(
-    tier: str = Query("C", pattern="^(A|B|C|T|a|b|c|t)$"),
-    limit: int = Query(12, ge=1, le=100),
-    store: WorkStore = Depends(get_store),
-) -> dict:
-    return {"tier": tier.upper(), "items": await asyncio.to_thread(store.asm_top, tier, limit)}
 
 
 @router.get("/api/stubs", response_model=AuditFileResponse)

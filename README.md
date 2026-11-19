@@ -45,13 +45,16 @@ This repo contains an MVP server:
   markers counted) runs on every published build. The import loads
   `progress/funcaudit.json`, `stubs.json` and `asmaudit.json` (idempotent per commit /
   per build) into `audit_run`, `audit_finding` / `audit_file`, `stub` / `stub_file`,
-  `asm_function` / `asm_file`. The dashboard's **Verified vs Console** panel draws the
-  ring over all functions (clean, high-signal, context-only, no body, not audited, not
-  comparable, unidentified), the verified-percent history, the instruction-shape tier
-  bar, a facts row, and the three evidence tabs (glue audit, stub inventory,
-  instruction shape) with per-file drawers that list every function, filterable and
-  sortable. The per-TU drawer carries its "Console audit"; one Live Event per commit or
-  build that moved the numbers is blamed on the b5-decomp author.
+  `asm_function` / `asm_file`. The dashboard's **Console gaps** panel lists them without
+  a score: the files whose functions lack something the console's code has (switch case
+  ids, event posts, callees, asserts, a body; context-only findings such as log strings
+  are left out) and the stubs, each beside its largest items, with per-file drawers that
+  list every function. (Until 2026-11-19 a Verified vs Console panel drew these audits as
+  an "audit clean" ring with a history and an instruction-shape bar; that read as a second
+  progress score, which a static audit is not, and byte matching now measures the code
+  against ARTIST directly.) The per-TU drawer carries its "Console audit", instruction
+  shape included; one Live Event per commit or build that moved the numbers is blamed on
+  the b5-decomp author.
 - The byte-match layer (2026-11-19): b5-decomp's `x360` branch is compiled with the Xbox 360
   XDK and compared with ARTIST function by function (the workflow repo's `tools/bytematch/`,
   `work match`). Contributors commit per-object records under `progress/bytematch/`; the

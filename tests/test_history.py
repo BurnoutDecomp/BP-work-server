@@ -49,15 +49,21 @@ def test_import_records_one_snapshot_per_change(tmp_path):
     assert len(pts) == 2 and pts[-1]["tu_done"] == 2
 
 
-def test_points_merge_audit_runs_and_carry_values_forward(tmp_path):
+def test_points_merge_bytematch_runs_and_carry_values_forward(tmp_path):
     store = WorkStore(tmp_path / "work.sqlite3")
     store.migrate()
     with store.connect(ensure_wal=True) as con:
         con.executescript(history.SCHEMA)
         history.record(con, "2026-06-11T10:00:00+02:00", "aaa", values={"tu_total": 10, "tu_done": 1})
         con.execute(
-            "INSERT INTO audit_run(kind, commit_hash, imported_at, stats_json) VALUES('funcaudit', 'b1', "
+            "INSERT INTO bytematch_run(revision, b5_commit, imported_at, stats_json) VALUES('r1', 'x1', "
             "'2026-06-12T09:00:00+00:00', ?)",
+            (json.dumps({"exact": 5, "nonmatching": 2, "functions": 9, "exact_bytes": 40, "bytes": 90}),),
+        )
+        # an audit run is not charted: it adds no point and no series
+        con.execute(
+            "INSERT INTO audit_run(kind, commit_hash, imported_at, stats_json) VALUES('funcaudit', 'b1', "
+            "'2026-06-12T12:00:00+00:00', ?)",
             (json.dumps({"paired": 5, "clean": 2, "no_body": 7, "weight": 9}),),
         )
         history.record(con, "2026-06-13T10:00:00+00:00", "bbb", values={"tu_total": 10, "tu_done": 3})
@@ -65,9 +71,10 @@ def test_points_merge_audit_runs_and_carry_values_forward(tmp_path):
         recent = history.points(con, days=1)
     assert [p["date"] for p in pts] == ["2026-06-11", "2026-06-12", "2026-06-13"]
     assert pts[0]["ts"] == "2026-06-11T08:00:00+00:00"          # rewritten in UTC
-    assert "paired" not in pts[0]
-    assert pts[1]["paired"] == 5 and pts[1]["tu_done"] == 1     # snapshot carried forward
-    assert pts[2]["tu_done"] == 3 and pts[2]["clean"] == 2      # audit carried forward
+    assert "bm_exact" not in pts[0]
+    assert pts[1]["bm_exact"] == 5 and pts[1]["tu_done"] == 1   # snapshot carried forward
+    assert pts[2]["tu_done"] == 3 and pts[2]["bm_exact"] == 5   # byte match carried forward
+    assert not any("paired" in p or "clean" in p for p in pts)
     assert recent == []                                          # the window is by date
 
 
@@ -120,5 +127,5 @@ def test_history_endpoint(tmp_path):
     client = TestClient(create_app(store))
     body = client.get("/api/history").json()
     assert body["points"][0]["tu_done"] == 1
-    assert body["series"]["clean"] == "paired"
+    assert body["series"]["bm_exact"] == "bm_functions" and "clean" not in body["series"]
     assert client.get("/api/history?days=0").status_code == 422

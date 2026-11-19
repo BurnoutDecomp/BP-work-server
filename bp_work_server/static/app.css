@@ -803,10 +803,10 @@ h2::before {
   text-align: right;
 }
 
-#verifiedCard {
+#gapsCard {
   cursor: default;
 }
-#verifiedCard:hover {
+#gapsCard:hover {
   border-top-color: var(--green);
 }
 
@@ -2574,12 +2574,6 @@ html::-webkit-scrollbar-corner,
   accent-color: var(--red-bright);
   margin: 0;
 }
-.audit-trend.up {
-  color: var(--green);
-}
-.audit-trend.down {
-  color: var(--red-bright);
-}
 .num-cell {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -2688,17 +2682,6 @@ html::-webkit-scrollbar-corner,
   max-width: 90ch;
   color: var(--muted);
   font-size: 13px;
-}
-
-.evidence-tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
-.evidence-tiles .chip span {
-  font-size: 24px;
 }
 
 .evidence-controls {
@@ -2915,20 +2898,6 @@ html::-webkit-scrollbar-corner,
   color: var(--faint);
 }
 
-.evidence-spark {
-  display: flex;
-  align-items: end;
-  gap: 3px;
-  height: 46px;
-  margin: 2px 0 12px;
-}
-.evidence-spark .bar {
-  flex: 1 1 0;
-  min-width: 3px;
-  max-width: 14px;
-  background: linear-gradient(180deg, var(--green), rgba(111, 207, 87, 0.35));
-  clip-path: polygon(2px 0, 100% 0, calc(100% - 2px) 100%, 0 100%);
-}
 
 /* ---- download chooser: full game vs exe-only update ---- */
 .download-group {
@@ -2992,7 +2961,7 @@ html::-webkit-scrollbar-corner,
   color: var(--gold);
 }
 
-/* ---- Verified vs Console: its own band under the goal strip ---- */
+/* ---- Panel bands (byte matching, console gaps): head, intro, ring grid, history chart ---- */
 .verified-panel {
   padding: 22px 24px 24px;
 }
@@ -3012,12 +2981,6 @@ html::-webkit-scrollbar-corner,
   color: var(--muted);
   font-size: 13px;
   line-height: 1.45;
-}
-.vp-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  flex-shrink: 0;
 }
 .vp-grid {
   display: grid;
@@ -3108,23 +3071,6 @@ html::-webkit-scrollbar-corner,
   line-height: 1.45;
   padding: 16px 0 8px;
 }
-.vp-shape {
-  display: flex;
-  height: 14px;
-  overflow: hidden;
-  clip-path: polygon(3px 0, 100% 0, calc(100% - 3px) 100%, 0 100%);
-  background: var(--line-soft);
-  cursor: pointer;
-}
-.vp-shape span {
-  display: block;
-  height: 100%;
-  min-width: 0;
-}
-.vp-shape .sh-A { background: var(--green); }
-.vp-shape .sh-B { background: var(--gold); }
-.vp-shape .sh-C { background: var(--red); }
-.vp-shape .sh-T { background: var(--faint); }
 .vp-shape-legend {
   display: flex;
   flex-wrap: wrap;
