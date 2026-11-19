@@ -188,12 +188,19 @@ def summary(con: sqlite3.Connection) -> dict[str, Any]:
         "SELECT status, COUNT(*) AS n, COALESCE(SUM(size), 0) AS b FROM bytematch_func GROUP BY status")}
     game = totals.get("game", {})
     all_bytes = sum(int(v["bytes"]) for v in counts.values())
+    all_functions = sum(int(v["functions"]) for v in counts.values())
+    matched = int(game.get("exact") or 0) + int(counts.get("sdk", {}).get("functions") or 0)
+    if "all" not in totals:
+        totals = {**totals, "all": {"functions": all_functions, "bytes": all_bytes, "matched": matched,
+                                    "matched_bytes": int(game.get("exact_bytes") or 0) + int(counts.get("sdk", {}).get("bytes") or 0)}}
     return {
         "available": True,
         "meta": meta,
         "totals": totals,
         "status_counts": counts,
         "percent": {
+            # the headline: every ARTIST function, exact from our source or linked from the XDK
+            "matched_functions": round(100.0 * matched / all_functions, 2) if all_functions else 0.0,
             "exact_functions": round(100.0 * game.get("exact", 0) / game["functions"], 2) if game.get("functions") else 0.0,
             "exact_bytes": round(100.0 * game.get("exact_bytes", 0) / game["bytes"], 2) if game.get("bytes") else 0.0,
             "fuzzy_bytes": round(100.0 * game.get("fuzzy_bytes", 0) / game["bytes"], 2) if game.get("bytes") else 0.0,
@@ -266,14 +273,19 @@ UNIDENTIFIED_UNIT = "unidentified:BURNOUT_X360_ARTIST.XEX"
 
 
 def unit_state(n: int, exact: int, compiled: int, sdk: int, unidentified: bool) -> str:
-    """One TU's byte-match state, for the X360 treemap's unit view."""
+    """One TU's byte-match state, for the X360 treemap's unit view.
+
+    A function matches when it is exact (compiled from our source) or provided by an XDK
+    library (byte-identical by linking): both count toward a unit's progress.
+    """
+    matched = exact + sdk
     if unidentified:
         return "unnamed"
     if n and sdk == n:
         return "sdk"
-    if n and exact + sdk == n:
+    if n and matched == n:
         return "matched"
-    if exact:
+    if matched:
         return "partial"
     if compiled:
         return "compiled"
@@ -297,8 +309,8 @@ def map_snapshot(con: sqlite3.Connection, include_functions: bool = False) -> di
         key = r["tu"] or (UNIDENTIFIED_UNIT if r["status"] == "unnamed" else "unassigned")
         unit = units.get(key)
         if unit is None:
-            unit = units[key] = {"id": key, "n": 0, "exact": 0, "compiled": 0, "sdk": 0,
-                                 "bytes": 0, "exact_bytes": 0, "functions": []}
+            unit = units[key] = {"id": key, "n": 0, "exact": 0, "compiled": 0, "sdk": 0, "missing": 0,
+                                 "bytes": 0, "exact_bytes": 0, "sdk_bytes": 0, "functions": []}
         unit["n"] += 1
         unit["bytes"] += int(r["size"] or 0)
         if r["status"] == "exact":
@@ -308,6 +320,9 @@ def map_snapshot(con: sqlite3.Connection, include_functions: bool = False) -> di
             unit["compiled"] += 1
         if r["status"] == "sdk":
             unit["sdk"] += 1
+            unit["sdk_bytes"] += int(r["size"] or 0)
+        if r["status"] == "missing":
+            unit["missing"] += 1
         if include_functions:
             unit["functions"].append({"name": r["name"], "status": r["status"], "score": r["score"],
                                       "size": r["size"], "artist": r["artist"], "source": r["source"]})
@@ -316,7 +331,8 @@ def map_snapshot(con: sqlite3.Connection, include_functions: bool = False) -> di
     except sqlite3.OperationalError:
         ledger = {}
     out = []
-    totals = {"tus": 0, "funcs": 0, "exact_funcs": 0, "matched_tus": 0, "bytes": 0, "exact_bytes": 0}
+    totals = {"tus": 0, "funcs": 0, "exact_funcs": 0, "sdk_funcs": 0, "matched_funcs": 0, "matched_tus": 0,
+              "bytes": 0, "exact_bytes": 0, "matched_bytes": 0}
     for key in sorted(units):
         u = units[key]
         unidentified = key == UNIDENTIFIED_UNIT
@@ -325,17 +341,23 @@ def map_snapshot(con: sqlite3.Connection, include_functions: bool = False) -> di
         out.append({
             "id": key, "source": row["source"] if row else ("unidentified" if unidentified else None),
             "dest_path": row["dest_path"] if row else None, "status": state, "linked": False,
-            "unidentified": unidentified, "function_count": u["n"], "recorded_funcs": u["exact"],
-            "compiled_funcs": u["compiled"], "sdk_funcs": u["sdk"], "bytes": u["bytes"],
-            "exact_bytes": u["exact_bytes"], "goals": [],
+            "unidentified": unidentified, "function_count": u["n"],
+            # recorded_funcs is what the map's summary counts: functions that byte-match
+            "recorded_funcs": u["exact"] + u["sdk"], "exact_funcs": u["exact"], "sdk_funcs": u["sdk"],
+            "nonmatching_funcs": u["compiled"] - u["exact"], "missing_funcs": u["missing"],
+            "compiled_funcs": u["compiled"], "bytes": u["bytes"], "exact_bytes": u["exact_bytes"],
+            "matched_bytes": u["exact_bytes"] + u["sdk_bytes"], "goals": [],
             "functions": u["functions"] if include_functions else None,
         })
         totals["funcs"] += u["n"]
         totals["exact_funcs"] += u["exact"]
+        totals["sdk_funcs"] += u["sdk"]
+        totals["matched_funcs"] += u["exact"] + u["sdk"]
         totals["bytes"] += u["bytes"]
         totals["exact_bytes"] += u["exact_bytes"]
+        totals["matched_bytes"] += u["exact_bytes"] + u["sdk_bytes"]
         if not unidentified:
             totals["tus"] += 1
-            totals["matched_tus"] += state == "matched"
+            totals["matched_tus"] += state in ("matched", "sdk")   # every function byte-matches
     return {"units": out, "totals": totals, "include_functions": include_functions,
             "meta": _meta(con, "meta", {})}

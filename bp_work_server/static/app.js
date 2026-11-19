@@ -4256,13 +4256,15 @@ function renderBytematch(s) {
     renderBytematchAreas([]);
     return;
   }
-  const game = (s.totals || {}).game || {};
   const counts = s.status_counts || {};
+  const whole = (s.totals || {}).all || {};
+  // The ring counts every ARTIST function; its centre is the share that byte-matches
+  // (exact from our source, or linked from the XDK), so the arcs and the number agree.
   setDonut("bytematch", BM_STATES.map((st) => ({
     label: st.label, value: Number((counts[st.key] || {}).functions || 0), color: st.color, title: st.title,
     onClick: () => bmFilter({ status: st.key }),
-  })), Number((s.percent || {}).exact_bytes || 0),
-  `${fmtInt(game.exact)} / ${fmtInt(game.functions)} game functions exact`);
+  })), Number((s.percent || {}).matched_functions || 0),
+  `${fmtInt(whole.matched)} / ${fmtInt(whole.functions)} functions byte-match ARTIST`);
   renderBytematchFacts(s);
   renderBytematchHistory(s.history || []);
   renderBytematchRecent(s.recent || []);
@@ -4294,8 +4296,16 @@ function renderBytematchFacts(s) {
     host.appendChild(c);
   };
   const pctOf = (k) => `${Number((s.percent || {})[k] || 0).toFixed(2)}%`;
-  fact(pctOf("fuzzy_bytes"), "fuzzy code match", "Every game function's fuzzy instruction score, weighted by its size. Exact functions count 100%, missing ones 0%.", "progress");
-  fact(pctOf("image_bytes"), "of the whole image", "Exact game code plus XDK library code, over every function of the console image.", "done");
+  const game = (s.totals || {}).game || {};
+  const sdk = (s.totals || {}).sdk || {};
+  fact(pctOf("image_bytes"), "of the image's code bytes match",
+    `By size instead of count: ${fmtInt((s.totals.all || {}).matched_bytes)} of ${fmtInt((s.totals.all || {}).bytes)} bytes of code, ` +
+    "exact functions of ours plus XDK library code.", "done");
+  fact(pctOf("exact_functions"), "of our functions exact",
+    `${fmtInt(game.exact)} of the ${fmtInt(game.functions)} functions we compile from source (the image minus ` +
+    `${fmtInt(sdk.functions)} XDK library functions and the unnamed ones). By size: ${pctOf("exact_bytes")} of their code.`, "compiled");
+  fact(pctOf("fuzzy_bytes"), "fuzzy match of our code",
+    "How close our compiled code is overall: each function's fuzzy instruction score weighted by its size (exact = 100%, no body = 0%).", "progress");
   if (objects.sources) {
     fact(fmtInt(objects.sources - (objects.compiled || 0)), "objects fail to compile",
       `${fmtInt(objects.sources)} native sources measured; these failed the XDK compile.`, "blocked");

@@ -82,6 +82,8 @@ def test_import_summary_and_idempotency(tmp_path):
     assert s["available"] is True
     assert s["totals"]["game"]["exact"] == 1
     assert s["percent"]["exact_bytes"] == round(100 * 40 / 140, 2)
+    assert s["percent"]["matched_functions"] == 40.0          # (1 exact + 1 XDK) of 5 functions
+    assert s["totals"]["all"]["functions"] == 5
     assert s["status_counts"]["sdk"] == {"functions": 1, "bytes": 64}
     assert [a["area"] for a in s["areas"]] == ["GameSource/World", "GameSource/Gui"]
     assert len(s["history"]) == 1 and s["history"][0]["exact"] == 1
@@ -147,7 +149,10 @@ def test_map_snapshot_groups_like_the_progress_map(tmp_path):
     bucket = units["unidentified:BURNOUT_X360_ARTIST.XEX"]
     assert bucket["unidentified"] and bucket["status"] == "unnamed"
     assert [f["artist"] for f in units["GameSource/World/A.cpp"]["functions"]] == ["82100000", "82100040"]
-    assert snap["totals"] == {"tus": 3, "funcs": 5, "exact_funcs": 1, "matched_tus": 0, "bytes": 216, "exact_bytes": 40}
+    assert snap["totals"] == {"tus": 3, "funcs": 5, "exact_funcs": 1, "sdk_funcs": 1, "matched_funcs": 2, "matched_tus": 1,
+                              "bytes": 216, "exact_bytes": 40, "matched_bytes": 104}
+    a_unit = units["GameSource/World/A.cpp"]
+    assert (a_unit["exact_funcs"], a_unit["nonmatching_funcs"], a_unit["missing_funcs"]) == (1, 1, 0)
     assert store.bytematch_map()["units"][0]["functions"] is None
     store.import_workflow(_workflow(tmp_path, "w2", _summary(commit="bbbb" * 10, exact_g=True)))
     assert {u["id"]: u for u in store.bytematch_map()["units"]}["GameSource/World/A.cpp"]["status"] == "matched"
@@ -185,3 +190,12 @@ def test_a_bad_summary_is_rejected_alone(tmp_path):
     assert store.bytematch_summary()["meta"]["b5_commit"] == "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
     with store.connect() as con:
         assert con.execute("SELECT COUNT(*) FROM event WHERE action = 'bytematch_error'").fetchone()[0] == 1
+
+
+def test_unit_states_count_xdk_functions_as_matched():
+    from bp_work_server.bytematch import unit_state
+    assert unit_state(284, 0, 0, 282, False) == "partial"      # mostly XDK library, two left
+    assert unit_state(3, 1, 1, 2, False) == "matched"           # exact + XDK cover every function
+    assert unit_state(4, 0, 0, 4, False) == "sdk"
+    assert unit_state(2, 0, 2, 0, False) == "compiled"
+    assert unit_state(2, 0, 0, 0, False) == "missing"

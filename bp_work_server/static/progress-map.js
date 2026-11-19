@@ -27,7 +27,7 @@
     linked: "Linked source", unlinked: "Not included",
     bm_exact: "Exact", bm_close: "Close (90%+)", bm_nonmatching: "Compiled, not matching",
     bm_missing: "No compiled body", bm_sdk: "XDK library", bm_unnamed: "Not yet named",
-    bm_matched: "Every function exact", bm_partial: "Some functions exact", bm_compiled: "Compiled, none exact",
+    bm_matched: "Every function matches", bm_partial: "Some functions match", bm_compiled: "Compiled, none match",
   };
   const X360_MODES = new Set(["x360tus", "x360funcs"]);
   const FUNCTION_MODES = new Set(["funcs", "x360funcs"]);
@@ -161,8 +161,15 @@
     }
     if (data.kind === "unit") {
       const unit = data.unit;
-      const meta = `${number(unit.recorded_funcs)} of ${number(unit.function_count)} functions exact \u00b7 ` +
-        `${number(unit.exact_bytes)} of ${number(unit.bytes)} bytes exact`;
+      // matched = exact from our source + provided by an XDK library; then what is left
+      const parts = [`${number(unit.recorded_funcs)} of ${number(unit.function_count)} functions match`];
+      const detail = [];
+      if (unit.sdk_funcs) detail.push(`${number(unit.sdk_funcs)} XDK library`);
+      if (unit.exact_funcs ?? unit.recorded_funcs) detail.push(`${number(unit.exact_funcs ?? unit.recorded_funcs)} exact`);
+      if (detail.length) parts[0] += ` (${detail.join(", ")})`;
+      if (unit.nonmatching_funcs) parts.push(`${number(unit.nonmatching_funcs)} not matching`);
+      if (unit.missing_funcs) parts.push(`${number(unit.missing_funcs)} with no compiled body`);
+      const meta = parts.join(" \u00b7 ");
       if (mode === "x360funcs") return { type: "Functions in translation unit", name: data.tuId, meta: `${meta} \u00b7 select to zoom` };
       return { type: "Translation unit", name: data.tuId, meta: `${labels[colorKey(data, mode)]} \u00b7 ${meta}` };
     }
@@ -310,7 +317,7 @@
       const unitMode = !FUNCTION_MODES.has(this.mode);
       this.options.onSummary(this.summary, this.mode);
       this.$("mapExplanation").textContent = this.mode === "x360tus"
-        ? "One tile = one translation unit of the ledger. Area = its function count; color = how much of it matches ARTIST byte for byte."
+        ? "One tile = one translation unit of the ledger. Area = its function count; color = how much of it matches ARTIST byte for byte (exact from our source, or linked from the XDK)."
         : this.mode === "x360funcs"
         ? `One tile = one ARTIST function. Equal weight; color = its byte-match state. Close means a fuzzy score of ${CLOSE_SCORE}% or more.`
         : unitMode
