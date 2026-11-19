@@ -798,14 +798,26 @@ def segments(con: sqlite3.Connection, funcaudit: dict[str, Any]) -> dict[str, in
     }
 
 
+CASE_CATEGORIES = ("MISSING_CASE", "EXTRA_CASE")
+
+
+def case_ids(items: list[str]) -> int:
+    """How many case ids a MISSING_CASE / EXTRA_CASE finding names: each item is one
+    comma-joined list of ids, possibly followed by a bracketed note."""
+    return sum(len([tok for tok in str(item).split("[")[0].split(",") if tok.strip()]) for item in items)
+
+
 def top_functions(con: sqlite3.Connection, category: str, limit: int = 12) -> list[dict[str, Any]]:
-    """The functions with the most items of one category -- the largest switch gaps, the
-    most missing event posts -- straight from the latest run."""
+    """The functions with the most items of one category -- the most missing event posts,
+    callees, asserts -- straight from the latest run. A case category ranks by the number of
+    ids instead (the largest switch gaps): its finding is one list per function, so every
+    function has one item and the item count ranks nothing."""
     if category not in CATEGORIES:
         return []
     path = "$." + category.replace("?", "")   # JSON1 paths cannot carry the '?'
     if category.endswith("?"):
         path = '$."' + category + '"'
+    by_ids = category in CASE_CATEGORIES
     rows = con.execute(
         """
         SELECT name, addr, file, line, weight,
@@ -814,9 +826,8 @@ def top_functions(con: sqlite3.Connection, category: str, limit: int = 12) -> li
         FROM audit_finding
         WHERE json_extract(findings_json, ?) IS NOT NULL
         ORDER BY n DESC, weight DESC, name ASC
-        LIMIT ?
-        """,
-        (path, path, path, limit),
+        """ + ("" if by_ids else "LIMIT ?"),
+        (path, path, path) if by_ids else (path, path, path, limit),
     ).fetchall()
     out = []
     for row in rows:
@@ -829,11 +840,13 @@ def top_functions(con: sqlite3.Connection, category: str, limit: int = 12) -> li
                 "line": row["line"],
                 "weight": row["weight"],
                 "count": row["n"],
-                # a MISSING_CASE item is one comma-joined list: count the ids for the label
-                "ids": len(items[0].split("[")[0].split(",")) if items and category in ("MISSING_CASE", "EXTRA_CASE") else None,
+                "ids": case_ids(items) if by_ids else None,
                 "preview": (items[0] if items else "")[:90],
             }
         )
+    if by_ids:   # a few hundred functions at most: rank them here, largest gap first
+        out.sort(key=lambda r: (-r["ids"], -int(r["weight"] or 0), r["name"]))
+        out = out[:limit]
     return out
 
 

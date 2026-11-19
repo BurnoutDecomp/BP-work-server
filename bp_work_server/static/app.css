@@ -1561,7 +1561,11 @@ td:nth-child(4) {
 
 /* Scrollbars — asphalt gutter with a brushed crimson thumb.
    Keep this scoped to real scroll containers so Firefox does not restyle every
-   element during frequent dashboard refreshes. */
+   element during frequent dashboard refreshes -- and list EVERY scroll container here:
+   one that only inherits scrollbar-color from html has no rules of its own, so a
+   page-wide ::-webkit-scrollbar style from outside the page (a browser theme or an
+   extension) can paint it instead -- the gaps list showed up solid bright red on some
+   loads and normal on others. */
 html,
 .file-tree,
 .panel > .agent-list,
@@ -1573,7 +1577,8 @@ html,
 .table-wrap,
 .event-table,
 .cs-menu,
-.drawer-body {
+.drawer-body,
+.evidence-list {
   scrollbar-width: thin;
   scrollbar-color: var(--red-deep) rgba(0, 0, 0, 0.4);
   scrollbar-gutter: stable;
@@ -1589,7 +1594,8 @@ html::-webkit-scrollbar,
 .table-wrap::-webkit-scrollbar,
 .event-table::-webkit-scrollbar,
 .cs-menu::-webkit-scrollbar,
-.drawer-body::-webkit-scrollbar {
+.drawer-body::-webkit-scrollbar,
+.evidence-list::-webkit-scrollbar {
   width: 12px;
   height: 12px;
 }
@@ -1604,7 +1610,8 @@ html::-webkit-scrollbar-track,
 .table-wrap::-webkit-scrollbar-track,
 .event-table::-webkit-scrollbar-track,
 .cs-menu::-webkit-scrollbar-track,
-.drawer-body::-webkit-scrollbar-track {
+.drawer-body::-webkit-scrollbar-track,
+.evidence-list::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.4);
   box-shadow: inset 1px 0 0 var(--line-soft);
 }
@@ -1619,7 +1626,8 @@ html::-webkit-scrollbar-thumb,
 .table-wrap::-webkit-scrollbar-thumb,
 .event-table::-webkit-scrollbar-thumb,
 .cs-menu::-webkit-scrollbar-thumb,
-.drawer-body::-webkit-scrollbar-thumb {
+.drawer-body::-webkit-scrollbar-thumb,
+.evidence-list::-webkit-scrollbar-thumb {
   /* transparent border + padding-box clip leaves a gutter so the thumb floats */
   background: linear-gradient(180deg, var(--red) 0%, var(--red-deep) 100%);
   background-clip: padding-box;
@@ -1637,7 +1645,8 @@ html::-webkit-scrollbar-thumb:hover,
 .table-wrap::-webkit-scrollbar-thumb:hover,
 .event-table::-webkit-scrollbar-thumb:hover,
 .cs-menu::-webkit-scrollbar-thumb:hover,
-.drawer-body::-webkit-scrollbar-thumb:hover {
+.drawer-body::-webkit-scrollbar-thumb:hover,
+.evidence-list::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, var(--red-bright) 0%, var(--red) 100%);
   background-clip: padding-box;
 }
@@ -1652,7 +1661,8 @@ html::-webkit-scrollbar-corner,
 .table-wrap::-webkit-scrollbar-corner,
 .event-table::-webkit-scrollbar-corner,
 .cs-menu::-webkit-scrollbar-corner,
-.drawer-body::-webkit-scrollbar-corner {
+.drawer-body::-webkit-scrollbar-corner,
+.evidence-list::-webkit-scrollbar-corner {
   background: transparent;
 }
 

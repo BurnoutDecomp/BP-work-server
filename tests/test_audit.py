@@ -322,6 +322,28 @@ def _asm_workflow(tmp_path, commit="aaaa1111"):
     return root
 
 
+def test_largest_switch_gaps_rank_by_missing_ids_not_weight(tmp_path):
+    store = WorkStore(tmp_path / "work.sqlite3")
+    store.migrate()
+    rows = [
+        ("A::Heavy", 50, {"MISSING_CASE": ["1, 2"], "MISSING_CALLEE": ["x"] * 49}),
+        ("B::Wide", 5, {"MISSING_CASE": ["1, 2, 3, 4, 5 [1 PC label unresolved: E_X]"]}),
+        ("C::One", 9, {"MISSING_CASE": ["7"], "MISSING_ASSERT": ["y"] * 8}),
+        ("D::Events", 3, {"MISSING_EVENT": ["e1", "e2", "e3"]}),
+    ]
+    with store.connect(ensure_wal=True) as con:
+        for name, weight, findings in rows:
+            con.execute(
+                "INSERT INTO audit_finding(name, addr, file, weight, findings_json) VALUES(?, ?, ?, ?, ?)",
+                (name, "0x82000000", "GameSource/X.cpp", weight, json.dumps(findings)),
+            )
+        con.commit()
+    top = store.audit_top("MISSING_CASE", limit=2)
+    assert [(t["name"], t["ids"]) for t in top] == [("B::Wide", 5), ("A::Heavy", 2)]
+    assert [t["name"] for t in store.audit_top("MISSING_EVENT")] == ["D::Events"]
+    assert store.audit_top("MISSING_EVENT")[0]["ids"] is None
+
+
 def test_gaps_only_drops_files_whose_findings_are_only_context(tmp_path):
     store = WorkStore(tmp_path / "work.sqlite3")
     store.migrate()
