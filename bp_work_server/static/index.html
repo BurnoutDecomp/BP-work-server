@@ -3,6 +3,18 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- The dark scheme and the scrollbar colours, declared before any stylesheet loads. A hard
+         reload (Ctrl+F5) fetches app.css again, and in that gap the page had no scrollbar
+         colours of its own: Chrome painted every scrollbar solid #e10600 (the theme-color),
+         thumb and track alike, and kept it after app.css arrived. app.css repeats these. -->
+    <meta name="color-scheme" content="dark" />
+    <style>
+      html {
+        color-scheme: dark;
+        scrollbar-width: thin;
+        scrollbar-color: #7a1418 rgba(0, 0, 0, 0.4);
+      }
+    </style>
     <title>Burnout Paradise Decompilation Progress</title>
     <meta
       name="description"
@@ -29,7 +41,8 @@
     />
     <meta name="twitter:image" content="/static/img/ui/seal-paradise-city.png" />
 
-    <!-- Embed accent color (Discord left bar) -->
+    <!-- Embed accent color (Discord left bar). Served to link-preview bots only
+         (routes/static.py): a browser that gets it may paint the page's scrollbars with it. -->
     <meta name="theme-color" content="#e10600" />
 
     <link rel="icon" type="image/png" href="/static/img/ui/seal-paradise-city.png" />

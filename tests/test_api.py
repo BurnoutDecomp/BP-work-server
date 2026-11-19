@@ -56,6 +56,20 @@ def test_dashboard_page_and_state(tmp_path):
     assert body["next"]["items"]
 
 
+def test_theme_color_reaches_link_previews_but_not_browsers(tmp_path):
+    from bp_work_server.routes.static import THEME_COLOR_META, static_dir
+
+    assert THEME_COLOR_META in static_dir().joinpath("index.html").read_text(encoding="utf-8")
+    client, _ = make_client(tmp_path)
+    chrome = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36"
+    browser = client.get("/", headers={"User-Agent": chrome})
+    discord = client.get("/", headers={"User-Agent": "Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)"})
+    assert 'name="theme-color"' not in browser.text
+    assert 'scrollbar-color: #7a1418' in browser.text     # declared before any stylesheet
+    assert THEME_COLOR_META in discord.text
+    assert browser.headers["vary"] == "User-Agent"
+
+
 def test_dashboard_snapshot_compression_preserves_data_and_skips_other_routes(tmp_path):
     client, _ = make_client(tmp_path)
     compressed = client.get("/dashboard/state", headers={"Accept-Encoding": "gzip"})
