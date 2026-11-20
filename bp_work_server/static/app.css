@@ -42,7 +42,6 @@
 
 html {
   scroll-behavior: smooth;
-  scroll-padding-top: 24px;
 }
 
 /* ---------- Page ---------- */
@@ -50,9 +49,27 @@ html {
   padding-bottom: 64px;
 }
 
+/* Sections sit on the page, ruled off from each other like Paradise Online's connect
+   section. The first follows the stat strip, which brings its own rule. */
 .wp-section {
   margin-top: 64px;
+  padding-top: 44px;
+  border-top: 1px solid var(--line);
   font-size: 14px;
+}
+
+.wp-metrics + .wp-section {
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* A heading inside a section, in the stat strip's label type. */
+.wp-subhead {
+  margin: 0;
+  color: var(--b5-color-soft);
+  font: italic 15px/1.3 var(--font-display);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
 }
 
 .wp-section > .b5-section-header {
@@ -91,14 +108,6 @@ main a:not([class]):hover,
   padding: 22px 18px;
   color: var(--faint);
   font-size: 13px;
-}
-
-/* Small gold headings inside panels: the eyebrow type in the accent colour. */
-.label {
-  color: var(--gold);
-  font: 11px/1.6 var(--font-mono);
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
 }
 
 /* ---------- Headline metrics: three rings on the shared stat strip ---------- */
@@ -235,23 +244,6 @@ main a:not([class]):hover,
   --b5-ribbon-text: #e3d4fa;
 }
 
-/* ---------- Panels ---------- */
-.b5-panel--ink > .b5-panel__header {
-  padding: 12px 18px 12px 16px;
-}
-
-.b5-panel--ink > .b5-panel__header > .b5-section-title {
-  font-size: 21px;
-}
-
-/* Blocked work wears the hazard sign instead of the chevron. */
-.blocked .b5-section-title::before {
-  width: 17px;
-  height: 17px;
-  background-image: url("/static/b5-ui/assets/sign-diamond.png");
-  transform: none;
-}
-
 /* ---------- Progress explorer ---------- */
 .explorer-view-tools {
   display: flex;
@@ -261,29 +253,30 @@ main a:not([class]):hover,
   gap: 12px;
 }
 
-.explorer > .b5-panel__header::before {
-  content: "";
-  position: absolute;
-  right: 6px;
-  top: -16px;
-  width: 150px;
-  height: 110px;
-  background: url("/static/b5-ui/assets/splatter-red.png") no-repeat right center / contain;
-  opacity: 0.22;
-  pointer-events: none;
-}
-
 .explorer-controls {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px 14px;
-  margin: 14px 20px 6px;
+  margin-bottom: 18px;
 }
 
 .wp-search {
   flex: 1 1 260px;
   width: auto;
+}
+
+/* Beside the mode filters, the search keeps the directory's width; once the tools
+   stack (the library turns them into a column at 850px), it takes the full width. */
+.b5-directory-tools > .wp-search {
+  flex: 0 1 320px;
+}
+
+@media (max-width: 850px) {
+  .b5-directory-tools > .wp-search {
+    flex: none;
+    width: 100%;
+  }
 }
 
 .explorer-controls .b5-select-wrap,
@@ -300,10 +293,6 @@ main a:not([class]):hover,
 
 .order-btn:hover {
   color: #fff;
-}
-
-.explorer-list {
-  padding: 0 20px 6px;
 }
 
 .explorer-list > .b5-pagination {
@@ -345,10 +334,6 @@ main a:not([class]):hover,
 }
 
 /* ---------- Progress map ---------- */
-.progress-map {
-  padding: 0 20px 20px;
-}
-
 .map-toolbar,
 .map-navigation,
 .map-selection-actions {
@@ -471,11 +456,12 @@ main a:not([class]):hover,
   pointer-events: none;
 }
 
+/* the stat strip's label type, as everywhere else on the page */
 .map-tooltip-type,
 .map-selection-type {
-  color: var(--gold);
-  font: 11px/1.6 var(--font-mono);
-  letter-spacing: 1.2px;
+  color: var(--b5-color-soft);
+  font: italic 13px/1.4 var(--font-display);
+  letter-spacing: 0.6px;
   text-transform: uppercase;
 }
 
@@ -511,7 +497,8 @@ main a:not([class]):hover,
 
 #mapSelectionName,
 #x360MapSelectionName {
-  font: 500 13px var(--font-mono);
+  color: var(--text);
+  font: 500 14px var(--font-mono);
 }
 
 #mapSelectionMeta,
@@ -579,15 +566,22 @@ main a:not([class]):hover,
   vertical-align: top;
 }
 
-.table-wrap th {
+.table-wrap th,
+.event-head {
   position: sticky;
   top: 0;
   z-index: 1;
-  color: var(--gold);
-  background: #120f0f;
-  font: 11px/1.6 var(--font-mono);
-  letter-spacing: 1.2px;
+  color: var(--b5-color-soft);
+  background: var(--bg);
+  font: italic 13px/1.5 var(--font-display);
+  letter-spacing: 0.6px;
   text-transform: uppercase;
+}
+
+/* opaque over rows scrolling beneath, in the card's own tone */
+.wp-card .table-wrap th,
+.wp-card .event-head {
+  background: #1c1616;
 }
 
 .table-wrap th:nth-child(1),
@@ -767,19 +761,26 @@ main a:not([class]):hover,
   min-width: 0;
 }
 
-/* Each list panel caps its height so a long list scrolls inside it. */
-.panel {
+/* Each list card caps its height so a long list scrolls inside it. Its rows run to the
+   card's edges, so only the header keeps the card's padding. */
+.wp-card {
   display: flex;
   flex-direction: column;
   max-height: 560px;
+  padding: 0;
   overflow: hidden;
 }
 
-.panel > .queue,
-.panel > .goal-list,
-.panel > .blocked-list,
-.panel > .event-table,
-.panel > .table-wrap {
+.wp-card > .b5-card__header {
+  margin: 0;
+  padding: 18px 18px 12px 20px;
+}
+
+.wp-card > .queue,
+.wp-card > .goal-list,
+.wp-card > .blocked-list,
+.wp-card > .event-table,
+.wp-card > .table-wrap {
   flex: 1 1 auto;
   min-height: 0;
   max-height: none;
@@ -875,17 +876,6 @@ main a:not([class]):hover,
   border-bottom: 0;
 }
 
-.event-head {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  color: var(--gold);
-  background: #120f0f;
-  font: 11px/1.6 var(--font-mono);
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
-}
-
 .event-cell {
   min-width: 0;
   padding: 9px 10px;
@@ -920,13 +910,21 @@ main a:not([class]):hover,
 }
 
 /* ---------- GitHub repository ---------- */
+.gh-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
 .gh-title {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   min-width: 0;
-  font: italic 21px/1.25 var(--font-display);
+  margin: 0;
+  font: italic 26px/1.25 var(--font-display);
   text-transform: uppercase;
 }
 
@@ -961,16 +959,16 @@ main a:not([class]):hover,
 }
 
 .gh-desc {
-  padding: 14px 18px 0;
-  color: var(--muted);
-  font-size: 13.5px;
+  margin: 8px 0 0;
+  color: var(--b5-color-soft);
+  font-size: 14px;
 }
 
 .gh-stats {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  padding: 14px 18px;
+  padding: 16px 0 22px;
 }
 
 .gh-stat {
@@ -994,36 +992,28 @@ main a:not([class]):hover,
 .gh-body {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1px;
+  gap: 22px;
+  align-items: start;
   min-width: 0;
-  border-top: 1px solid var(--line-soft);
-  background: var(--line-soft);
 }
 
 .gh-commits,
 .gh-tree {
   min-width: 0;
-  padding: 16px 18px;
-  background: var(--surface);
 }
 
-.gh-body h4 {
-  margin: 0 0 10px;
-  color: var(--gold);
-  font: 11px/1.6 var(--font-mono);
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
+.gh-body .b5-card__title {
+  margin-bottom: 10px;
 }
 
-.recent-head {
-  margin-top: 18px !important;
+.gh-body .recent-head {
+  margin-top: 20px;
 }
 
 .latest-commit {
-  padding: 12px 14px;
-  border: 1px solid var(--line-soft);
+  padding: 11px 13px;
   border-left: 3px solid var(--red);
-  background: linear-gradient(115deg, var(--b5-color-raised), #161414);
+  background: #0e0c0c;
 }
 
 .commit-msg {
@@ -1154,12 +1144,7 @@ main a:not([class]):hover,
   display: none;
 }
 
-/* ---------- Panel bands (byte matching, console gaps, evolution) ---------- */
-.verified-panel,
-.evolution-panel {
-  padding: 22px 24px 24px;
-}
-
+/* ---------- Section bands (byte matching, console gaps, evolution) ---------- */
 .vp-head {
   display: flex;
   align-items: flex-start;
@@ -1169,15 +1154,16 @@ main a:not([class]):hover,
 }
 
 .vp-head .metric-total {
-  font-size: 26px;
+  font-size: 34px;
 }
 
+/* The hero copy's voice for each section's introduction. */
 .vp-intro {
-  max-width: 68ch;
+  max-width: 72ch;
   margin: 8px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.5;
+  color: var(--b5-color-soft);
+  font-size: 14px;
+  line-height: 1.65;
 }
 
 .gaps-panel > .vp-intro {
@@ -1232,14 +1218,10 @@ main a:not([class]):hover,
 
 .vp-block {
   min-width: 0;
-  padding: 12px 14px;
-  border: 1px solid var(--line-soft);
-  background: var(--surface-2);
 }
 
-.vp-block .label {
-  display: block;
-  margin-bottom: 8px;
+.vp-block > .b5-card__title {
+  margin-bottom: 10px;
 }
 
 /* the facts row at the top right: shared summary tiles */
@@ -1365,13 +1347,9 @@ main a:not([class]):hover,
 /* ---------- Byte matching ---------- */
 .bm-map,
 .bm-areas {
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line-soft);
-}
-
-.bm-map > .progress-map {
-  padding: 0;
+  margin-top: 32px;
+  padding-top: 26px;
+  border-top: 1px solid var(--line);
 }
 
 .bm-map-head {
@@ -1509,57 +1487,38 @@ main a:not([class]):hover,
   margin-bottom: 12px;
 }
 
-.evidence-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+/* A state's swatch inside a painted filter. */
+.b5-filter > .sw {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 7px;
+  vertical-align: 1px;
+  clip-path: polygon(2px 0, 100% 0, calc(100% - 2px) 100%, 0 100%);
 }
 
-/* Toggle chips (states, categories, chart series): small brush plates that take the
-   red menu paint when on, like the shared menu controls. */
-.evidence-chip,
+/* Chart series toggles: Paradise Online's member chips, a swatch for the avatar. */
 .evo-chip {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 6px 12px;
-  border: 1px solid var(--line);
-  background: url("/static/b5-ui/assets/brush-black.png") center / 150% 160% no-repeat, #15110f;
+  padding: 4px 10px 4px 6px;
+  border: 1px solid transparent;
+  background: #0e0c0c;
   color: var(--muted);
-  font: 500 12px/1.4 var(--font-head);
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
+  font: 12px/1.4 var(--font-body);
   cursor: pointer;
   transition: color 0.12s, border-color 0.12s;
 }
 
-.evidence-chip:hover,
 .evo-chip:hover {
   color: var(--text);
 }
 
-.evidence-chip.on,
 .evo-chip.on {
-  border-color: transparent;
-  background: url("/static/b5-ui/assets/banner-red.png") center / 100% 100% no-repeat;
-  color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
-}
-
-.evidence-chip.on:hover,
-.evo-chip.on:hover {
-  filter: brightness(1.12);
-}
-
-.evidence-chip .n {
-  opacity: 0.8;
-  font-variant-numeric: tabular-nums;
-}
-
-.evidence-chip .sw {
-  width: 9px;
-  height: 9px;
+  border-color: var(--b5-color-edge);
+  background: var(--b5-color-raised);
+  color: var(--text);
 }
 
 .evidence-grid {
@@ -1608,9 +1567,11 @@ main a:not([class]):hover,
   }
 }
 
+/* each file is a card, as each lobby is on Paradise Online */
 .evidence-file {
-  border: 1px solid var(--line-soft);
-  background: linear-gradient(115deg, #1d1616, #121010);
+  border: 1px solid var(--b5-color-edge);
+  border-left: 3px solid var(--b5-color-accent);
+  background: linear-gradient(115deg, var(--b5-color-raised), #161414);
 }
 
 .evidence-file-head {
@@ -1671,11 +1632,8 @@ main a:not([class]):hover,
   margin-top: 4px;
 }
 
-.evidence-side h3 {
-  margin: 0 0 4px;
-  color: var(--red-bright);
-  font: italic 17px/1.3 var(--font-display);
-  text-transform: uppercase;
+.evidence-side > .b5-card__title {
+  margin-bottom: 4px;
 }
 
 .evidence-side-note {
@@ -1697,9 +1655,8 @@ main a:not([class]):hover,
   grid-template-columns: auto minmax(0, 1fr);
   align-items: baseline;
   gap: 10px;
-  padding: 7px 10px;
-  border: 1px solid var(--line-soft);
-  background: var(--surface-2);
+  padding: 8px 6px;
+  border-top: 1px solid var(--line-soft);
   cursor: pointer;
 }
 
@@ -1813,8 +1770,15 @@ main a:not([class]):hover,
 .evo-controls {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 10px 20px;
+}
+
+/* a rule between the range and the scale, so two active paints never touch */
+.evo-controls > .b5-filter-group + .b5-filter-group {
+  padding-left: 20px;
+  border-left: 1px solid var(--line);
 }
 
 .evo-picker {
@@ -1837,11 +1801,6 @@ main a:not([class]):hover,
   font: 10px/1.6 var(--font-mono);
   letter-spacing: 1.2px;
   text-transform: uppercase;
-}
-
-.evo-chip {
-  padding: 3px 9px;
-  font-size: 11.5px;
 }
 
 .evo-chip .sw,
@@ -2411,10 +2370,10 @@ main a:not([class]):hover,
 html,
 .file-tree,
 .agents .agent-list,
-.panel > .queue,
-.panel > .goal-list,
-.panel > .blocked-list,
-.panel > .event-table,
+.wp-card > .queue,
+.wp-card > .goal-list,
+.wp-card > .blocked-list,
+.wp-card > .event-table,
 .table-wrap,
 .event-table,
 .drawer-body,
@@ -2426,10 +2385,10 @@ html,
 html::-webkit-scrollbar,
 .file-tree::-webkit-scrollbar,
 .agents .agent-list::-webkit-scrollbar,
-.panel > .queue::-webkit-scrollbar,
-.panel > .goal-list::-webkit-scrollbar,
-.panel > .blocked-list::-webkit-scrollbar,
-.panel > .event-table::-webkit-scrollbar,
+.wp-card > .queue::-webkit-scrollbar,
+.wp-card > .goal-list::-webkit-scrollbar,
+.wp-card > .blocked-list::-webkit-scrollbar,
+.wp-card > .event-table::-webkit-scrollbar,
 .table-wrap::-webkit-scrollbar,
 .event-table::-webkit-scrollbar,
 .drawer-body::-webkit-scrollbar,
@@ -2440,10 +2399,10 @@ html::-webkit-scrollbar,
 html::-webkit-scrollbar-track,
 .file-tree::-webkit-scrollbar-track,
 .agents .agent-list::-webkit-scrollbar-track,
-.panel > .queue::-webkit-scrollbar-track,
-.panel > .goal-list::-webkit-scrollbar-track,
-.panel > .blocked-list::-webkit-scrollbar-track,
-.panel > .event-table::-webkit-scrollbar-track,
+.wp-card > .queue::-webkit-scrollbar-track,
+.wp-card > .goal-list::-webkit-scrollbar-track,
+.wp-card > .blocked-list::-webkit-scrollbar-track,
+.wp-card > .event-table::-webkit-scrollbar-track,
 .table-wrap::-webkit-scrollbar-track,
 .event-table::-webkit-scrollbar-track,
 .drawer-body::-webkit-scrollbar-track,
@@ -2454,10 +2413,10 @@ html::-webkit-scrollbar-track,
 html::-webkit-scrollbar-thumb,
 .file-tree::-webkit-scrollbar-thumb,
 .agents .agent-list::-webkit-scrollbar-thumb,
-.panel > .queue::-webkit-scrollbar-thumb,
-.panel > .goal-list::-webkit-scrollbar-thumb,
-.panel > .blocked-list::-webkit-scrollbar-thumb,
-.panel > .event-table::-webkit-scrollbar-thumb,
+.wp-card > .queue::-webkit-scrollbar-thumb,
+.wp-card > .goal-list::-webkit-scrollbar-thumb,
+.wp-card > .blocked-list::-webkit-scrollbar-thumb,
+.wp-card > .event-table::-webkit-scrollbar-thumb,
 .table-wrap::-webkit-scrollbar-thumb,
 .event-table::-webkit-scrollbar-thumb,
 .drawer-body::-webkit-scrollbar-thumb,
@@ -2471,10 +2430,10 @@ html::-webkit-scrollbar-thumb,
 html::-webkit-scrollbar-thumb:hover,
 .file-tree::-webkit-scrollbar-thumb:hover,
 .agents .agent-list::-webkit-scrollbar-thumb:hover,
-.panel > .queue::-webkit-scrollbar-thumb:hover,
-.panel > .goal-list::-webkit-scrollbar-thumb:hover,
-.panel > .blocked-list::-webkit-scrollbar-thumb:hover,
-.panel > .event-table::-webkit-scrollbar-thumb:hover,
+.wp-card > .queue::-webkit-scrollbar-thumb:hover,
+.wp-card > .goal-list::-webkit-scrollbar-thumb:hover,
+.wp-card > .blocked-list::-webkit-scrollbar-thumb:hover,
+.wp-card > .event-table::-webkit-scrollbar-thumb:hover,
 .table-wrap::-webkit-scrollbar-thumb:hover,
 .event-table::-webkit-scrollbar-thumb:hover,
 .drawer-body::-webkit-scrollbar-thumb:hover,
@@ -2485,10 +2444,10 @@ html::-webkit-scrollbar-thumb:hover,
 html::-webkit-scrollbar-corner,
 .file-tree::-webkit-scrollbar-corner,
 .agents .agent-list::-webkit-scrollbar-corner,
-.panel > .queue::-webkit-scrollbar-corner,
-.panel > .goal-list::-webkit-scrollbar-corner,
-.panel > .blocked-list::-webkit-scrollbar-corner,
-.panel > .event-table::-webkit-scrollbar-corner,
+.wp-card > .queue::-webkit-scrollbar-corner,
+.wp-card > .goal-list::-webkit-scrollbar-corner,
+.wp-card > .blocked-list::-webkit-scrollbar-corner,
+.wp-card > .event-table::-webkit-scrollbar-corner,
 .table-wrap::-webkit-scrollbar-corner,
 .event-table::-webkit-scrollbar-corner,
 .drawer-body::-webkit-scrollbar-corner,
@@ -2547,25 +2506,12 @@ html::-webkit-scrollbar-corner,
   .vp-facts > .b5-ribbon {
     justify-self: start;
   }
-  .verified-panel,
-  .evolution-panel {
-    padding: 18px 16px 20px;
-  }
 }
 
 @media (max-width: 720px) {
   .explorer-view-tools {
     width: 100%;
     justify-content: space-between;
-  }
-  .progress-map {
-    padding: 0 12px 12px;
-  }
-  .explorer-controls {
-    margin-inline: 12px;
-  }
-  .explorer-list {
-    padding: 0 12px 12px;
   }
   .map-toolbar,
   .map-selection {
@@ -2601,6 +2547,7 @@ html::-webkit-scrollbar-corner,
   }
   .wp-section {
     margin-top: 48px;
+    padding-top: 32px;
   }
 }
 

@@ -3338,13 +3338,22 @@ const EVIDENCE_AUDIT_CHIPS = [
   ["MISSING_ASSERT", "missing asserts", "amber", "MISSING_ASSERT"],
 ];
 
+// A painted filter (the shared .b5-filter, in a .b5-filter-group--paint container): an
+// optional state swatch, the label, then its count. The caller owns the state and
+// re-renders the group on click.
 function evidenceChip(label, count, active, color, onClick) {
   const chip = document.createElement("button");
   chip.type = "button";
-  chip.className = `evidence-chip${active ? " on" : ""}`;
-  if (color) chip.appendChild(span(`sw sw-${color}`));
-  chip.appendChild(span("", label));
-  if (count != null) chip.appendChild(span("n", fmtInt(count)));
+  chip.className = "b5-filter";
+  chip.setAttribute("aria-pressed", String(Boolean(active)));
+  if (color) {
+    const swatch = document.createElement("i");
+    swatch.className = `sw sw-${color}`;
+    swatch.setAttribute("aria-hidden", "true");
+    chip.appendChild(swatch);
+  }
+  chip.appendChild(document.createTextNode(label));
+  if (count != null) chip.appendChild(span("", fmtInt(count)));
   chip.addEventListener("click", onClick);
   return chip;
 }
