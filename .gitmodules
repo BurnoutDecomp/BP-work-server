@@ -1,0 +1,4 @@
+[submodule "bp_work_server/static/b5-ui"]
+	path = bp_work_server/static/b5-ui
+	url = https://github.com/Adriwin06/b5-decomp-webui.git
+	branch = dist

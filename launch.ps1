@@ -69,6 +69,13 @@ if (Test-Path $DecompRoot) {
     Write-Warning "Decomp root not found: $DecompRoot - contributions will show 0 until BP_DECOMP_ROOT points at a b5-decomp clone."
 }
 
+# The dashboard's UI library is a git submodule; fetch it if this clone lacks it.
+if (-not (Test-Path (Join-Path $root "bp_work_server\static\b5-ui\webui.json"))) {
+    Write-Host "Fetching the dashboard UI library (git submodule)" -ForegroundColor Cyan
+    git -C $root submodule update --init
+    if ($LASTEXITCODE -ne 0) { throw "git submodule update --init failed" }
+}
+
 # Local virtual environment.
 
 $venv = Join-Path $root ".venv"

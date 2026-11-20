@@ -26,7 +26,8 @@ bp-work-server = "bp_work_server.cli:main"
 include = ["bp_work_server*"]
 
 [tool.setuptools.package-data]
-# static/b5-ui is the shared b5-decomp-webui build; its assets live one level down.
+# static/b5-ui is the shared b5-decomp-webui build (a git submodule on its dist branch);
+# its assets live one level down.
 bp_work_server = ["static/*", "static/b5-ui/*", "static/b5-ui/assets/*"]
 
 [tool.pytest.ini_options]

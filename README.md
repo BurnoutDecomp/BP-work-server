@@ -98,6 +98,10 @@ By default the workflow checkout is expected as a sibling folder
 
 ## Manual Setup
 
+The dashboard's UI library is a git submodule: clone with `--recurse-submodules`, or
+run `git submodule update --init` in an existing clone (`launch.ps1` does this when it
+is missing). `git config submodule.recurse true` keeps it in step on every pull.
+
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -260,23 +264,24 @@ bp-work-server --db data\bp-work.sqlite3 warm-attribution-cache `
 
 The dashboard shares its look with Paradise Online (`b5-decomp-server`): both pages
 are built from the [b5-decomp-webui](https://github.com/Adriwin06/b5-decomp-webui)
-library. `bp_work_server/static/b5-ui/` is a build of it, and `webui.json` there
-names the version and commit. It supplies the fonts (self-hosted, no font CDN), the
+library. `bp_work_server/static/b5-ui/` is a git submodule on that library's `dist`
+branch, which holds only its built files; `webui.json` there names the version and
+commit. It supplies the fonts (self-hosted, no font CDN), the
 palette, the game artwork, the page chrome (header, hero, stat strip, section
 headings, footer) and the shared controls: brush tabs and dropdowns, ribbons,
 pagers, the detail drawer and the download chooser. `static/app.css` only arranges
 them and draws this dashboard's data (rings, maps, lists, charts); `static/app.js`
 is an ES module that imports the library.
 
-To update the library, from a checkout next to this repository:
+To take a new library release, then commit the new submodule pointer:
 
 ```powershell
-cd ..\b5-decomp-webui
-npm run export -- ..\BP-work-server\bp_work_server\static\b5-ui
+git submodule update --remote bp_work_server/static/b5-ui
 ```
 
-Commit the refreshed folder. Use the library's classes for new shared controls rather
-than styling them again in `app.css`; see its component reference.
+The deploy workflow checks the submodule out after each pull, and the server asks
+browsers to revalidate those files. Use the library's classes for new shared controls
+rather than styling them again in `app.css`; see its component reference.
 
 ## Tests
 

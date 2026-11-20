@@ -22,13 +22,19 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -e
-            git config --global --get-all safe.directory | grep -Fxq /opt/bp-work-server || \
-              git config --global --add safe.directory /opt/bp-work-server
+            # The tree is owned by bpwork; let root's git work in it and in the UI submodule.
+            for dir in /opt/bp-work-server /opt/bp-work-server/bp_work_server/static/b5-ui; do
+              git config --global --get-all safe.directory | grep -Fxq "$dir" || \
+                git config --global --add safe.directory "$dir"
+            done
             cd /opt/bp-work-server
             # Raise the maintenance curtain: nginx serves the static page while this exists.
             touch /opt/bp-work-server/maintenance.flag
             git fetch origin main
             git reset --hard origin/main
+            # The dashboard's UI library is a submodule (b5-decomp-webui, dist branch).
+            git submodule sync --recursive
+            git submodule update --init --recursive --force
             # Reinstall in case dependencies or the package metadata changed.
             .venv/bin/pip install -e . --quiet
             # The service runs as bpwork; keep the tree owned by it.

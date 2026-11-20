@@ -83,6 +83,8 @@ def test_shared_ui_library_is_revalidated_and_other_static_files_are_not(tmp_pat
     assert app_css.status_code == 200 and "cache-control" not in app_css.headers
     assert again.status_code == 304 and again.headers["cache-control"] == "no-cache"
     assert client.get("/static/b5-ui/missing.js").status_code == 404
+    # The submodule checkout's .git link exists on disk but is not served.
+    assert client.get("/static/b5-ui/.git").status_code == 404
 
 
 def test_dashboard_snapshot_compression_preserves_data_and_skips_other_routes(tmp_path):

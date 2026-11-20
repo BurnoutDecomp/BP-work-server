@@ -5,6 +5,7 @@ from importlib.resources import files
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException
 from starlette.responses import Response
 from starlette.types import Scope
 
@@ -32,16 +33,20 @@ def static_dir():
 class StaticAssets(StaticFiles):
     """/static, with the shared UI library revalidated on every use.
 
-    static/b5-ui is a build of b5-decomp-webui loaded as ES modules, and their imports
-    name no version. Without Cache-Control a browser caches by heuristic, so after a
-    deploy it could pair a fresh app.js?v= with library modules from before it. The
-    ETag turns each revalidation into a 304. Other files keep their ?v= tags.
+    static/b5-ui is a git submodule on the dist branch of b5-decomp-webui: built ES
+    modules whose imports name no version. Without Cache-Control a browser caches by
+    heuristic, so after a deploy it could pair a fresh app.js?v= with library modules
+    from before it. The ETag turns each revalidation into a 304. Other files keep their
+    ?v= tags. Hidden files, such as the submodule's .git link, are never served.
     """
 
     async def get_response(self, path: str, scope: Scope) -> Response:
-        response = await super().get_response(path, scope)
         # get_path() joins with the OS separator.
-        if path.replace("\\", "/").startswith("b5-ui/"):
+        parts = path.replace("\\", "/").split("/")
+        if any(part.startswith(".") for part in parts):
+            raise HTTPException(status_code=404)
+        response = await super().get_response(path, scope)
+        if parts[0] == "b5-ui":
             response.headers["Cache-Control"] = "no-cache"
         return response
 
