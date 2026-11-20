@@ -270,7 +270,8 @@
                 <tbody id="explorerBody"></tbody>
               </table>
             </div>
-            <nav id="explorerPager" class="b5-pagination explorer-foot" data-b5-pager data-b5-page-size="50" data-b5-unit="results" aria-label="Explorer pages"></nav>
+            <!-- No data-b5-pager: app.js creates this pager on the first response, so it never reads "No results" while loading. -->
+            <nav id="explorerPager" class="b5-pagination explorer-foot" data-b5-page-size="50" data-b5-unit="results" aria-label="Explorer pages"><span class="b5-pagination__range">—</span></nav>
           </div>
         </div>
       </section>
@@ -460,7 +461,7 @@
               <div class="evidence-grid">
                 <div class="evidence-main">
                   <div id="evidenceList" class="evidence-list"></div>
-                  <nav id="evidencePager" class="b5-pagination evidence-foot" data-b5-pager data-b5-page-size="25" data-b5-unit="files" aria-label="Console gap pages"></nav>
+                  <nav id="evidencePager" class="b5-pagination evidence-foot" data-b5-page-size="25" data-b5-unit="files" aria-label="Console gap pages"><span class="b5-pagination__range">—</span></nav>
                 </div>
                 <aside class="evidence-side">
                   <h3 id="evidenceTopTitle">Largest switch gaps</h3>
