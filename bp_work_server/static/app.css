@@ -52,10 +52,33 @@ html {
 /* Sections sit on the page, ruled off from each other like Paradise Online's connect
    section. The first follows the stat strip, which brings its own rule. */
 .wp-section {
+  position: relative;
   margin-top: 64px;
   padding-top: 44px;
   border-top: 1px solid var(--line);
   font-size: 14px;
+}
+
+/* the stat strip's red accent, at the start of every section's rule */
+.wp-section::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: 0;
+  width: 160px;
+  height: 3px;
+  background: var(--b5-color-accent);
+  transform: skew(-40deg);
+}
+
+.wp-metrics + .wp-section::before {
+  display: none;
+}
+
+/* Boards follow one another, and the section's introduction, with room to breathe. */
+.wp-body > .b5-panel--board,
+.wp-body > .vp-grid + .b5-panel--board {
+  margin-top: 28px;
 }
 
 .wp-metrics + .wp-section {
@@ -266,16 +289,14 @@ main a:not([class]):hover,
   width: auto;
 }
 
-/* Beside the mode filters, the search keeps the directory's width; once the tools
-   stack (the library turns them into a column at 850px), it takes the full width. */
-.b5-directory-tools > .wp-search {
+/* In a board's header, a search keeps the directory's width beside the controls. */
+.b5-panel--board > .b5-panel__header > .wp-search {
   flex: 0 1 320px;
 }
 
-@media (max-width: 850px) {
-  .b5-directory-tools > .wp-search {
-    flex: none;
-    width: 100%;
+@media (max-width: 720px) {
+  .b5-panel--board > .b5-panel__header > .wp-search {
+    flex: 1 1 100%;
   }
 }
 
@@ -1347,28 +1368,8 @@ main a:not([class]):hover,
 .vh-sw-nobody { background: var(--red-bright); }
 
 /* ---------- Byte matching ---------- */
-.bm-map,
-.bm-areas {
-  margin-top: 32px;
-  padding-top: 26px;
-  border-top: 1px solid var(--line);
-}
-
-.bm-map-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.bm-areas-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 8px;
+.bm-areas > .b5-panel__header > small {
+  max-width: 62ch;
 }
 
 .bm-area-list {
@@ -1459,21 +1460,6 @@ main a:not([class]):hover,
 }
 
 /* ---------- Console gaps and the shared list browsers ---------- */
-.vp-evidence {
-  margin-top: 24px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
-}
-
-.vp-evidence-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
 .evidence-intro {
   max-width: 90ch;
   margin: 0 0 12px;
@@ -1481,12 +1467,9 @@ main a:not([class]):hover,
   font-size: 13px;
 }
 
-.evidence-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 14px;
-  margin-bottom: 12px;
+/* a board's state filters, above its list */
+.evidence-body > .b5-filter-group {
+  margin-bottom: 14px;
 }
 
 /* A state's swatch inside a painted filter. */
