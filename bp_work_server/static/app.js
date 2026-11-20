@@ -415,7 +415,6 @@ function renderAgents(agents) {
   const activeCount = agents.filter((agent) => agent.has_active_work || Number(agent.total || 0) > 0).length;
   text("agentCount", fmtInt(activeCount));
   text("agentSummary", `${fmtInt(agents.length)} users · ${fmtInt(activeCount)} with active work`);
-  text("railWork", `${fmtInt(agents.length)} contributors · ${fmtInt(activeCount)} active`);
   const root = el("agents");
   clearNode(root);
   root.className = agents.length ? "agent-list" : "agent-list empty";
@@ -1186,10 +1185,6 @@ function renderStats(info) {
     node.appendChild(strong);
     root.appendChild(node);
   }
-  text("railRepository", [
-    info.stargazers_count != null ? `★ ${fmtInt(info.stargazers_count)}` : "",
-    info.pushed_at ? `pushed ${relTime(info.pushed_at)}` : "",
-  ].filter(Boolean).join(" · ") || "—");
   if (info.pushed_at) {
     root.appendChild(div("gh-stat", `pushed ${relTime(info.pushed_at)}`));
   }
@@ -2387,7 +2382,7 @@ function depRow(dep, status) {
   return row;
 }
 
-/* ---------------- License, rail and ticker ---------------- */
+/* ---------------- License and ticker ---------------- */
 
 // The game's license classes, from a learner's permit to Elite, on the share of
 // translation units complete (done and external, as the first ring counts them).
@@ -2400,14 +2395,13 @@ const LICENSE_RANKS = [
   { min: 95, name: "Burnout license", badge: "B5" },
   { min: 100, name: "Elite license", badge: "Elite" },
 ];
-// Ring id -> license meter id.
-const RING_METERS = { tu: "meterUnits", fn: "meterFuncs", exe: "meterBuild", bytematch: "meterMatch" };
-
+// The license's byte-match meter follows the X360 ring; the other rings are on the
+// page beside it.
 function reportRing(id, pct) {
-  const meter = el(RING_METERS[id]);
-  if (meter && Number.isFinite(pct)) setProgress(meter, pct);
-  if (id === "tu") text("railProgress", `${pct.toFixed(1)}% of units complete`);
-  if (id === "bytematch") text("railBytematch", `${pct.toFixed(1)}% of functions match`);
+  const meter = id === "bytematch" ? el("meterMatch") : null;
+  if (!meter || !Number.isFinite(pct)) return;
+  setProgress(meter, pct);
+  meter.removeAttribute("aria-valuetext");
 }
 
 function renderLicense(complete, tus, sourceCommit) {
@@ -2426,8 +2420,8 @@ function renderLicense(complete, tus, sourceCommit) {
 }
 
 // Crash FM: the newest events, twice over (the copy hidden from assistive technology)
-// so the scroll loops without a seam. About six seconds an item. The library's
-// enhance() wires its pause button.
+// so the crawl loops without a seam. It runs at about four letters a second, whatever
+// the items' length and the LED size. The library's enhance() wires its pause toggle.
 function renderTicker(events) {
   const track = el("tickerTrack");
   if (!track) return;
@@ -2441,7 +2435,6 @@ function renderTicker(events) {
     return;
   }
   track.style.removeProperty("animation");
-  track.style.setProperty("--b5-ticker-duration", `${latest.length * 6}s`);
   for (const copy of [false, true]) {
     for (const event of latest) {
       const where = event.tu_id && event.tu_id !== "None" ? String(event.tu_id).split("/").pop() : "";
@@ -2450,6 +2443,14 @@ function renderTicker(events) {
       track.appendChild(item);
     }
   }
+  const pace = () => {
+    // a letter is six LEDs wide; the copy makes the track twice the loop
+    const pitch = parseFloat(getComputedStyle(track).getPropertyValue("--b5-ticker-pitch")) || 3;
+    const loop = track.offsetWidth / 2;
+    if (loop) track.style.setProperty("--b5-ticker-duration", `${Math.max(12, Math.round(loop / (pitch * 6 * 4)))}s`);
+  };
+  if (document.fonts) document.fonts.ready.then(pace);
+  else pace();
 }
 
 function tickerItem(title, rest) {
@@ -2457,7 +2458,7 @@ function tickerItem(title, rest) {
   item.className = "b5-ticker__item";
   const strong = document.createElement("strong");
   strong.textContent = title;
-  item.append(strong, document.createTextNode(rest));
+  item.append(strong, document.createTextNode(` ${rest}`));
   return item;
 }
 
@@ -3242,11 +3243,6 @@ function drawEvolutionChart() {
   text("evolutionCount", points.length
     ? `${fmtInt(spanDays)} days \u00b7 ${points[0].date} \u2192 ${points[points.length - 1].date}`
     : "\u00b7");
-  // the rail counts the whole history, whatever range the chart shows
-  const history = (ev.points || []).filter((p) => Number.isFinite(Date.parse(p.ts)));
-  text("railEvolution", history.length
-    ? `${fmtInt(Math.round((Date.parse(history[history.length - 1].ts) - Date.parse(history[0].ts)) / 86400000) + 1)} days tracked`
-    : "no history yet");
   if (points.length < 2) {
     host.appendChild(div("muted-text vh-empty", ev.points.length
       ? "Not enough points in this range yet."
@@ -3457,7 +3453,6 @@ function renderEvidenceSummary() {
       : "no audit yet";
     meta.title = fa.generated_at ? `audited ${fmtTime(fa.generated_at)}` : "";
   }
-  text("railGaps", fa.commit ? `audited ${relTime(fa.generated_at || fa.imported_at)}` : "no audit yet");
   const intro = el("evidenceIntro");
   const chips = el("evidenceChips");
   if (!intro || !chips) return;
@@ -3818,7 +3813,12 @@ function renderBytematch(s) {
   if (!s.available) {
     setDonut("bytematch", [{ label: "nothing measured yet", value: 1, color: "dim" }], 0, "not measured yet");
     text("bytematchPercent", "0%");
-    text("railBytematch", "not measured yet");
+    // the license meter says so too, not 0%
+    const meter = el("meterMatch");
+    if (meter) {
+      meter.setAttribute("aria-valuetext", "not measured yet");
+      meter.querySelector("[data-b5-progress-label]").textContent = "not measured yet";
+    }
     clearNode(el("bytematchFacts"));
     renderBytematchHistory([]);
     renderBytematchRecent([]);

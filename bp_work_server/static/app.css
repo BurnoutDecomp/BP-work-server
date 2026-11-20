@@ -71,9 +71,9 @@ html {
   transform: skew(-40deg);
 }
 
-/* The first section opens the column beside the rail: no rule above it. */
+/* The first section follows the ticker's band, which brings its own rules. */
 .wp-sections > .wp-section:first-child {
-  margin-top: 0;
+  margin-top: 56px;
   padding-top: 0;
   border-top: 0;
 }
@@ -88,117 +88,47 @@ html {
   margin-top: 28px;
 }
 
-/* ---------- Easy Drive: the license and section menu beside the sections ---------- */
+/* ---------- The license over the rings, the news ticker across the window ---------- */
 
-/* Crash FM runs under the stat strip, across the page. */
+.wp-license {
+  margin: 30px 0 34px;
+}
+
 .wp-ticker {
-  margin-top: 40px;
+  margin-top: 46px;
 }
 
-.wp-layout {
-  display: grid;
-  grid-template-columns: 272px minmax(0, 1fr);
-  gap: 44px;
-  margin-top: 56px;
+/* The crawl runs the width of the window; its toggle keeps to the page's right edge
+   (the .b5-shell margin), the items sliding under it. */
+.wp-ticker .b5-ticker__toggle {
+  position: absolute;
+  top: 50%;
+  right: calc((100% - min(1280px, 100% - 96px)) / 2);
+  margin: 0;
+  transform: translateY(-50%);
 }
 
-/* Room on the left for the menu's chevron cursor. The menu stays in reach while the
-   sections scroll; on a screen tall enough, the license comes along with it. */
-.wp-rail {
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-  min-width: 0;
-  padding-left: 10px;
-}
-
-.wp-rail > .b5-rail {
-  position: sticky;
-  top: 126px;
-}
-
-@media (min-width: 1151px) and (min-height: 960px) {
-  .wp-rail {
-    position: sticky;
-    top: 126px;
-    align-self: start;
-  }
-
-  .wp-rail > .b5-rail {
-    position: static;
-  }
-}
-
-/* The sections' own layouts follow the column's width, not the window's (the
-   @container rules below): the rail takes a share of the window on wide screens. */
-.wp-sections {
-  min-width: 0;
-  container: wp-sections / inline-size;
-}
-
-/* The license meters in the colour of their ring's lead state. */
-.meter-units,
-.meter-match {
-  --b5-meter-color: var(--green);
-}
-
-.meter-funcs {
-  --b5-meter-color: var(--gold);
-}
-
-.meter-build {
-  --b5-meter-color: var(--blue);
-}
-
-/* Under 1150 px the rail opens the column: the license beside the menu, then on phones
-   one above the other, and the menu two items to a row. */
 @media (max-width: 1150px) {
-  .wp-layout {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 48px;
-    margin-top: 44px;
-  }
-
-  .wp-rail {
-    display: grid;
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-    align-items: start;
-    gap: 28px 36px;
-  }
-
-  .wp-rail > .b5-rail {
-    position: static;
+  .wp-ticker .b5-ticker__toggle {
+    right: 32px;
   }
 }
 
-@media (max-width: 720px) {
-  .wp-rail {
-    grid-template-columns: minmax(0, 1fr);
-    padding-left: 0;
+@media (max-width: 850px) {
+  .wp-ticker .b5-ticker__toggle {
+    right: 22px;
   }
+}
 
-  .wp-rail > .b5-rail {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px 8px;
+@media (max-width: 650px) {
+  .wp-ticker .b5-ticker__toggle {
+    right: 20px;
   }
+}
 
-  .wp-rail .b5-rail__title {
-    grid-column: 1 / -1;
-  }
-
-  .wp-rail .b5-rail__item {
-    grid-template-columns: 22px minmax(0, 1fr);
-    padding: 8px 6px 8px 12px;
-  }
-
-  .wp-rail .b5-rail__label {
-    font-size: 16px;
-  }
-
-  /* the chevron would sit outside the page's gutter */
-  .wp-rail .b5-rail__item[aria-current]::after {
-    display: none;
-  }
+/* The sections' own layouts follow the page's width (the @container rules below). */
+.wp-sections {
+  container: wp-sections / inline-size;
 }
 
 /* A heading inside a section, in the stat strip's label type. */
@@ -2556,9 +2486,9 @@ html::-webkit-scrollbar-corner,
 }
 
 /* ---------- Responsive ----------
-   The window's width arranges the page (the stat strip, the rail); the sections column's
-   width arranges what is inside it. Its thresholds are the old window ones less the
-   page gutters: 1086 px of column was a 1150 px window, 776 px an 820 px one. */
+   The window's width arranges the page (the stat strip); the sections' width arranges
+   what is inside them. Their thresholds are the window ones less the page gutters:
+   1086 px of sections is a 1150 px window, 776 px an 820 px one. */
 @media (max-width: 1150px) {
   .wp-metrics {
     grid-auto-flow: row;

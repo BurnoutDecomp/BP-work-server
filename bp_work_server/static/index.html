@@ -50,7 +50,7 @@
     <link rel="icon" type="image/svg+xml" href="/static/b5-ui/assets/favicon.svg" />
     <link rel="preload" href="/static/b5-ui/assets/anton-latin.ttf" as="font" type="font/ttf" crossorigin />
     <link rel="stylesheet" href="/static/b5-ui/b5-ui.css?v=0.2.0" />
-    <link rel="stylesheet" href="/static/app.css?v=52" />
+    <link rel="stylesheet" href="/static/app.css?v=53" />
   </head>
   <body class="b5-page">
     <a class="b5-skip-link" href="#progress">Skip to progress</a>
@@ -69,7 +69,8 @@
       </nav>
     </header>
 
-    <main class="b5-shell wp-main" data-b5-density="compact">
+    <main class="wp-main" data-b5-density="compact">
+      <div class="b5-shell">
       <section class="b5-hero wp-hero" aria-labelledby="page-title">
         <div class="b5-hero__copy">
           <div class="b5-eyebrow"><span class="b5-dot"></span> PC DECOMPILATION / LIVE PROGRESS</div>
@@ -128,6 +129,22 @@
         </div>
       </section>
 
+      <!-- The decomp license heads the summary: a rank on the share of translation units
+           complete (the first ring below), after the game's licence classes, and the X360
+           byte match, which the rings leave to its own section. -->
+      <article class="b5-license wp-license" aria-labelledby="licenseRank">
+        <span class="b5-license__class" id="licenseClass" aria-hidden="true">L</span>
+        <div class="b5-license__id">
+          <div class="b5-license__kicker">Paradise City · Decomp license</div>
+          <h2 class="b5-license__rank" id="licenseRank">Learner's permit</h2>
+          <p class="b5-license__next" id="licenseNext">Reading the work ledger…</p>
+        </div>
+        <div class="b5-license__stats">
+          <div class="b5-meter" id="meterMatch" data-tone="success" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="X360 byte match"><span class="b5-meter__label">X360 byte match</span><span class="b5-meter__value" data-b5-progress-label>—</span><span class="b5-meter__bar"></span></div>
+        </div>
+        <div class="b5-license__stamp"><span>Valid in Paradise City</span><span id="licenseNumber" title="The b5-decomp commit the ledger was reconciled at">No. —</span></div>
+      </article>
+
       <!-- Headline metrics: three donuts, each split into the states that make up its total -->
       <section class="b5-stat-strip wp-metrics" aria-label="Progress summary">
         <article class="b5-stat wp-metric" title="Completion includes done translation units and external implementations, shown separately in the legend.">
@@ -179,46 +196,17 @@
         </article>
       </section>
 
-      <!-- Crash FM: the newest work-server events, as a radio ticker. The events table in
-           Who's working holds the same events; the ticker pauses on hover or its button. -->
-      <section class="b5-ticker wp-ticker" id="ticker" aria-label="Latest events">
-        <span class="b5-ticker__sign">Crash FM <small>Live</small></span>
+      </div>
+
+      <!-- Crash FM's news crawl, after the game's ticker: the newest work-server events in
+           amber LED type, across the whole window. The events table in Who's working holds
+           the same events; the crawl stops on hover or with its toggle. -->
+      <section class="b5-ticker wp-ticker" id="ticker" aria-label="Crash FM: latest events">
         <div class="b5-ticker__window"><ul class="b5-ticker__track" id="tickerTrack"><li class="b5-ticker__item">Tuning in to the work server…</li></ul></div>
-        <button class="b5-button b5-button--ink b5-ticker__toggle" id="tickerToggle" type="button" aria-pressed="false">Pause</button>
+        <button class="b5-ticker__toggle" id="tickerToggle" type="button" aria-pressed="false"><span class="b5-sr-only">Pause</span></button>
       </section>
 
-      <!-- Easy Drive: the decomp license and the section menu, beside the sections and
-           sticky while they scroll. The menu marks the section being read. -->
-      <div class="wp-layout">
-        <aside class="wp-rail" aria-label="License and sections">
-          <article class="b5-license" aria-labelledby="licenseRank">
-            <div class="b5-license__head">
-              <div>
-                <div class="b5-license__kicker">Paradise City · Decomp license</div>
-                <h2 class="b5-license__rank" id="licenseRank">Learner's permit</h2>
-              </div>
-              <span class="b5-license__class" id="licenseClass" aria-hidden="true">L</span>
-            </div>
-            <p class="b5-license__next" id="licenseNext">Reading the work ledger…</p>
-            <div class="b5-license__stats">
-              <div class="b5-meter meter-units" id="meterUnits" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Units complete"><span class="b5-meter__label">Units complete</span><span class="b5-meter__value" data-b5-progress-label>—</span><span class="b5-meter__bar"></span></div>
-              <div class="b5-meter meter-funcs" id="meterFuncs" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Functions covered"><span class="b5-meter__label">Functions covered</span><span class="b5-meter__value" data-b5-progress-label>—</span><span class="b5-meter__bar"></span></div>
-              <div class="b5-meter meter-build" id="meterBuild" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="In the build"><span class="b5-meter__label">In the build</span><span class="b5-meter__value" data-b5-progress-label>—</span><span class="b5-meter__bar"></span></div>
-              <div class="b5-meter meter-match" id="meterMatch" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Byte match (X360)"><span class="b5-meter__label">Byte match (X360)</span><span class="b5-meter__value" data-b5-progress-label>—</span><span class="b5-meter__bar"></span></div>
-            </div>
-            <div class="b5-license__stamp"><span>Valid in Paradise City</span><span id="licenseNumber" title="The b5-decomp commit the ledger was reconciled at">No. —</span></div>
-          </article>
-          <nav class="b5-rail" aria-label="Sections">
-            <p class="b5-rail__title"><span class="b5-dot"></span>Easy Drive</p>
-            <a class="b5-rail__item" href="#progress" aria-current="location"><span class="b5-rail__index">01</span><span class="b5-rail__label">Progress map</span><span class="b5-rail__meta" id="railProgress">—</span></a>
-            <a class="b5-rail__item" href="#bytematch"><span class="b5-rail__index">02</span><span class="b5-rail__label">Byte matching</span><span class="b5-rail__meta" id="railBytematch">—</span></a>
-            <a class="b5-rail__item" href="#gaps"><span class="b5-rail__index">03</span><span class="b5-rail__label">Console gaps</span><span class="b5-rail__meta" id="railGaps">—</span></a>
-            <a class="b5-rail__item" href="#work"><span class="b5-rail__index">04</span><span class="b5-rail__label">Who's working</span><span class="b5-rail__meta" id="railWork">—</span></a>
-            <a class="b5-rail__item" href="#evolution"><span class="b5-rail__index">05</span><span class="b5-rail__label">Evolution</span><span class="b5-rail__meta" id="railEvolution">—</span></a>
-            <a class="b5-rail__item" href="#repository"><span class="b5-rail__index">06</span><span class="b5-rail__label">The repository</span><span class="b5-rail__meta" id="railRepository">—</span></a>
-          </nav>
-        </aside>
-        <div class="wp-sections">
+      <div class="b5-shell wp-sections">
       <!-- Explorer: search/browse every TU and function -->
       <section class="wp-section" id="progress" aria-labelledby="progress-title">
         <div class="b5-section-header" data-b5-index="01">
@@ -693,7 +681,6 @@
           </div>
         </div>
       </section>
-        </div>
       </div>
     </main>
 
@@ -723,6 +710,6 @@
 
     <script src="/static/d3-hierarchy.min.js?v=3.1.2" defer></script>
     <script src="/static/progress-map.js?v=5" defer></script>
-    <script type="module" src="/static/app.js?v=46"></script>
+    <script type="module" src="/static/app.js?v=47"></script>
   </body>
 </html>
