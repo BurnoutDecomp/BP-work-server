@@ -2395,13 +2395,66 @@ const LICENSE_RANKS = [
   { min: 95, name: "Burnout license", badge: "B5" },
   { min: 100, name: "Elite license", badge: "Elite" },
 ];
-// The license's byte-match meter follows the X360 ring; the other rings are on the
-// page beside it.
+// Ring id -> license meter id.
+const RING_METERS = { tu: "meterUnits", fn: "meterFuncs", exe: "meterBuild", bytematch: "meterMatch" };
+
 function reportRing(id, pct) {
-  const meter = id === "bytematch" ? el("meterMatch") : null;
+  const meter = el(RING_METERS[id]);
   if (!meter || !Number.isFinite(pct)) return;
   setProgress(meter, pct);
   meter.removeAttribute("aria-valuetext");
+  if (id === "tu") {
+    text("licenseChipValue", `${pct.toFixed(1)}%`);
+    labelLicenseChip();
+  }
+}
+
+// The chip's name carries what it shows, rank and figure, whatever the width hides.
+function labelLicenseChip() {
+  const chip = el("licenseChip");
+  if (chip) chip.setAttribute("aria-label", `${el("licenseChipRank")?.textContent}: ${el("licenseChipValue")?.textContent} of translation units complete`);
+}
+
+// The license chip arrives in the header once the rings have gone under it, and leaves
+// when they come back, taking the open card with it. The card opens under the chip.
+function initLicenseChip() {
+  const chip = el("licenseChip");
+  const card = el("licenseCard");
+  const summary = document.querySelector(".wp-metrics");
+  if (!chip || !card || !summary) return;
+  const header = document.querySelector(".b5-site-header");
+  // A scroll check, not an IntersectionObserver: on a phone the rings start below the
+  // fold, and a jump past them (a link to a section) never crosses an observer's edge.
+  let frame = 0;
+  const update = () => {
+    frame = 0;
+    const past = summary.getBoundingClientRect().bottom < (header ? header.offsetHeight : 106);
+    if (past === chip.hasAttribute("data-b5-shown")) return;
+    chip.toggleAttribute("data-b5-shown", past);
+    if (!past && card.matches(":popover-open")) card.hidePopover();
+  };
+  const schedule = () => {
+    if (!frame) frame = requestAnimationFrame(update);
+  };
+  window.addEventListener("scroll", schedule, { passive: true });
+  const place = () => {
+    const box = chip.getBoundingClientRect();
+    const width = Math.min(352, window.innerWidth - 32);
+    card.style.setProperty("--license-top", `${Math.round(box.bottom + 12)}px`);
+    card.style.setProperty("--license-left", `${Math.round(Math.max(16, Math.min(box.left, window.innerWidth - width - 16)))}px`);
+  };
+  card.addEventListener("beforetoggle", (event) => {
+    if (event.newState !== "open") return;
+    // a click as the chip fades out (the rings coming back) does not open it
+    if (!chip.hasAttribute("data-b5-shown")) event.preventDefault();
+    else place();
+  });
+  card.addEventListener("toggle", (event) => chip.setAttribute("aria-expanded", String(event.newState === "open")));
+  window.addEventListener("resize", () => {
+    schedule();
+    if (card.matches(":popover-open")) place();
+  });
+  update();
 }
 
 function renderLicense(complete, tus, sourceCommit) {
@@ -2410,6 +2463,9 @@ function renderLicense(complete, tus, sourceCommit) {
   const next = LICENSE_RANKS.find((r) => r.min > pct);
   text("licenseRank", rank.name);
   text("licenseClass", rank.badge);
+  text("licenseChipRank", rank.name);
+  text("licenseChipClass", rank.badge);
+  labelLicenseChip();
   if (next) {
     const needed = Math.max(0, Math.ceil((next.min / 100) * tus) - complete);
     text("licenseNext", `Next: ${next.name} at ${next.min}% · ${fmtInt(needed)} ${needed === 1 ? "unit" : "units"} to go`);
@@ -2497,6 +2553,7 @@ refreshDownload();
 initExplorer();
 initEvidence();
 initMiniPanels();
+initLicenseChip();
 // GitHub data changes slowly and is cached server-side; poll gently.
 state.githubTimer = window.setInterval(refreshGithub, 90000);
 // New builds land only when CI publishes; a slow poll keeps the button fresh.

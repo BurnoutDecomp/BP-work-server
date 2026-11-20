@@ -88,42 +88,63 @@ html {
   margin-top: 28px;
 }
 
-/* ---------- The license over the rings, the news ticker across the window ---------- */
+/* ---------- The license chip and card, the news ticker ---------- */
 
-.wp-license {
-  margin: 30px 0 34px;
+/* Beside the brand; under 1150 px the badge and figure alone, the rank in its name. */
+.wp-license-chip {
+  margin-right: auto;
 }
 
-.wp-ticker {
-  margin-top: 46px;
-}
-
-/* The crawl runs the width of the window; its toggle keeps to the page's right edge
-   (the .b5-shell margin), the items sliding under it. */
-.wp-ticker .b5-ticker__toggle {
-  position: absolute;
-  top: 50%;
-  right: calc((100% - min(1280px, 100% - 96px)) / 2);
+/* The card opens under the chip (app.js places it), over the page. */
+.wp-license-card {
+  position: fixed;
+  inset: auto;
+  top: var(--license-top, 116px);
+  left: var(--license-left, 16px);
+  width: min(352px, calc(100vw - 32px));
   margin: 0;
-  transform: translateY(-50%);
+  color: var(--b5-color-text);
+  box-shadow: 0 22px 60px #000000d9, 8px 12px 0 #08070766;
+  opacity: 1;
+  transform: none;
+  transition: opacity 0.2s ease, transform 0.2s ease, overlay 0.2s allow-discrete, display 0.2s allow-discrete;
+}
+
+@starting-style {
+  .wp-license-card:popover-open {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+.wp-license-card:not(:popover-open) {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wp-license-card {
+    transition: none;
+  }
 }
 
 @media (max-width: 1150px) {
-  .wp-ticker .b5-ticker__toggle {
-    right: 32px;
+  .wp-license-chip .b5-license-chip__rank {
+    display: none;
   }
 }
 
-@media (max-width: 850px) {
-  .wp-ticker .b5-ticker__toggle {
-    right: 22px;
-  }
-}
-
+/* Phones: on the brand's row, at its end. */
 @media (max-width: 650px) {
-  .wp-ticker .b5-ticker__toggle {
-    right: 20px;
+  .wp-license-chip {
+    margin-right: 0;
+    margin-left: auto;
   }
+}
+
+/* Crash FM runs under the stat strip, the page's width. */
+.wp-ticker {
+  margin-top: 40px;
 }
 
 /* The sections' own layouts follow the page's width (the @container rules below). */

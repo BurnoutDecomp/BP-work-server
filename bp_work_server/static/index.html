@@ -50,7 +50,7 @@
     <link rel="icon" type="image/svg+xml" href="/static/b5-ui/assets/favicon.svg" />
     <link rel="preload" href="/static/b5-ui/assets/anton-latin.ttf" as="font" type="font/ttf" crossorigin />
     <link rel="stylesheet" href="/static/b5-ui/b5-ui.css?v=0.2.0" />
-    <link rel="stylesheet" href="/static/app.css?v=53" />
+    <link rel="stylesheet" href="/static/app.css?v=54" />
   </head>
   <body class="b5-page">
     <a class="b5-skip-link" href="#progress">Skip to progress</a>
@@ -60,6 +60,14 @@
         <img class="b5-brand__mark" src="/static/b5-ui/assets/seal-paradise-city.png" width="54" height="54" alt="" />
         <span>BURNOUT PARADISE<span class="b5-brand__subtitle">DECOMP / LIVE PROGRESS</span></span>
       </a>
+      <!-- The decomp license rides in the header once the summary's rings have scrolled
+           away (app.js), so it never sits beside the figures it repeats. It opens the
+           whole license. -->
+      <button class="b5-license-chip wp-license-chip" id="licenseChip" type="button" popovertarget="licenseCard" aria-expanded="false" aria-label="Decomp license" data-b5-reveal>
+        <span class="b5-license-chip__class" id="licenseChipClass" aria-hidden="true">L</span>
+        <span class="b5-license-chip__rank" id="licenseChipRank">Learner's permit</span>
+        <span class="b5-license-chip__value" id="licenseChipValue">—</span>
+      </button>
       <nav class="b5-site-nav" aria-label="Main navigation">
         <a href="#progress" aria-current="location"><span>01</span> Progress</a>
         <a href="#bytematch"><span>02</span> Byte matching</a>
@@ -68,6 +76,27 @@
         <a class="b5-site-nav__external" href="https://online.decomp.adriwin.fr/" target="_blank" rel="noopener noreferrer">Online lobbies ↗</a>
       </nav>
     </header>
+
+    <!-- The whole license: a rank on the share of translation units complete (the first
+         ring), after the game's licence classes; the rings' figures as car-stat meters,
+         with the X360 byte match; the commit the ledger was reconciled at. -->
+    <article class="b5-license wp-license-card" id="licenseCard" popover aria-labelledby="licenseRank">
+      <div class="b5-license__head">
+        <div>
+          <div class="b5-license__kicker">Paradise City · Decomp license</div>
+          <h2 class="b5-license__rank" id="licenseRank">Learner's permit</h2>
+        </div>
+        <span class="b5-license__class" id="licenseClass" aria-hidden="true">L</span>
+      </div>
+      <p class="b5-license__next" id="licenseNext">Reading the work ledger…</p>
+      <div class="b5-license__stats">
+          <div class="b5-meter" id="meterUnits" data-tone="success" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Units complete"><span class="b5-meter__label">Units complete</span><span class="b5-meter__value" data-b5-progress-label>—</span><span class="b5-meter__bar"></span></div>
+          <div class="b5-meter" id="meterFuncs" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Functions covered"><span class="b5-meter__label">Functions covered</span><span class="b5-meter__value" data-b5-progress-label>—</span><span class="b5-meter__bar"></span></div>
+          <div class="b5-meter" id="meterBuild" data-tone="info" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="In the build"><span class="b5-meter__label">In the build</span><span class="b5-meter__value" data-b5-progress-label>—</span><span class="b5-meter__bar"></span></div>
+          <div class="b5-meter" id="meterMatch" data-tone="success" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="X360 byte match"><span class="b5-meter__label">X360 byte match</span><span class="b5-meter__value" data-b5-progress-label>—</span><span class="b5-meter__bar"></span></div>
+      </div>
+      <div class="b5-license__stamp"><span>Valid in Paradise City</span><span id="licenseNumber" title="The b5-decomp commit the ledger was reconciled at">No. —</span></div>
+    </article>
 
     <main class="wp-main" data-b5-density="compact">
       <div class="b5-shell">
@@ -129,22 +158,6 @@
         </div>
       </section>
 
-      <!-- The decomp license heads the summary: a rank on the share of translation units
-           complete (the first ring below), after the game's licence classes, and the X360
-           byte match, which the rings leave to its own section. -->
-      <article class="b5-license wp-license" aria-labelledby="licenseRank">
-        <span class="b5-license__class" id="licenseClass" aria-hidden="true">L</span>
-        <div class="b5-license__id">
-          <div class="b5-license__kicker">Paradise City · Decomp license</div>
-          <h2 class="b5-license__rank" id="licenseRank">Learner's permit</h2>
-          <p class="b5-license__next" id="licenseNext">Reading the work ledger…</p>
-        </div>
-        <div class="b5-license__stats">
-          <div class="b5-meter" id="meterMatch" data-tone="success" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="X360 byte match"><span class="b5-meter__label">X360 byte match</span><span class="b5-meter__value" data-b5-progress-label>—</span><span class="b5-meter__bar"></span></div>
-        </div>
-        <div class="b5-license__stamp"><span>Valid in Paradise City</span><span id="licenseNumber" title="The b5-decomp commit the ledger was reconciled at">No. —</span></div>
-      </article>
-
       <!-- Headline metrics: three donuts, each split into the states that make up its total -->
       <section class="b5-stat-strip wp-metrics" aria-label="Progress summary">
         <article class="b5-stat wp-metric" title="Completion includes done translation units and external implementations, shown separately in the legend.">
@@ -196,15 +209,14 @@
         </article>
       </section>
 
-      </div>
-
       <!-- Crash FM's news crawl, after the game's ticker: the newest work-server events in
-           amber LED type, across the whole window. The events table in Who's working holds
-           the same events; the crawl stops on hover or with its toggle. -->
+           amber LED type, under the summary. The events table in Who's working holds the
+           same events; the crawl stops on hover or with its toggle. -->
       <section class="b5-ticker wp-ticker" id="ticker" aria-label="Crash FM: latest events">
         <div class="b5-ticker__window"><ul class="b5-ticker__track" id="tickerTrack"><li class="b5-ticker__item">Tuning in to the work server…</li></ul></div>
         <button class="b5-ticker__toggle" id="tickerToggle" type="button" aria-pressed="false"><span class="b5-sr-only">Pause</span></button>
       </section>
+      </div>
 
       <div class="b5-shell wp-sections">
       <!-- Explorer: search/browse every TU and function -->
@@ -710,6 +722,6 @@
 
     <script src="/static/d3-hierarchy.min.js?v=3.1.2" defer></script>
     <script src="/static/progress-map.js?v=5" defer></script>
-    <script type="module" src="/static/app.js?v=47"></script>
+    <script type="module" src="/static/app.js?v=48"></script>
   </body>
 </html>
