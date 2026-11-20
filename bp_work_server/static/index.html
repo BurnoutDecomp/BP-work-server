@@ -50,7 +50,7 @@
     <link rel="icon" type="image/svg+xml" href="/static/b5-ui/assets/favicon.svg" />
     <link rel="preload" href="/static/b5-ui/assets/anton-latin.ttf" as="font" type="font/ttf" crossorigin />
     <link rel="stylesheet" href="/static/b5-ui/b5-ui.css?v=0.2.0" />
-    <link rel="stylesheet" href="/static/app.css?v=51" />
+    <link rel="stylesheet" href="/static/app.css?v=52" />
   </head>
   <body class="b5-page">
     <a class="b5-skip-link" href="#progress">Skip to progress</a>
@@ -179,9 +179,49 @@
         </article>
       </section>
 
+      <!-- Crash FM: the newest work-server events, as a radio ticker. The events table in
+           Who's working holds the same events; the ticker pauses on hover or its button. -->
+      <section class="b5-ticker wp-ticker" id="ticker" aria-label="Latest events">
+        <span class="b5-ticker__sign">Crash FM <small>Live</small></span>
+        <div class="b5-ticker__window"><ul class="b5-ticker__track" id="tickerTrack"><li class="b5-ticker__item">Tuning in to the work server…</li></ul></div>
+        <button class="b5-button b5-button--ink b5-ticker__toggle" id="tickerToggle" type="button" aria-pressed="false">Pause</button>
+      </section>
+
+      <!-- Easy Drive: the decomp license and the section menu, beside the sections and
+           sticky while they scroll. The menu marks the section being read. -->
+      <div class="wp-layout">
+        <aside class="wp-rail" aria-label="License and sections">
+          <article class="b5-license" aria-labelledby="licenseRank">
+            <div class="b5-license__head">
+              <div>
+                <div class="b5-license__kicker">Paradise City · Decomp license</div>
+                <h2 class="b5-license__rank" id="licenseRank">Learner's permit</h2>
+              </div>
+              <span class="b5-license__class" id="licenseClass" aria-hidden="true">L</span>
+            </div>
+            <p class="b5-license__next" id="licenseNext">Reading the work ledger…</p>
+            <div class="b5-license__stats">
+              <div class="b5-meter meter-units" id="meterUnits" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Units complete"><span class="b5-meter__label">Units complete</span><span class="b5-meter__value" data-b5-progress-label>—</span><span class="b5-meter__bar"></span></div>
+              <div class="b5-meter meter-funcs" id="meterFuncs" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Functions covered"><span class="b5-meter__label">Functions covered</span><span class="b5-meter__value" data-b5-progress-label>—</span><span class="b5-meter__bar"></span></div>
+              <div class="b5-meter meter-build" id="meterBuild" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="In the build"><span class="b5-meter__label">In the build</span><span class="b5-meter__value" data-b5-progress-label>—</span><span class="b5-meter__bar"></span></div>
+              <div class="b5-meter meter-match" id="meterMatch" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Byte match (X360)"><span class="b5-meter__label">Byte match (X360)</span><span class="b5-meter__value" data-b5-progress-label>—</span><span class="b5-meter__bar"></span></div>
+            </div>
+            <div class="b5-license__stamp"><span>Valid in Paradise City</span><span id="licenseNumber" title="The b5-decomp commit the ledger was reconciled at">No. —</span></div>
+          </article>
+          <nav class="b5-rail" aria-label="Sections">
+            <p class="b5-rail__title"><span class="b5-dot"></span>Easy Drive</p>
+            <a class="b5-rail__item" href="#progress" aria-current="location"><span class="b5-rail__index">01</span><span class="b5-rail__label">Progress map</span><span class="b5-rail__meta" id="railProgress">—</span></a>
+            <a class="b5-rail__item" href="#bytematch"><span class="b5-rail__index">02</span><span class="b5-rail__label">Byte matching</span><span class="b5-rail__meta" id="railBytematch">—</span></a>
+            <a class="b5-rail__item" href="#gaps"><span class="b5-rail__index">03</span><span class="b5-rail__label">Console gaps</span><span class="b5-rail__meta" id="railGaps">—</span></a>
+            <a class="b5-rail__item" href="#work"><span class="b5-rail__index">04</span><span class="b5-rail__label">Who's working</span><span class="b5-rail__meta" id="railWork">—</span></a>
+            <a class="b5-rail__item" href="#evolution"><span class="b5-rail__index">05</span><span class="b5-rail__label">Evolution</span><span class="b5-rail__meta" id="railEvolution">—</span></a>
+            <a class="b5-rail__item" href="#repository"><span class="b5-rail__index">06</span><span class="b5-rail__label">The repository</span><span class="b5-rail__meta" id="railRepository">—</span></a>
+          </nav>
+        </aside>
+        <div class="wp-sections">
       <!-- Explorer: search/browse every TU and function -->
       <section class="wp-section" id="progress" aria-labelledby="progress-title">
-        <div class="b5-section-header">
+        <div class="b5-section-header" data-b5-index="01">
           <div>
             <div class="b5-eyebrow">THE WORK LEDGER / EVERY UNIT, EVERY FUNCTION</div>
             <h2 class="b5-heading" id="progress-title">Progress map<span class="b5-accent">.</span></h2>
@@ -236,7 +276,7 @@
               <span id="mapStatusText">Loading progress map…</span>
               <button id="mapRetry" type="button" class="b5-button b5-button--ink" hidden>Retry</button>
             </div>
-            <div id="progressMapViewport" class="map-viewport">
+            <div id="progressMapViewport" class="map-viewport b5-hud">
               <canvas id="progressMapCanvas" tabindex="0" role="group"
                 aria-label="Interactive progress map" aria-describedby="mapKeyboardHelp">
                 Use List view to browse progress in a table.
@@ -281,7 +321,7 @@
       <!-- Byte matching: the native Xbox 360 tree compiled with the XDK, function by function
            against the console's own bytes. Fed by the workflow repo's bytematch.yml. -->
       <section class="wp-section" id="bytematch" aria-labelledby="bytematch-title">
-        <div class="b5-section-header">
+        <div class="b5-section-header" data-b5-index="02">
           <div>
             <div class="b5-eyebrow">XBOX 360 / THE XDK AGAINST ARTIST</div>
             <h2 class="b5-heading" id="bytematch-title">Byte matching<span class="b5-accent">.</span></h2>
@@ -345,7 +385,7 @@
               <div id="x360MapStatus" class="map-status" role="status">
                 <span id="x360MapStatusText">Loading the X360 map&hellip;</span>
               </div>
-              <div id="x360ProgressMapViewport" class="map-viewport">
+              <div id="x360ProgressMapViewport" class="map-viewport b5-hud">
                 <canvas id="x360ProgressMapCanvas" tabindex="0" role="group"
                   aria-label="Interactive X360 byte-match map" aria-describedby="x360MapKeyboardHelp">
                   The function list below browses the same states.
@@ -405,50 +445,11 @@
         </div>
       </section>
 
-      <!-- Evolution: every ring's totals over time -->
-      <section class="wp-section" id="evolution" aria-labelledby="evolution-title">
-        <div class="b5-section-header">
-          <div>
-            <div class="b5-eyebrow">OVER TIME / EVERY NUMBER ON THIS PAGE</div>
-            <h2 class="b5-heading" id="evolution-title">Evolution<span class="b5-accent">.</span></h2>
-          </div>
-        </div>
-        <div class="wp-body evolution-panel" id="evolutionCard" aria-label="Evolution">
-          <div class="vp-head">
-            <div>
-              <div class="metric-total" id="evolutionCount">&middot;</div>
-              <p class="vp-intro">Every number on this page, over time. Pick the series to compare: counts share one axis; shares plot each series over its own total.</p>
-            </div>
-          </div>
-          <section class="b5-panel b5-panel--board evo-board" aria-label="Evolution chart">
-            <div class="b5-panel__header">
-              <span class="b5-board__label"><span class="b5-dot"></span>Chart</span>
-              <div class="b5-board__tools evo-controls">
-                <div class="b5-filter-group b5-filter-group--paint" id="evolutionRange" role="group" aria-label="Range">
-                  <button class="b5-filter" type="button" data-range="30" data-b5-value="30" aria-pressed="false">30 days</button>
-                  <button class="b5-filter" type="button" data-range="90" data-b5-value="90" aria-pressed="false">90 days</button>
-                  <button class="b5-filter" type="button" data-range="0" data-b5-value="0" aria-pressed="true">All</button>
-                </div>
-                <div class="b5-filter-group b5-filter-group--paint" id="evolutionMode" role="group" aria-label="Scale">
-                  <button class="b5-filter" type="button" data-mode="count" data-b5-value="count" aria-pressed="true">Counts</button>
-                  <button class="b5-filter" type="button" data-mode="share" data-b5-value="share" aria-pressed="false">Shares</button>
-                </div>
-              </div>
-            </div>
-            <div class="b5-panel__body">
-              <div class="evo-picker" id="evolutionPicker"></div>
-              <div class="evo-chart" id="evolutionChart"></div>
-              <div class="evo-legend" id="evolutionLegend"></div>
-            </div>
-          </section>
-        </div>
-      </section>
-
       <!-- Console gaps: what the console's code does that our PC code does not, file by file.
            A to-do list from the static audits CI runs on every decomp commit, with no score:
            each gap is a lead to check, not a measure of progress. -->
       <section class="wp-section" id="gaps" aria-labelledby="gaps-title">
-        <div class="b5-section-header">
+        <div class="b5-section-header" data-b5-index="03">
           <div>
             <div class="b5-eyebrow">CONSOLE AUDITS / LEADS, NOT VERDICTS</div>
             <h2 class="b5-heading" id="gaps-title">Console gaps<span class="b5-accent">.</span></h2>
@@ -487,54 +488,9 @@
         </div>
       </section>
 
-      <!-- GitHub repository panel -->
-      <section class="wp-section" id="repository" aria-labelledby="repository-title">
-        <div class="b5-section-header">
-          <div>
-            <div class="b5-eyebrow">GITHUB / THE DECOMP SOURCE</div>
-            <h2 class="b5-heading" id="repository-title">The repository<span class="b5-accent">.</span></h2>
-          </div>
-          <span id="ghRate" class="gh-rate"></span>
-        </div>
-        <div class="wp-body gh-panel" aria-label="GitHub repository">
-          <div class="gh-head">
-            <h3 class="gh-title">
-              <svg class="gh-mark" viewBox="0 0 16 16" aria-hidden="true">
-                <path
-                  fill="currentColor"
-                  d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.33c-2.23.49-2.7-1.07-2.7-1.07-.36-.93-.89-1.18-.89-1.18-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.83-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.52.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
-                />
-              </svg>
-              <a id="repoLink" href="#" target="_blank" rel="noopener">repository</a>
-              <span class="branch-tag" id="repoBranch">dev</span>
-            </h3>
-          </div>
-          <p id="repoDesc" class="gh-desc">Loading repository…</p>
-
-          <div class="gh-stats" id="ghStats"></div>
-
-          <div class="gh-body">
-            <div class="b5-card b5-card--compact gh-commits">
-              <h4 class="b5-card__title">Latest commit</h4>
-              <div id="latestCommit" class="latest-commit empty">Loading…</div>
-              <h4 class="b5-card__title recent-head">Recent commits</h4>
-              <ol id="commitList" class="commit-list empty"></ol>
-            </div>
-
-            <div class="b5-card b5-card--compact gh-tree">
-              <div class="tree-head">
-                <h4 class="b5-card__title">File tree</h4>
-                <span id="treeMeta" class="tree-meta"></span>
-              </div>
-              <div id="fileTree" class="file-tree empty">Loading…</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <!-- Work coordination grid -->
       <section class="wp-section" id="work" aria-labelledby="work-title">
-        <div class="b5-section-header">
+        <div class="b5-section-header" data-b5-index="04">
           <div>
             <div class="b5-eyebrow">WORK SERVER / LIVE COORDINATION</div>
             <h2 class="b5-heading" id="work-title">Who's working<span class="b5-accent">.</span></h2>
@@ -653,6 +609,92 @@
           </section>
         </div>
       </section>
+
+      <!-- Evolution: every ring's totals over time -->
+      <section class="wp-section" id="evolution" aria-labelledby="evolution-title">
+        <div class="b5-section-header" data-b5-index="05">
+          <div>
+            <div class="b5-eyebrow">OVER TIME / EVERY NUMBER ON THIS PAGE</div>
+            <h2 class="b5-heading" id="evolution-title">Evolution<span class="b5-accent">.</span></h2>
+          </div>
+        </div>
+        <div class="wp-body evolution-panel" id="evolutionCard" aria-label="Evolution">
+          <div class="vp-head">
+            <div>
+              <div class="metric-total" id="evolutionCount">&middot;</div>
+              <p class="vp-intro">Every number on this page, over time. Pick the series to compare: counts share one axis; shares plot each series over its own total.</p>
+            </div>
+          </div>
+          <section class="b5-panel b5-panel--board evo-board" aria-label="Evolution chart">
+            <div class="b5-panel__header">
+              <span class="b5-board__label"><span class="b5-dot"></span>Chart</span>
+              <div class="b5-board__tools evo-controls">
+                <div class="b5-filter-group b5-filter-group--paint" id="evolutionRange" role="group" aria-label="Range">
+                  <button class="b5-filter" type="button" data-range="30" data-b5-value="30" aria-pressed="false">30 days</button>
+                  <button class="b5-filter" type="button" data-range="90" data-b5-value="90" aria-pressed="false">90 days</button>
+                  <button class="b5-filter" type="button" data-range="0" data-b5-value="0" aria-pressed="true">All</button>
+                </div>
+                <div class="b5-filter-group b5-filter-group--paint" id="evolutionMode" role="group" aria-label="Scale">
+                  <button class="b5-filter" type="button" data-mode="count" data-b5-value="count" aria-pressed="true">Counts</button>
+                  <button class="b5-filter" type="button" data-mode="share" data-b5-value="share" aria-pressed="false">Shares</button>
+                </div>
+              </div>
+            </div>
+            <div class="b5-panel__body">
+              <div class="evo-picker" id="evolutionPicker"></div>
+              <div class="evo-chart" id="evolutionChart"></div>
+              <div class="evo-legend" id="evolutionLegend"></div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- GitHub repository panel -->
+      <section class="wp-section" id="repository" aria-labelledby="repository-title">
+        <div class="b5-section-header" data-b5-index="06">
+          <div>
+            <div class="b5-eyebrow">GITHUB / THE DECOMP SOURCE</div>
+            <h2 class="b5-heading" id="repository-title">The repository<span class="b5-accent">.</span></h2>
+          </div>
+          <span id="ghRate" class="gh-rate"></span>
+        </div>
+        <div class="wp-body gh-panel" aria-label="GitHub repository">
+          <div class="gh-head">
+            <h3 class="gh-title">
+              <svg class="gh-mark" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.33c-2.23.49-2.7-1.07-2.7-1.07-.36-.93-.89-1.18-.89-1.18-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.83-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.52.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+                />
+              </svg>
+              <a id="repoLink" href="#" target="_blank" rel="noopener">repository</a>
+              <span class="branch-tag" id="repoBranch">dev</span>
+            </h3>
+          </div>
+          <p id="repoDesc" class="gh-desc">Loading repository…</p>
+
+          <div class="gh-stats" id="ghStats"></div>
+
+          <div class="gh-body">
+            <div class="b5-card b5-card--compact gh-commits">
+              <h4 class="b5-card__title">Latest commit</h4>
+              <div id="latestCommit" class="latest-commit empty">Loading…</div>
+              <h4 class="b5-card__title recent-head">Recent commits</h4>
+              <ol id="commitList" class="commit-list empty"></ol>
+            </div>
+
+            <div class="b5-card b5-card--compact gh-tree">
+              <div class="tree-head">
+                <h4 class="b5-card__title">File tree</h4>
+                <span id="treeMeta" class="tree-meta"></span>
+              </div>
+              <div id="fileTree" class="file-tree empty">Loading…</div>
+            </div>
+          </div>
+        </div>
+      </section>
+        </div>
+      </div>
     </main>
 
     <footer class="b5-site-footer b5-shell">
@@ -681,6 +723,6 @@
 
     <script src="/static/d3-hierarchy.min.js?v=3.1.2" defer></script>
     <script src="/static/progress-map.js?v=5" defer></script>
-    <script type="module" src="/static/app.js?v=45"></script>
+    <script type="module" src="/static/app.js?v=46"></script>
   </body>
 </html>

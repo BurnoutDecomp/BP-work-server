@@ -71,7 +71,14 @@ html {
   transform: skew(-40deg);
 }
 
-.wp-metrics + .wp-section::before {
+/* The first section opens the column beside the rail: no rule above it. */
+.wp-sections > .wp-section:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.wp-sections > .wp-section:first-child::before {
   display: none;
 }
 
@@ -81,9 +88,117 @@ html {
   margin-top: 28px;
 }
 
-.wp-metrics + .wp-section {
-  padding-top: 0;
-  border-top: 0;
+/* ---------- Easy Drive: the license and section menu beside the sections ---------- */
+
+/* Crash FM runs under the stat strip, across the page. */
+.wp-ticker {
+  margin-top: 40px;
+}
+
+.wp-layout {
+  display: grid;
+  grid-template-columns: 272px minmax(0, 1fr);
+  gap: 44px;
+  margin-top: 56px;
+}
+
+/* Room on the left for the menu's chevron cursor. The menu stays in reach while the
+   sections scroll; on a screen tall enough, the license comes along with it. */
+.wp-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-width: 0;
+  padding-left: 10px;
+}
+
+.wp-rail > .b5-rail {
+  position: sticky;
+  top: 126px;
+}
+
+@media (min-width: 1151px) and (min-height: 960px) {
+  .wp-rail {
+    position: sticky;
+    top: 126px;
+    align-self: start;
+  }
+
+  .wp-rail > .b5-rail {
+    position: static;
+  }
+}
+
+/* The sections' own layouts follow the column's width, not the window's (the
+   @container rules below): the rail takes a share of the window on wide screens. */
+.wp-sections {
+  min-width: 0;
+  container: wp-sections / inline-size;
+}
+
+/* The license meters in the colour of their ring's lead state. */
+.meter-units,
+.meter-match {
+  --b5-meter-color: var(--green);
+}
+
+.meter-funcs {
+  --b5-meter-color: var(--gold);
+}
+
+.meter-build {
+  --b5-meter-color: var(--blue);
+}
+
+/* Under 1150 px the rail opens the column: the license beside the menu, then on phones
+   one above the other, and the menu two items to a row. */
+@media (max-width: 1150px) {
+  .wp-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 48px;
+    margin-top: 44px;
+  }
+
+  .wp-rail {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    align-items: start;
+    gap: 28px 36px;
+  }
+
+  .wp-rail > .b5-rail {
+    position: static;
+  }
+}
+
+@media (max-width: 720px) {
+  .wp-rail {
+    grid-template-columns: minmax(0, 1fr);
+    padding-left: 0;
+  }
+
+  .wp-rail > .b5-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 8px;
+  }
+
+  .wp-rail .b5-rail__title {
+    grid-column: 1 / -1;
+  }
+
+  .wp-rail .b5-rail__item {
+    grid-template-columns: 22px minmax(0, 1fr);
+    padding: 8px 6px 8px 12px;
+  }
+
+  .wp-rail .b5-rail__label {
+    font-size: 16px;
+  }
+
+  /* the chevron would sit outside the page's gutter */
+  .wp-rail .b5-rail__item[aria-current]::after {
+    display: none;
+  }
 }
 
 /* A heading inside a section, in the stat strip's label type. */
@@ -294,7 +409,7 @@ main a:not([class]):hover,
   flex: 0 1 320px;
 }
 
-@media (max-width: 720px) {
+@container wp-sections (max-width: 676px) {
   .b5-panel--board > .b5-panel__header > .wp-search {
     flex: 1 1 100%;
   }
@@ -1537,10 +1652,10 @@ main a:not([class]):hover,
   align-self: start;
 }
 
-/* Narrow screens stack the two columns. This block must follow the base rules above:
-   an earlier @media rule of equal specificity loses to them, which left the file list
+/* A narrow column stacks the two. This block must follow the base rules above: an
+   earlier @container rule of equal specificity loses to them, which left the file list
    in a 0 px column on phones. */
-@media (max-width: 1150px) {
+@container wp-sections (max-width: 1086px) {
   .evidence-grid {
     grid-template-columns: 1fr;
   }
@@ -2440,7 +2555,10 @@ html::-webkit-scrollbar-corner,
   background: transparent;
 }
 
-/* ---------- Responsive ---------- */
+/* ---------- Responsive ----------
+   The window's width arranges the page (the stat strip, the rail); the sections column's
+   width arranges what is inside it. Its thresholds are the old window ones less the
+   page gutters: 1086 px of column was a 1150 px window, 776 px an 820 px one. */
 @media (max-width: 1150px) {
   .wp-metrics {
     grid-auto-flow: row;
@@ -2455,6 +2573,21 @@ html::-webkit-scrollbar-corner,
     padding-top: 22px;
     border-top: 1px solid var(--line);
   }
+}
+
+/* The work grid keeps its two columns while both fit their minimums. */
+@container wp-sections (max-width: 880px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@container wp-sections (max-width: 1086px) {
+  /* the facts take the full width under the introduction */
+  .vp-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
   .vp-grid {
     grid-template-columns: auto minmax(0, 1fr);
   }
@@ -2465,12 +2598,9 @@ html::-webkit-scrollbar-corner,
   .vp-facts {
     width: 100%;
   }
-  .grid {
-    grid-template-columns: 1fr;
-  }
 }
 
-@media (max-width: 820px) {
+@container wp-sections (max-width: 776px) {
   .gh-body {
     grid-template-columns: 1fr;
   }
@@ -2493,7 +2623,7 @@ html::-webkit-scrollbar-corner,
   }
 }
 
-@media (max-width: 720px) {
+@container wp-sections (max-width: 676px) {
   .explorer-view-tools {
     width: 100%;
     justify-content: space-between;

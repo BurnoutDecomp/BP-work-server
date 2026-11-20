@@ -1,7 +1,7 @@
 // The progress dashboard. Controls, the detail drawer, the release chooser and the pagers
 // are the shared b5-decomp-webui components in /static/b5-ui (webui.json names the build);
 // this module fetches the data and renders the domain views.
-import { closeDialog, createFilterGroup, createPager, createSelect, enhance, openDialog } from "./b5-ui/b5-ui.js";
+import { closeDialog, createFilterGroup, createPager, createSelect, enhance, openDialog, setProgress } from "./b5-ui/b5-ui.js";
 
 const state = {
   lastEventId: 0,
@@ -348,6 +348,7 @@ function render(data) {
     { label: "blocked", value: counts.blocked, color: "red" },
     { label: "todo", value: counts.todo, color: "grey" },
   ], tus ? (complete / tus) * 100 : 0, `${fmtInt(complete)} / ${fmtInt(tus)} complete`);
+  renderLicense(complete, tus, (data.ledger_evidence || {}).source_commit);
 
   const funcs = Number(totals.funcs || 0);
   const recorded = Number(totals.done_funcs || 0);
@@ -414,6 +415,7 @@ function renderAgents(agents) {
   const activeCount = agents.filter((agent) => agent.has_active_work || Number(agent.total || 0) > 0).length;
   text("agentCount", fmtInt(activeCount));
   text("agentSummary", `${fmtInt(agents.length)} users · ${fmtInt(activeCount)} with active work`);
+  text("railWork", `${fmtInt(agents.length)} contributors · ${fmtInt(activeCount)} active`);
   const root = el("agents");
   clearNode(root);
   root.className = agents.length ? "agent-list" : "agent-list empty";
@@ -665,6 +667,7 @@ function setEventsData(events) {
 function rebuildEvents() {
   const view = state.eventsView;
   view.all = expandEvents(state.rawEvents);
+  renderTicker(view.all);
   fillSelect(
     "eventsFilterAction",
     [...new Set(view.all.map((e) => e.action).filter(Boolean))].sort(),
@@ -1183,6 +1186,10 @@ function renderStats(info) {
     node.appendChild(strong);
     root.appendChild(node);
   }
+  text("railRepository", [
+    info.stargazers_count != null ? `★ ${fmtInt(info.stargazers_count)}` : "",
+    info.pushed_at ? `pushed ${relTime(info.pushed_at)}` : "",
+  ].filter(Boolean).join(" · ") || "—");
   if (info.pushed_at) {
     root.appendChild(div("gh-stat", `pushed ${relTime(info.pushed_at)}`));
   }
@@ -2380,6 +2387,80 @@ function depRow(dep, status) {
   return row;
 }
 
+/* ---------------- License, rail and ticker ---------------- */
+
+// The game's license classes, from a learner's permit to Elite, on the share of
+// translation units complete (done and external, as the first ring counts them).
+const LICENSE_RANKS = [
+  { min: 0, name: "Learner's permit", badge: "L" },
+  { min: 20, name: "D-class license", badge: "D" },
+  { min: 40, name: "C-class license", badge: "C" },
+  { min: 60, name: "B-class license", badge: "B" },
+  { min: 80, name: "A-class license", badge: "A" },
+  { min: 95, name: "Burnout license", badge: "B5" },
+  { min: 100, name: "Elite license", badge: "Elite" },
+];
+// Ring id -> license meter id.
+const RING_METERS = { tu: "meterUnits", fn: "meterFuncs", exe: "meterBuild", bytematch: "meterMatch" };
+
+function reportRing(id, pct) {
+  const meter = el(RING_METERS[id]);
+  if (meter && Number.isFinite(pct)) setProgress(meter, pct);
+  if (id === "tu") text("railProgress", `${pct.toFixed(1)}% of units complete`);
+  if (id === "bytematch") text("railBytematch", `${pct.toFixed(1)}% of functions match`);
+}
+
+function renderLicense(complete, tus, sourceCommit) {
+  const pct = tus ? (complete / tus) * 100 : 0;
+  const rank = [...LICENSE_RANKS].reverse().find((r) => pct >= r.min) || LICENSE_RANKS[0];
+  const next = LICENSE_RANKS.find((r) => r.min > pct);
+  text("licenseRank", rank.name);
+  text("licenseClass", rank.badge);
+  if (next) {
+    const needed = Math.max(0, Math.ceil((next.min / 100) * tus) - complete);
+    text("licenseNext", `Next: ${next.name} at ${next.min}% · ${fmtInt(needed)} ${needed === 1 ? "unit" : "units"} to go`);
+  } else {
+    text("licenseNext", "Every unit complete: Paradise City is rebuilt.");
+  }
+  text("licenseNumber", sourceCommit ? `No. ${String(sourceCommit).slice(0, 10)}` : "No. —");
+}
+
+// Crash FM: the newest events, twice over (the copy hidden from assistive technology)
+// so the scroll loops without a seam. About six seconds an item. The library's
+// enhance() wires its pause button.
+function renderTicker(events) {
+  const track = el("tickerTrack");
+  if (!track) return;
+  const latest = [...events]
+    .sort((a, b) => eventSortTime(b) - eventSortTime(a) || (b.id || 0) - (a.id || 0))
+    .slice(0, 14);
+  clearNode(track);
+  if (!latest.length) {
+    track.appendChild(tickerItem("Quiet", "no events on the work server yet"));
+    track.style.animation = "none";
+    return;
+  }
+  track.style.removeProperty("animation");
+  track.style.setProperty("--b5-ticker-duration", `${latest.length * 6}s`);
+  for (const copy of [false, true]) {
+    for (const event of latest) {
+      const where = event.tu_id && event.tu_id !== "None" ? String(event.tu_id).split("/").pop() : "";
+      const item = tickerItem(event.action || "event", [event.agent || "server", where, relTime(event.ts)].filter(Boolean).join(" · "));
+      if (copy) item.setAttribute("aria-hidden", "true");
+      track.appendChild(item);
+    }
+  }
+}
+
+function tickerItem(title, rest) {
+  const item = document.createElement("li");
+  item.className = "b5-ticker__item";
+  const strong = document.createElement("strong");
+  strong.textContent = title;
+  item.append(strong, document.createTextNode(rest));
+  return item;
+}
+
 /* ---------------- Live stream ---------------- */
 
 function connectStream() {
@@ -2946,6 +3027,7 @@ function setDonut(id, segments, percent, totalText) {
   const pct = Number(percent == null ? (total ? (Number(segments[0]?.value || 0) / total) * 100 : 0) : percent);
   text(`${id}Percent`, `${pct.toFixed(1)}%`);
   ring.style.setProperty("--p", Math.max(0, Math.min(100, pct)));
+  reportRing(id, pct);
   if (totalText != null) text(`${id}Count`, totalText);
   const legend = el(`${id}Legend`);
   if (legend) {
@@ -3160,6 +3242,11 @@ function drawEvolutionChart() {
   text("evolutionCount", points.length
     ? `${fmtInt(spanDays)} days \u00b7 ${points[0].date} \u2192 ${points[points.length - 1].date}`
     : "\u00b7");
+  // the rail counts the whole history, whatever range the chart shows
+  const history = (ev.points || []).filter((p) => Number.isFinite(Date.parse(p.ts)));
+  text("railEvolution", history.length
+    ? `${fmtInt(Math.round((Date.parse(history[history.length - 1].ts) - Date.parse(history[0].ts)) / 86400000) + 1)} days tracked`
+    : "no history yet");
   if (points.length < 2) {
     host.appendChild(div("muted-text vh-empty", ev.points.length
       ? "Not enough points in this range yet."
@@ -3370,6 +3457,7 @@ function renderEvidenceSummary() {
       : "no audit yet";
     meta.title = fa.generated_at ? `audited ${fmtTime(fa.generated_at)}` : "";
   }
+  text("railGaps", fa.commit ? `audited ${relTime(fa.generated_at || fa.imported_at)}` : "no audit yet");
   const intro = el("evidenceIntro");
   const chips = el("evidenceChips");
   if (!intro || !chips) return;
@@ -3730,6 +3818,7 @@ function renderBytematch(s) {
   if (!s.available) {
     setDonut("bytematch", [{ label: "nothing measured yet", value: 1, color: "dim" }], 0, "not measured yet");
     text("bytematchPercent", "0%");
+    text("railBytematch", "not measured yet");
     clearNode(el("bytematchFacts"));
     renderBytematchHistory([]);
     renderBytematchRecent([]);
