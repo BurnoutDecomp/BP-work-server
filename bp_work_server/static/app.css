@@ -1175,11 +1175,12 @@ main a:not([class]):hover,
   font-size: 0.92em;
 }
 
+/* top-aligned: the ring follows its introduction rather than floating mid-row */
 .vp-grid {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.25fr);
   gap: 28px;
-  align-items: center;
+  align-items: start;
 }
 
 .vp-legend .legend {
@@ -1225,12 +1226,13 @@ main a:not([class]):hover,
 }
 
 /* the facts row at the top right: shared summary tiles */
+/* as many tiles per row as fit, so four or five facts share one row */
 .vp-facts {
   display: grid;
-  grid-template-columns: repeat(4, minmax(118px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   gap: 10px;
   align-content: start;
-  width: min(100%, 560px);
+  width: min(100%, 640px);
   flex-shrink: 0;
 }
 
