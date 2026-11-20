@@ -1,3 +1,8 @@
+// The progress dashboard. Controls, the detail drawer, the release chooser and the pagers
+// are the shared b5-decomp-webui components in /static/b5-ui (webui.json names the build);
+// this module fetches the data and renders the domain views.
+import { closeDialog, createFilterGroup, createPager, createSelect, enhance, openDialog } from "./b5-ui/b5-ui.js";
+
 const state = {
   lastEventId: 0,
   refreshTimer: null,
@@ -145,9 +150,7 @@ function fmtBytes(n) {
 }
 
 function setConnection(mode, label) {
-  const node = el("connection");
-  node.classList.remove("online", "offline");
-  node.classList.add(mode);
+  el("connection").dataset.tone = mode === "online" ? "success" : "danger";
   text("connectionText", label);
 }
 
@@ -195,6 +198,40 @@ function span(className, content) {
   node.className = className;
   node.textContent = content;
   return node;
+}
+
+// Status and finding labels are the shared slanted ribbons; the kind picks the tone.
+const RIBBON_TONES = {
+  done: "success", reviewed: "success",
+  compiled: "warning", compiles: "warning", "cat-mid": "warning", "tier-MEDIUM": "warning",
+  blocked: "danger", recovered: "danger", "cat-high": "danger", "tier-HIGH": "danger",
+  in_progress: "info", live: "info",
+  external: "external",
+};
+function ribbon(tone, label) {
+  const node = span("b5-ribbon", label);
+  if (tone) node.dataset.tone = tone;
+  return node;
+}
+function pill(kind, label) {
+  return ribbon(RIBBON_TONES[kind], label);
+}
+
+// Count plates are the shared summary tiles, toned by the state they count.
+const SUMMARY_TONES = { done: "success", progress: "info", compiled: "warning", blocked: "danger" };
+function summaryTile(value, label, kind, tag = "div") {
+  const tile = document.createElement(tag);
+  tile.className = "b5-summary";
+  if (SUMMARY_TONES[kind]) tile.dataset.tone = SUMMARY_TONES[kind];
+  const number = document.createElement("strong");
+  number.textContent = value;
+  tile.append(number, span("", label));
+  return tile;
+}
+
+// Keep a themed dropdown's visible label in step after a programmatic .value change.
+function refreshSelect(select) {
+  if (select && select.classList.contains("b5-select-native")) createSelect(select).refresh();
 }
 
 function actorNode(name, githubUsername) {
@@ -375,7 +412,8 @@ function render(data) {
 
 function renderAgents(agents) {
   const activeCount = agents.filter((agent) => agent.has_active_work || Number(agent.total || 0) > 0).length;
-  text("agentCount", `${fmtInt(agents.length)} users | ${fmtInt(activeCount)} active`);
+  text("agentCount", fmtInt(activeCount));
+  text("agentSummary", `${fmtInt(agents.length)} users · ${fmtInt(activeCount)} with active work`);
   const root = el("agents");
   clearNode(root);
   root.className = agents.length ? "agent-list" : "agent-list empty";
@@ -407,13 +445,13 @@ function renderAgents(agents) {
       actorNode(agent.name || "unknown", agent.github_username || (agent.registered ? agent.name : null)),
     );
     if (agent.has_active_work || Number(agent.total || 0) > 0) {
-      name.appendChild(span("agent-badge active", "active"));
+      name.appendChild(ribbon("success", "active"));
     }
     if (agent.is_admin) {
-      name.appendChild(span("agent-badge admin", "admin"));
+      name.appendChild(ribbon("warning", "admin"));
     }
     if (agent.registered && !agent.worker_active) {
-      name.appendChild(span("agent-badge inactive", "disabled"));
+      name.appendChild(ribbon("", "disabled"));
     }
     row.appendChild(name);
     row.appendChild(
@@ -493,7 +531,7 @@ function renderActiveWork(items) {
     name.appendChild(tuButton(item.id));
     name.appendChild(div("tu-meta", `${item.source || "unknown"} · ${fmtInt(item.n_funcs)} funcs`));
     const status = document.createElement("td");
-    status.appendChild(span(`pill ${item.status}`, item.status.replace("_", " ")));
+    status.appendChild(pill(item.status, item.status.replace("_", " ")));
     const owner = document.createElement("td");
     owner.appendChild(actorNode(item.owner));
     const lease = document.createElement("td");
@@ -845,22 +883,22 @@ async function refreshGithub() {
 }
 
 function setDownloadCount(n) {
-  const chip = el("downloadCount");
-  if (!chip) return;
+  const counter = el("downloadCount");
+  if (!counter) return;
   if (n == null) {
-    chip.hidden = true;
+    counter.hidden = true;
     return;
   }
-  const num = chip.querySelector(".dc-num");
-  if (num) num.textContent = fmtInt(n);
-  chip.title = `${fmtInt(n)} downloader${n === 1 ? "" : "s"} (unique addresses per day; the full game and the update each count once)`;
-  chip.hidden = false;
+  const num = counter.querySelector(".dc-num");
+  if (num) num.textContent = fmtCompact(n);
+  counter.title = `${fmtInt(n)} downloader${n === 1 ? "" : "s"} (unique addresses per day; the full game and the update each count once)`;
+  counter.hidden = false;
 }
 
 async function refreshDownload() {
   const group = el("downloadGroup");
-  const link = el("downloadBuild");
-  if (!group || !link) return;
+  const button = el("downloadBuild");
+  if (!group || !button) return;
   try {
     const data = await fetchJson("/api/builds");
     const latest = data && data.latest;
@@ -869,6 +907,7 @@ async function refreshDownload() {
       state.latestBuild = null;
       return;
     }
+    const changed = !state.latestBuild || state.latestBuild.id !== latest.id;
     state.latestBuild = latest;
     state.builds = data.builds || [];
     const parts = [];
@@ -876,53 +915,44 @@ async function refreshDownload() {
     if (latest.built_at) parts.push(relTime(latest.built_at));
     if (latest.size_bytes) parts.push(fmtBytes(latest.size_bytes));
     text("downloadMeta", parts.join(" · ") || "latest");
-    link.title = `Download build ${latest.commit_short || latest.commit_sha}: full game (${fmtBytes(latest.size_bytes)})` +
+    button.title = `Download build ${latest.commit_short || latest.commit_sha}: full game (${fmtBytes(latest.size_bytes)})` +
       (latest.update_url ? ` or the exe-only update (${fmtBytes(latest.bundle_size)})` : "");
     setDownloadCount(latest.downloads || 0);
+    // leave an open chooser (and any quota note in it) alone unless the build changed
+    if (changed || !el("downloadMenu").matches(":popover-open")) renderDownloadMenu();
     group.hidden = false;
-    if (!el("downloadMenu").hidden) renderDownloadMenu();
   } catch (error) {
     // No builds published yet (or endpoint unavailable): keep the button hidden.
     group.hidden = true;
   }
 }
 
-// The button opens a chooser: the full game (assets + exe) or the exe-only update for
-// anyone who already has the game folder. The server says whether the assets changed
-// since the previous build, which is what decides between the two.
-function onDownloadClick(e) {
-  e.preventDefault();
-  const menu = el("downloadMenu");
-  if (!menu || !state.latestBuild) return;
-  if (menu.hidden) {
-    renderDownloadMenu();
-    menu.hidden = false;
-    el("downloadBuild").setAttribute("aria-expanded", "true");
-  } else {
-    closeDownloadMenu();
-  }
-}
-
+// The button opens a chooser (the shared download menu, a native popover): the full game
+// (assets + exe) or the exe-only update for anyone who already has the game folder. The
+// server says whether the assets changed since the previous build, which decides between them.
 function closeDownloadMenu() {
   const menu = el("downloadMenu");
-  if (!menu) return;
-  menu.hidden = true;
-  const btn = el("downloadBuild");
-  if (btn) btn.setAttribute("aria-expanded", "false");
+  if (menu && menu.matches(":popover-open")) menu.hidePopover();
 }
 
-function downloadOption(title, size, note, onPick) {
-  const b = document.createElement("button");
-  b.type = "button";
-  b.className = "dl-opt";
-  b.setAttribute("role", "menuitem");
-  b.appendChild(document.createElement("strong")).textContent = title;
-  b.appendChild(span("dl-size", size));
-  const small = document.createElement("small");
-  small.textContent = note;
-  b.appendChild(small);
-  b.addEventListener("click", onPick);
-  return b;
+function downloadOption(title, size, note, url, kind) {
+  const link = document.createElement("a");
+  link.className = "b5-download-option";
+  link.href = url;
+  const icon = span("b5-download-option__icon", "↓");
+  icon.setAttribute("aria-hidden", "true");
+  link.append(
+    icon,
+    span("b5-download-option__title", title),
+    span("b5-download-option__size", size),
+    span("b5-download-option__description", note),
+  );
+  link.addEventListener("click", (event) => {
+    if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    startDownload(url, kind);
+  });
+  return link;
 }
 
 function renderDownloadMenu() {
@@ -930,6 +960,9 @@ function renderDownloadMenu() {
   const b = state.latestBuild;
   if (!menu || !b) return;
   clearNode(menu);
+  const header = div("b5-download-menu__header");
+  header.append(span("b5-eyebrow", "Choose a package"), span("", b.commit_short || String(b.id || "")));
+  menu.appendChild(header);
   const previous = (state.builds || []).find((x) => x.id !== b.id);
   const assetsNote = !b.update_url
     ? "This build predates the exe-only update; the next published build will offer one."
@@ -941,18 +974,34 @@ function renderDownloadMenu() {
   menu.appendChild(downloadOption(
     "Full game", fmtBytes(b.size_bytes),
     "Everything: the exe, its DLLs and every game asset. For a first install, or when the assets changed.",
-    () => startDownload(b.download_url || "/download/latest", "full"),
+    b.download_url || "/download/latest", "full",
   ));
   if (b.update_url) {
     menu.appendChild(downloadOption(
       "Update only", fmtBytes(b.bundle_size),
       "Burnout_PC.exe, its DLLs and the .cgsmap. Drop them over an existing game folder.",
-      () => startDownload(b.update_url, "update"),
+      b.update_url, "update",
     ));
   }
-  const note = div(`dl-note${b.assets_changed ? " warn" : ""}`, assetsNote);
+  const note = document.createElement("footer");
+  note.className = "b5-download-menu__note";
   note.id = "downloadNote";
+  if (b.update_url && b.assets_changed === false && previous) setDownloadNote(note, assetsNote, "success", "Assets unchanged");
+  else if (b.update_url && b.assets_changed === true) setDownloadNote(note, assetsNote, "warning", "Assets changed");
+  else setDownloadNote(note, assetsNote);
   menu.appendChild(note);
+}
+
+function setDownloadNote(note, message, tone, label) {
+  clearNode(note);
+  if (label) {
+    const status = span("b5-status", label);
+    if (tone) status.dataset.tone = tone;
+    note.appendChild(status);
+  }
+  const p = document.createElement("p");
+  p.textContent = message;
+  note.appendChild(p);
 }
 
 // Ask first (HEAD is never counted), then navigate. A 429 means this address spent
@@ -963,15 +1012,14 @@ async function startDownload(url, kind) {
     const probe = await fetch(url, { method: "HEAD", cache: "no-store" });
     if (probe.status === 429) {
       if (note) {
-        note.className = "dl-note warn";
-        note.textContent = kind === "full"
+        setDownloadNote(note, kind === "full"
           ? "This address has used today's full-game downloads (3 per day). The exe-only update has a larger allowance; the full game is back tomorrow."
-          : "This address has used today's update downloads. Back tomorrow.";
+          : "This address has used today's update downloads. Back tomorrow.", "warning", "Daily limit reached");
       }
       return;
     }
     if (!probe.ok) {
-      if (note) { note.className = "dl-note warn"; note.textContent = `Download unavailable (HTTP ${probe.status}).`; }
+      if (note) setDownloadNote(note, `Download unavailable (HTTP ${probe.status}).`, "danger", "Unavailable");
       return;
     }
   } catch (_) {
@@ -1315,7 +1363,7 @@ const STATUS_LABELS = {
 };
 
 function statusPill(status) {
-  return span(`pill ${status}`, (STATUS_LABELS[status] || status || "—").replace("_", " "));
+  return pill(status, (STATUS_LABELS[status] || status || "—").replace("_", " "));
 }
 
 async function loadFacets() {
@@ -1356,6 +1404,7 @@ function fillSelect(id, values, allLabel) {
     sel.appendChild(opt);
   }
   sel.value = current;
+  refreshSelect(sel);
 }
 
 function syncStatusOptions() {
@@ -1363,6 +1412,7 @@ function syncStatusOptions() {
     state.explorer.tab === "funcs" ? state.explorer.funcStatuses : state.explorer.tuStatuses;
   fillSelect("filterStatus", list, "All statuses");
   el("filterStatus").value = state.explorer.status;
+  refreshSelect(el("filterStatus"));
 }
 
 function explorerParams() {
@@ -1419,53 +1469,7 @@ function refreshExplorerTuRow(detail) {
 function renderExplorerFoot() {
   const ex = state.explorer;
   text("explorerCount", `${fmtInt(ex.total)} results`);
-  const from = ex.total === 0 ? 0 : ex.offset + 1;
-  const to = Math.min(ex.offset + ex.limit, ex.total);
-  const totalPages = Math.max(1, Math.ceil(ex.total / ex.limit));
-  const currentPage = Math.min(totalPages, Math.floor(ex.offset / ex.limit) + 1);
-  text("explorerRange", `${fmtInt(from)}-${fmtInt(to)} of ${fmtInt(ex.total)}`);
-  text("pageStatus", `Page ${fmtInt(currentPage)} of ${fmtInt(totalPages)}`);
-  el("pagePrev").disabled = ex.offset <= 0;
-  el("pageNext").disabled = ex.offset + ex.limit >= ex.total;
-  const jump = el("pageJump");
-  jump.max = totalPages;
-  jump.value = currentPage;
-  renderPageButtons(currentPage, totalPages);
-}
-
-function goToPage(page) {
-  const ex = state.explorer;
-  const totalPages = Math.max(1, Math.ceil(ex.total / ex.limit));
-  const nextPage = Math.max(1, Math.min(totalPages, Number(page) || 1));
-  const nextOffset = (nextPage - 1) * ex.limit;
-  if (nextOffset === ex.offset) {
-    renderExplorerFoot();
-    return;
-  }
-  ex.offset = nextOffset;
-  loadExplorer();
-}
-
-function renderPageButtons(currentPage, totalPages, rootId = "pageButtons", onPage = goToPage) {
-  const root = el(rootId);
-  if (!root) return;
-  clearNode(root);
-  const pages = new Set([1, totalPages]);
-  for (let page = currentPage - 1; page <= currentPage + 1; page += 1) {
-    if (page >= 1 && page <= totalPages) pages.add(page);
-  }
-  let prev = 0;
-  for (const page of [...pages].sort((a, b) => a - b)) {
-    if (page - prev > 1) root.appendChild(span("page-ellipsis", "..."));
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "filter page-btn";
-    btn.textContent = page;
-    btn.disabled = page === currentPage;
-    btn.addEventListener("click", () => onPage(page));
-    root.appendChild(btn);
-    prev = page;
-  }
+  createPager(el("explorerPager")).set({ total: ex.total, pageSize: ex.limit, page: Math.floor(ex.offset / ex.limit) + 1 });
 }
 
 function setHead(cols) {
@@ -1591,20 +1595,12 @@ function syncExplorerView() {
   const isMap = ex.view === "map";
   el("progressMap").classList.toggle("hidden", !isMap);
   el("explorerList").classList.toggle("hidden", isMap);
-  for (const button of el("explorerViews").querySelectorAll("[data-view]")) {
-    const selected = button.dataset.view === ex.view;
-    button.classList.toggle("active", selected);
-    button.setAttribute("aria-pressed", String(selected));
-  }
-  for (const button of el("explorerTabs").querySelectorAll("[data-tab]")) {
-    const selected = button.dataset.tab === ex.tab;
-    button.classList.toggle("active", selected);
-    button.setAttribute("aria-pressed", String(selected));
-  }
-  document.querySelectorAll(".tus-only").forEach((node) =>
-    node.classList.toggle("hidden", ex.tab === "funcs"));
-  el("sortBy").classList.toggle("hidden", isMap || ex.tab === "funcs");
-  el("sortOrder").classList.toggle("hidden", isMap || ex.tab === "funcs");
+  createFilterGroup(el("explorerViews")).select(ex.view, { emit: false });
+  createFilterGroup(el("explorerTabs")).select(ex.tab, { emit: false });
+  // hidden on the native select also hides its themed control
+  document.querySelectorAll(".tus-only").forEach((node) => { node.hidden = ex.tab === "funcs"; });
+  el("sortBy").hidden = isMap || ex.tab === "funcs";
+  el("sortOrder").hidden = isMap || ex.tab === "funcs";
   el("explorerSearch").placeholder = ex.tab === "funcs" ? "Search functions by name…" : "Search by name, source, or path…";
   el("filterStatus").setAttribute("aria-label", ex.tab === "funcs" ? "Function status" : "Translation unit status");
   if (isMap) state.progressMap.controller?.scheduleDraw();
@@ -1719,20 +1715,16 @@ function initExplorer() {
     text("mapStatusText", `Map unavailable: ${error.message}. Switch to List view to browse progress.`);
   }
   el("mapRetry").addEventListener("click", () => loadProgressMap(true));
-  el("explorerViews").addEventListener("click", (event) => {
-    const button = event.target.closest("[data-view]");
-    if (!button) return;
-    ex.view = button.dataset.view;
+  el("explorerViews").addEventListener("b5:filterchange", (event) => {
+    ex.view = event.detail.value;
     ++ex.requestId;
     saveExplorerView();
     syncExplorerView();
     loadExplorer();
   });
 
-  el("explorerTabs").addEventListener("click", (e) => {
-    const btn = e.target.closest(".tab");
-    if (!btn) return;
-    ex.tab = btn.dataset.tab;
+  el("explorerTabs").addEventListener("b5:filterchange", (event) => {
+    ex.tab = event.detail.value;
     const statuses = ex.tab === "funcs" ? ex.funcStatuses : ex.tuStatuses;
     if (!statuses.includes(ex.status)) ex.status = "";
     saveExplorerView();
@@ -1771,25 +1763,16 @@ function initExplorer() {
 
   syncExplorerView();
 
-  el("pagePrev").addEventListener("click", () => {
-    ex.offset = Math.max(0, ex.offset - ex.limit);
+  el("explorerPager").addEventListener("b5:pagechange", (event) => {
+    ex.offset = (event.detail.page - 1) * ex.limit;
     loadExplorer();
-  });
-  el("pageNext").addEventListener("click", () => {
-    if (ex.offset + ex.limit < ex.total) {
-      ex.offset += ex.limit;
-      loadExplorer();
-    }
-  });
-  el("pageJump").addEventListener("change", (e) => goToPage(e.target.value));
-  el("pageJump").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") goToPage(e.target.value);
   });
 
   el("detailBack").addEventListener("click", goBackDetail);
   el("detailClose").addEventListener("click", closeDetail);
-  el("detailOverlay").addEventListener("click", (e) => {
-    if (e.target === el("detailOverlay")) closeDetail();
+  // Escape and a backdrop click close the native drawer; reset its history the same way.
+  el("detailDialog").addEventListener("close", () => {
+    if (state.detailNav.current) closeDetail();
   });
 
   const previewBtn = el("downloadPreview");
@@ -1798,18 +1781,6 @@ function initExplorer() {
       if (state.latestBuild) openBuildContents(state.latestBuild.id);
     });
   }
-  const downloadLink = el("downloadBuild");
-  if (downloadLink) downloadLink.addEventListener("click", onDownloadClick);
-  document.addEventListener("click", (e) => {
-    const group = el("downloadGroup");
-    if (group && !group.contains(e.target)) closeDownloadMenu();
-  });
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      closeDetail();
-      closeDownloadMenu();
-    }
-  });
 
   loadFacets();
   loadExplorer();
@@ -1818,7 +1789,7 @@ function initExplorer() {
 /* ---------------- TU detail drawer ---------------- */
 
 function detailIsOpen() {
-  return !el("detailOverlay").classList.contains("hidden");
+  return el("detailDialog").open;
 }
 
 function detailEntryKey(entry) {
@@ -1855,7 +1826,7 @@ function updateDetailBack() {
   const btn = el("detailBack");
   if (!btn) return;
   const canGoBack = state.detailNav.stack.length > 0;
-  btn.classList.toggle("hidden", !canGoBack);
+  btn.hidden = !canGoBack;
   btn.disabled = !canGoBack;
   const previous = state.detailNav.stack[state.detailNav.stack.length - 1];
   btn.title = previous ? `Back to ${detailEntryLabel(previous)}` : "";
@@ -1877,15 +1848,11 @@ function goBackDetail() {
 }
 
 function showDetailOverlay() {
-  el("detailOverlay").classList.remove("hidden");
-  document.documentElement.classList.add("detail-open");
-  document.body.classList.add("detail-open");
+  openDialog(el("detailDialog"));
 }
 
 function hideDetailOverlay() {
-  el("detailOverlay").classList.add("hidden");
-  document.documentElement.classList.remove("detail-open");
-  document.body.classList.remove("detail-open");
+  closeDialog(el("detailDialog"));
 }
 
 async function openDetail(tuId, options = {}) {
@@ -2323,7 +2290,7 @@ function renderDetail(d) {
       const row = div("dep-row clickable");
       row.appendChild(span("dep-name", fn.name));
       row.appendChild(statusPill(fn.status));
-      if (fn.audit_weight) row.appendChild(span("pill cat-high", `${fmtInt(fn.audit_weight)} audit`));
+      if (fn.audit_weight) row.appendChild(pill("cat-high", `${fmtInt(fn.audit_weight)} audit`));
       if (fn.primary_contributor) row.appendChild(actorNode(fn.primary_contributor, fn.primary_contributor_login));
       else if (fn.completed_by) row.appendChild(actorNode(fn.completed_by, fn.completed_by_login));
       row.addEventListener("click", (event) => {
@@ -2437,86 +2404,9 @@ function connectStream() {
   state.refreshTimer = window.setInterval(refresh, 30000);
 }
 
-// Replace the browser-native <select> popups with themed dropdowns. The native
-// <select> stays in the DOM as the source of truth, so all the .value reads,
-// "change" handlers, and .tus-only/.hidden toggling elsewhere keep working.
-function enhanceSelect(sel) {
-  const wrap = document.createElement("div");
-  wrap.className = "cs-wrap";
-  sel.parentNode.insertBefore(wrap, sel);
-  wrap.appendChild(sel);
-  sel.classList.add("cs-native");
-
-  const trigger = document.createElement("button");
-  trigger.type = "button";
-  trigger.className = "filter cs-trigger";
-  trigger.setAttribute("aria-haspopup", "listbox");
-  wrap.appendChild(trigger);
-
-  const menu = document.createElement("ul");
-  menu.className = "cs-menu";
-  menu.setAttribute("role", "listbox");
-  wrap.appendChild(menu);
-
-  const close = () => wrap.classList.remove("open");
-
-  const syncLabel = () => {
-    const opt = sel.options[sel.selectedIndex];
-    trigger.textContent = opt ? opt.textContent : "";
-  };
-
-  const markSelected = () => {
-    [...menu.children].forEach((li, i) => li.classList.toggle("selected", i === sel.selectedIndex));
-  };
-
-  sel.addEventListener("change", () => {
-    syncLabel();
-    markSelected();
-  });
-
-  const buildMenu = () => {
-    menu.replaceChildren();
-    [...sel.options].forEach((opt, i) => {
-      const li = document.createElement("li");
-      li.className = "cs-option";
-      li.setAttribute("role", "option");
-      li.textContent = opt.textContent;
-      li.addEventListener("click", () => {
-        if (sel.selectedIndex !== i) {
-          sel.selectedIndex = i;
-          sel.dispatchEvent(new Event("change", { bubbles: true }));
-        }
-        syncLabel();
-        markSelected();
-        close();
-      });
-      menu.appendChild(li);
-    });
-    syncLabel();
-    markSelected();
-  };
-
-  trigger.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const willOpen = !wrap.classList.contains("open");
-    for (const w of document.querySelectorAll(".cs-wrap.open")) w.classList.remove("open");
-    wrap.classList.toggle("open", willOpen);
-  });
-
-  // fillSelect() repopulates options dynamically; rebuild the menu to match.
-  new MutationObserver(buildMenu).observe(sel, { childList: true });
-  buildMenu();
-}
-
-for (const sel of document.querySelectorAll("select.filter")) enhanceSelect(sel);
-document.addEventListener("click", () => {
-  for (const w of document.querySelectorAll(".cs-wrap.open")) w.classList.remove("open");
-});
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") {
-    for (const w of document.querySelectorAll(".cs-wrap.open")) w.classList.remove("open");
-  }
-});
+// Native selects marked data-b5-select get the shared themed dropdown; download groups,
+// menu filter groups and pagers are wired the same way. One enhancement root.
+enhance(document.body);
 
 refresh();
 connectStream();
@@ -2645,14 +2535,7 @@ function auditRollupChips(rollup) {
     ["missing_callee", "Callees", "progress"],
     ["missing_assert", "Asserts", "todo"],
   ];
-  for (const [key, label, cls] of chips) {
-    const chip = div(`chip ${cls}`);
-    chip.appendChild(span("", fmtInt(rollup[key] || 0)));
-    const l = document.createElement("label");
-    l.textContent = label;
-    chip.appendChild(l);
-    wrap.appendChild(chip);
-  }
+  for (const [key, label, cls] of chips) wrap.appendChild(summaryTile(fmtInt(rollup[key] || 0), label, cls));
   return wrap;
 }
 
@@ -2700,9 +2583,9 @@ function renderAuditFile(data) {
     ],
     row: (fn) => {
       const head = [span("dep-name", fn.name)];
-      if (fn.weight) head.push(span("pill cat-high", `${fmtInt(fn.weight)} high-signal`));
-      if (fn.flagged) head.push(span("pill todo", "flagged in source"));
-      if (fn.helpers) head.push(span("pill todo", `+${fmtInt(fn.helpers)} helpers`));
+      if (fn.weight) head.push(pill("cat-high", `${fmtInt(fn.weight)} high-signal`));
+      if (fn.flagged) head.push(pill("todo", "flagged in source"));
+      if (fn.helpers) head.push(pill("todo", `+${fmtInt(fn.helpers)} helpers`));
       const where = [];
       if (fn.addr) where.push(`X360 ${fn.addr}`);
       if (fn.line) where.push(`line ${fmtInt(fn.line)}`);
@@ -2757,7 +2640,7 @@ function renderStubFile(data) {
     ],
     row: (st) => {
       const head = [span("dep-name", st.name), tierPill(st.tier)];
-      if (st.live_callers && st.live_callers.length) head.push(span("pill live", "live today"));
+      if (st.live_callers && st.live_callers.length) head.push(pill("live", "live today"));
       const where = [];
       if (st.addr) where.push(`X360 ${st.addr}`);
       if (st.line) where.push(`line ${fmtInt(st.line)}`);
@@ -2801,12 +2684,7 @@ function renderAsmFile(data) {
   facts.appendChild(kv("In the built exe", `${fmtInt(rollup.functions || 0)} functions \u00b7 mean score ${rollup.mean_score != null ? rollup.mean_score : "\u2013"}`));
   const tiers = div("audit-summary");
   for (const [key, label, cls] of [["a", "A same shape", "done"], ["b", "B close", "compiled"], ["c", "C diverges", "blocked"], ["t", "T trivial", "todo"], ["flagged", "flagged in source", "todo"]]) {
-    const chip = div(`chip ${cls}`);
-    chip.appendChild(span("", fmtInt(rollup[key] || 0)));
-    const l = document.createElement("label");
-    l.textContent = label;
-    chip.appendChild(l);
-    tiers.appendChild(chip);
+    tiers.appendChild(summaryTile(fmtInt(rollup[key] || 0), label, cls));
   }
   facts.appendChild(tiers);
   facts.appendChild(div("audit-meta",
@@ -2837,8 +2715,8 @@ function renderAsmFile(data) {
     ],
     row: (fn) => {
       const head = [span("dep-name", fn.name), asmTierPill(fn.tier)];
-      if (fn.score != null) head.push(span("pill todo", `score ${fn.score}`));
-      if (fn.flags && fn.flags.total) head.push(span("pill todo", `flagged ${fmtInt(fn.flags.total)}`));
+      if (fn.score != null) head.push(pill("todo", `score ${fn.score}`));
+      if (fn.flags && fn.flags.total) head.push(pill("todo", `flagged ${fmtInt(fn.flags.total)}`));
       const c = fn.counts || {};
       const where = [];
       if (fn.addr) where.push(`X360 ${fn.addr}`);
@@ -2860,7 +2738,7 @@ function functionBrowser(opts) {
   const controls = div("fb-controls");
   const search = document.createElement("input");
   search.type = "search";
-  search.className = "search-input";
+  search.className = "b5-input fb-search";
   search.placeholder = opts.placeholder || "Filter by function name or content\u2026";
   search.autocomplete = "off";
   controls.appendChild(search);
@@ -2868,7 +2746,7 @@ function functionBrowser(opts) {
   controls.appendChild(chips);
   const tools = div("fb-tools");
   const sortSel = document.createElement("select");
-  sortSel.className = "fb-sort";
+  sortSel.className = "b5-select fb-sort";
   sortSel.title = "Sort";
   for (const so of opts.sorts || []) {
     const o = document.createElement("option");
@@ -2879,11 +2757,11 @@ function functionBrowser(opts) {
   if ((opts.sorts || []).length > 1) tools.appendChild(sortSel);
   const expandBtn = document.createElement("button");
   expandBtn.type = "button";
-  expandBtn.className = "filter";
+  expandBtn.className = "b5-button b5-button--ink";
   expandBtn.textContent = "Expand all";
   const collapseBtn = document.createElement("button");
   collapseBtn.type = "button";
-  collapseBtn.className = "filter";
+  collapseBtn.className = "b5-button b5-button--ink";
   collapseBtn.textContent = "Collapse all";
   const count = span("fb-count", "");
   tools.append(expandBtn, collapseBtn, count);
@@ -2944,7 +2822,7 @@ function functionBrowser(opts) {
 }
 
 function tierPill(tier) {
-  return span(`pill tier-${tier}`, String(tier || "").toLowerCase());
+  return pill(`tier-${tier}`, String(tier || "").toLowerCase());
 }
 
 function stubRow(stub) {
@@ -2952,7 +2830,7 @@ function stubRow(stub) {
   const head = div("audit-row-head");
   head.appendChild(span("dep-name", stub.name));
   head.appendChild(tierPill(stub.tier));
-  if (stub.live_callers && stub.live_callers.length) head.appendChild(span("pill live", "live today"));
+  if (stub.live_callers && stub.live_callers.length) head.appendChild(pill("live", "live today"));
   const where = [];
   if (stub.addr) where.push(`X360 ${stub.addr}`);
   if (stub.line) where.push(`line ${fmtInt(stub.line)}`);
@@ -2984,7 +2862,7 @@ function tuAuditSection(d) {
     section.appendChild(auditRollupChips(rollup));
     const open = document.createElement("button");
     open.type = "button";
-    open.className = "filter";
+    open.className = "b5-button b5-button--ink";
     open.textContent = "Open file audit";
     open.addEventListener("click", () => openAuditFile(audit.file));
     section.appendChild(open);
@@ -2995,8 +2873,8 @@ function tuAuditSection(d) {
     const row = div("audit-row");
     const head = div("audit-row-head");
     head.appendChild(span("dep-name", name));
-    if (fnAudit.weight) head.appendChild(span("pill cat-high", `${fmtInt(fnAudit.weight)} high-signal`));
-    if (fnAudit.flagged) head.appendChild(span("pill todo", "flagged"));
+    if (fnAudit.weight) head.appendChild(pill("cat-high", `${fmtInt(fnAudit.weight)} high-signal`));
+    if (fnAudit.flagged) head.appendChild(pill("todo", "flagged"));
     row.appendChild(head);
     row.appendChild(findingsList(fnAudit.findings || {}));
     section.appendChild(row);
@@ -3023,7 +2901,7 @@ function tuAuditSection(d) {
     if (stubs.length > 40) {
       const open = document.createElement("button");
       open.type = "button";
-      open.className = "filter";
+      open.className = "b5-button b5-button--ink";
       open.textContent = `All ${fmtInt(stubs.length)} stubs`;
       open.addEventListener("click", () => openStubFile(audit.file));
       section.appendChild(open);
@@ -3112,9 +2990,9 @@ function renderGaps(audit) {
 // group, key, label, colour, share-of (null = counts only; hidden in share mode)
 const EVOLUTION_SERIES = [
   { group: "Translation units", key: "tu_done", label: "done", color: "#6fcf57", of: "tu_total" },
-  { group: "Translation units", key: "tu_compiled", label: "compiled", color: "#e3a52c", of: "tu_total" },
+  { group: "Translation units", key: "tu_compiled", label: "compiled", color: "#edbd54", of: "tu_total" },
   { group: "Translation units", key: "tu_in_progress", label: "in progress", color: "#57a8e0", of: "tu_total" },
-  { group: "Translation units", key: "tu_blocked", label: "blocked", color: "#ec1c24", of: "tu_total" },
+  { group: "Translation units", key: "tu_blocked", label: "blocked", color: "#e72530", of: "tu_total" },
   { group: "Translation units", key: "tu_external", label: "external", color: "#b294df", of: "tu_total" },
   { group: "Translation units", key: "tu_todo", label: "todo", color: "#8a7f72", of: "tu_total" },
   { group: "Translation units", key: "tu_total", label: "tracked", color: "#d9cfc0", of: null },
@@ -3179,17 +3057,13 @@ function wireEvolution() {
   if (ev.wired) return;
   ev.wired = true;
   const range = el("evolutionRange"), mode = el("evolutionMode");
-  if (range) range.addEventListener("click", (e) => {
-    const b = e.target.closest("button[data-range]");
-    if (!b) return;
-    ev.range = Number(b.dataset.range) || 0;
+  if (range) range.addEventListener("b5:filterchange", (event) => {
+    ev.range = Number(event.detail.value) || 0;
     saveEvolutionPrefs();
     renderEvolution();
   });
-  if (mode) mode.addEventListener("click", (e) => {
-    const b = e.target.closest("button[data-mode]");
-    if (!b) return;
-    ev.mode = b.dataset.mode === "share" ? "share" : "count";
+  if (mode) mode.addEventListener("b5:filterchange", (event) => {
+    ev.mode = event.detail.value === "share" ? "share" : "count";
     saveEvolutionPrefs();
     renderEvolution();
   });
@@ -3231,8 +3105,8 @@ function evolutionPoints() {
 function renderEvolution() {
   wireEvolution();
   const ev = state.evolution;
-  for (const b of document.querySelectorAll("#evolutionRange button")) b.classList.toggle("active", (Number(b.dataset.range) || 0) === ev.range);
-  for (const b of document.querySelectorAll("#evolutionMode button")) b.classList.toggle("active", b.dataset.mode === ev.mode);
+  createFilterGroup(el("evolutionRange")).select(String(ev.range || 0), { emit: false });
+  createFilterGroup(el("evolutionMode")).select(ev.mode, { emit: false });
   // the picker: one chip per series, grouped by ring
   const picker = el("evolutionPicker");
   if (picker) {
@@ -3551,7 +3425,7 @@ const ASM_TIER_LABELS = { A: "same shape", B: "close", C: "diverges", T: "trivia
 const ASM_TIER_PILL = { A: "done", B: "compiled", C: "blocked", T: "todo" };
 
 function asmTierPill(tier) {
-  return span(`pill ${ASM_TIER_PILL[tier] || "todo"}`, `${tier} ${ASM_TIER_LABELS[tier] || ""}`.trim());
+  return pill(ASM_TIER_PILL[tier] || "todo", `${tier} ${ASM_TIER_LABELS[tier] || ""}`.trim());
 }
 
 function asmRow(fn) {
@@ -3559,12 +3433,12 @@ function asmRow(fn) {
   const head = div("audit-row-head");
   head.appendChild(span("dep-name", fn.name));
   head.appendChild(asmTierPill(fn.tier));
-  if (fn.score != null) head.appendChild(span("pill todo", `score ${fn.score}`));
+  if (fn.score != null) head.appendChild(pill("todo", `score ${fn.score}`));
   if (fn.flags && fn.flags.total) {
     const kinds = Object.entries(fn.flags.kinds || {}).map(([k, n]) => `${n} ${k}`).join(", ");
-    const pill = span("pill todo", `flagged ${fmtInt(fn.flags.total)}`);
-    pill.title = `[FLAG] markers in the source body: ${kinds}. PC additions that compile in and are meant to differ from the console; the score does not discount them.`;
-    head.appendChild(pill);
+    const flagged = pill("todo", `flagged ${fmtInt(fn.flags.total)}`);
+    flagged.title = `[FLAG] markers in the source body: ${kinds}. PC additions that compile in and are meant to differ from the console; the score does not discount them.`;
+    head.appendChild(flagged);
   }
   const c = fn.counts || {};
   const where = [];
@@ -3644,21 +3518,21 @@ function renderEvidenceList() {
     const count = (n, one, many) => `${fmtInt(n)} ${Number(n) === 1 ? one : many}`;
     if (ev.tab === "audit") {
       if (item.functions) left.appendChild(div("evidence-file-meta", `${count(item.functions, "function", "functions")} to review`));
-      nums.appendChild(span("pill cat-high", count(item.weight, "gap", "gaps")));
-      if (item.no_body) nums.appendChild(span("pill tier-HIGH", `${fmtInt(item.no_body)} no body`));
-      if (item.missing_case) nums.appendChild(span("pill cat-mid", count(item.missing_case, "switch gap", "switch gaps")));
-      if (item.missing_event) nums.appendChild(span("pill cat-mid", count(item.missing_event, "event", "events")));
-      if (item.missing_callee) nums.appendChild(span("pill cat-low", count(item.missing_callee, "callee", "callees")));
-      if (item.missing_assert) nums.appendChild(span("pill cat-low", count(item.missing_assert, "assert", "asserts")));
+      nums.appendChild(pill("cat-high", count(item.weight, "gap", "gaps")));
+      if (item.no_body) nums.appendChild(pill("tier-HIGH", `${fmtInt(item.no_body)} no body`));
+      if (item.missing_case) nums.appendChild(pill("cat-mid", count(item.missing_case, "switch gap", "switch gaps")));
+      if (item.missing_event) nums.appendChild(pill("cat-mid", count(item.missing_event, "event", "events")));
+      if (item.missing_callee) nums.appendChild(pill("cat-low", count(item.missing_callee, "callee", "callees")));
+      if (item.missing_assert) nums.appendChild(pill("cat-low", count(item.missing_assert, "assert", "asserts")));
     } else {
       const meta = [];
       if (item.console_lines) meta.push(`${count(item.console_lines, "console line", "console lines")} behind them`);
       left.appendChild(div("evidence-file-meta", meta.join(" · ")));
-      nums.appendChild(span("pill cat-high", count(item.stubs, "stub", "stubs")));
-      if (item.high) nums.appendChild(span("pill tier-HIGH", `${fmtInt(item.high)} high`));
-      if (item.medium) nums.appendChild(span("pill tier-MEDIUM", `${fmtInt(item.medium)} medium`));
-      if (item.low) nums.appendChild(span("pill tier-LOW", `${fmtInt(item.low)} low`));
-      if (item.live) nums.appendChild(span("pill live", `${fmtInt(item.live)} called today`));
+      nums.appendChild(pill("cat-high", count(item.stubs, "stub", "stubs")));
+      if (item.high) nums.appendChild(pill("tier-HIGH", `${fmtInt(item.high)} high`));
+      if (item.medium) nums.appendChild(pill("tier-MEDIUM", `${fmtInt(item.medium)} medium`));
+      if (item.low) nums.appendChild(pill("tier-LOW", `${fmtInt(item.low)} low`));
+      if (item.live) nums.appendChild(pill("live", `${fmtInt(item.live)} called today`));
     }
     head.append(left, nums);
     head.title = "Open every function of this file in the drawer";
@@ -3670,37 +3544,7 @@ function renderEvidenceList() {
 
 function renderEvidenceFoot() {
   const ev = state.evidence;
-  const from = ev.total === 0 ? 0 : ev.offset + 1;
-  const to = Math.min(ev.offset + ev.limit, ev.total);
-  const totalPages = Math.max(1, Math.ceil(ev.total / ev.limit));
-  const currentPage = Math.min(totalPages, Math.floor(ev.offset / ev.limit) + 1);
-  text("evidenceRange", ev.total ? `${fmtInt(from)}-${fmtInt(to)} of ${fmtInt(ev.total)} files` : "no files");
-  text("evPageStatus", `Page ${fmtInt(currentPage)} of ${fmtInt(totalPages)}`);
-  const prev = el("evPagePrev");
-  const next = el("evPageNext");
-  if (prev) prev.disabled = ev.offset <= 0;
-  if (next) next.disabled = ev.offset + ev.limit >= ev.total;
-  const jump = el("evPageJump");
-  if (jump) {
-    jump.max = totalPages;
-    jump.value = currentPage;
-  }
-  renderPageButtons(currentPage, totalPages, "evPageButtons", goToEvidencePage);
-}
-
-function goToEvidencePage(page) {
-  const ev = state.evidence;
-  const totalPages = Math.max(1, Math.ceil(ev.total / ev.limit));
-  const nextPage = Math.max(1, Math.min(totalPages, Number(page) || 1));
-  const nextOffset = (nextPage - 1) * ev.limit;
-  if (nextOffset === ev.offset) {
-    renderEvidenceFoot();
-    return;
-  }
-  ev.offset = nextOffset;
-  loadEvidenceList(false);
-  const list = el("evidenceList");
-  if (list) list.scrollIntoView({ behavior: "smooth", block: "start" });
+  createPager(el("evidencePager")).set({ total: ev.total, pageSize: ev.limit, page: Math.floor(ev.offset / ev.limit) + 1 });
 }
 
 function openEvidenceFile(file) {
@@ -3758,11 +3602,8 @@ function initEvidence() {
   const ev = state.evidence;
   const tabs = el("evidenceTabs");
   if (!tabs) return;
-  tabs.addEventListener("click", (e) => {
-    const btn = e.target.closest(".tab");
-    if (!btn) return;
-    ev.tab = btn.dataset.tab;
-    for (const t of tabs.querySelectorAll(".tab")) t.classList.toggle("active", t === btn);
+  tabs.addEventListener("b5:filterchange", (event) => {
+    ev.tab = event.detail.value;
     renderEvidenceSummary();
     loadEvidenceList(true);
   });
@@ -3771,11 +3612,10 @@ function initEvidence() {
     clearTimeout(ev.searchTimer);
     ev.searchTimer = setTimeout(() => loadEvidenceList(true), 250);
   });
-  el("evPagePrev").addEventListener("click", () => goToEvidencePage(Math.floor(state.evidence.offset / state.evidence.limit)));
-  el("evPageNext").addEventListener("click", () => goToEvidencePage(Math.floor(state.evidence.offset / state.evidence.limit) + 2));
-  el("evPageJump").addEventListener("change", (e) => goToEvidencePage(e.target.value));
-  el("evPageJump").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") goToEvidencePage(e.target.value);
+  el("evidencePager").addEventListener("b5:pagechange", (event) => {
+    ev.offset = (event.detail.page - 1) * ev.limit;
+    loadEvidenceList(false);
+    el("evidenceList")?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
   loadEvidenceList(true);
 }
@@ -3851,15 +3691,8 @@ function wireBytematch() {
     if (bm.offset + bm.limit < bm.total) bm.offset += bm.limit;
     loadBytematchList();
   });
-  el("x360MapTabs").addEventListener("click", (event) => {
-    const button = event.target.closest("[data-x360mode]");
-    if (!button) return;
-    bm.mapMode = button.dataset.x360mode;
-    for (const b of el("x360MapTabs").querySelectorAll("[data-x360mode]")) {
-      const on = b === button;
-      b.classList.toggle("active", on);
-      b.setAttribute("aria-pressed", String(on));
-    }
+  el("x360MapTabs").addEventListener("b5:filterchange", (event) => {
+    bm.mapMode = event.detail.value;
     loadX360Map();
   });
   initX360Map();
@@ -3917,18 +3750,13 @@ function renderBytematchFacts(s) {
   const meta = s.meta || {};
   const objects = (s.totals || {}).objects || {};
   if (meta.b5_commit) {
-    const b = span("badge", `x360 ${String(meta.b5_commit).slice(0, 10)} · ${relTime(meta.generated_at)}`);
+    const b = span("b5-ribbon b5-ribbon--gold", `x360 ${String(meta.b5_commit).slice(0, 10)} · ${relTime(meta.generated_at)}`);
     b.title = `summary built ${fmtTime(meta.generated_at)}${meta.toolchain ? ` · ${meta.toolchain}` : ""}`;
     host.appendChild(b);
   }
   const fact = (n, label, title, cls, onClick) => {
-    const c = document.createElement("button");
+    const c = summaryTile(n, label, cls, "button");
     c.type = "button";
-    c.className = `chip ${cls}`;
-    c.appendChild(span("", n));
-    const l = document.createElement("label");
-    l.textContent = label;
-    c.appendChild(l);
     if (title) c.title = title;
     if (onClick) c.addEventListener("click", onClick);
     host.appendChild(c);
@@ -4153,10 +3981,10 @@ function renderBytematchList() {
     head.appendChild(left);
     const nums = div("evidence-file-nums");
     const st = pills[item.status] || { pill: "todo", label: item.status };
-    nums.appendChild(span(`pill ${st.pill}`, st.label));
-    if (item.status === "nonmatching") nums.appendChild(span("pill todo", `${Number(item.score || 0).toFixed(1)}%`));
+    nums.appendChild(pill(st.pill, st.label));
+    if (item.status === "nonmatching") nums.appendChild(pill("todo", `${Number(item.score || 0).toFixed(1)}%`));
     if (item.stale) {
-      const s = span("pill live", "source changed");
+      const s = pill("live", "source changed");
       s.title = "Its source file changed on the branch after this verdict was measured.";
       nums.appendChild(s);
     }

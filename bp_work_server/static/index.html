@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="b5-ui">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -29,7 +29,7 @@
       property="og:description"
       content="Live progress dashboard for the Burnout Paradise decompilation project."
     />
-    <meta property="og:image" content="/static/img/ui/seal-paradise-city.png" />
+    <meta property="og:image" content="/static/b5-ui/assets/seal-paradise-city.png" />
     <meta property="og:image:alt" content="Paradise City seal" />
 
     <!-- Twitter Card -->
@@ -39,209 +39,201 @@
       name="twitter:description"
       content="Live progress dashboard for the Burnout Paradise decompilation project."
     />
-    <meta name="twitter:image" content="/static/img/ui/seal-paradise-city.png" />
+    <meta name="twitter:image" content="/static/b5-ui/assets/seal-paradise-city.png" />
 
     <!-- Embed accent color (Discord left bar). Served to link-preview bots only
          (routes/static.py): a browser that gets it may paint the page's scrollbars with it. -->
     <meta name="theme-color" content="#e10600" />
 
-    <link rel="icon" type="image/png" href="/static/img/ui/seal-paradise-city.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="stylesheet" href="/static/app.css?v=47" />
+    <!-- Type, components and artwork: the shared b5-decomp-webui build in static/b5-ui
+         (static/b5-ui/webui.json names its version). app.css lays out this dashboard. -->
+    <link rel="icon" type="image/svg+xml" href="/static/b5-ui/assets/favicon.svg" />
+    <link rel="preload" href="/static/b5-ui/assets/anton-latin.ttf" as="font" type="font/ttf" crossorigin />
+    <link rel="stylesheet" href="/static/b5-ui/b5-ui.css?v=0.2.0" />
+    <link rel="stylesheet" href="/static/app.css?v=48" />
   </head>
-  <body>
-    <div class="bp-bg" aria-hidden="true">
-      <div class="bp-bg-vignette"></div>
-      <div class="bp-bg-tire"></div>
-      <div class="bp-bg-skyline"></div>
-      <div class="bp-bg-grain"></div>
-    </div>
-    <div class="app">
-      <header class="topbar">
-        <div class="brand">
-          <span class="brand-mark">
-            <img
-              id="brandLogo"
-              src="/static/img/ui/seal-paradise-city.png"
-              alt="Paradise City"
-              onerror="this.style.display='none';this.parentElement.classList.add('fallback');"
-            />
-            <span class="brand-fallback">PC</span>
-          </span>
-          <div class="brand-text">
-            <h1>Burnout Paradise Decompilation <span class="accent">Progress</span></h1>
-            <p id="subtitle">Connecting to work server…</p>
-          </div>
+  <body class="b5-page">
+    <a class="b5-skip-link" href="#progress">Skip to progress</a>
+    <div class="b5-scenery" aria-hidden="true"></div>
+    <header class="b5-site-header b5-shell">
+      <a class="b5-brand" href="/" aria-label="Decomp progress home">
+        <img class="b5-brand__mark" src="/static/b5-ui/assets/seal-paradise-city.png" width="54" height="54" alt="" />
+        <span>BURNOUT PARADISE<span class="b5-brand__subtitle">DECOMP / LIVE PROGRESS</span></span>
+      </a>
+      <nav class="b5-site-nav" aria-label="Main navigation">
+        <a href="#progress" aria-current="location"><span>01</span> Progress</a>
+        <a href="#bytematch"><span>02</span> Byte matching</a>
+        <a href="#gaps"><span>03</span> Console gaps</a>
+        <a href="#work"><span>04</span> Work</a>
+        <a class="b5-site-nav__external" href="https://online.decomp.adriwin.fr/" target="_blank" rel="noopener noreferrer">Online lobbies ↗</a>
+      </nav>
+    </header>
+
+    <main class="b5-shell wp-main" data-b5-density="compact">
+      <section class="b5-hero wp-hero" aria-labelledby="page-title">
+        <div class="b5-hero__copy">
+          <div class="b5-eyebrow"><span class="b5-dot"></span> PC DECOMPILATION / LIVE PROGRESS</div>
+          <h1 class="b5-hero__title" id="page-title">
+            <span class="b5-hero__line">Paradise City</span>
+            <span class="b5-title-mark b5-hero__mark">Rebuilt.</span>
+          </h1>
+          <p>Burnout Paradise, rebuilt from the console's own code.<br />Every unit, function and byte, tracked live.</p>
+          <a class="b5-button b5-button--paint" href="#progress"><span class="b5-button__arrow" aria-hidden="true">↘</span> Explore the map</a>
         </div>
-        <div class="topbar-right">
-          <!-- Download-button style — change it by swapping the dv-* class below.
-               Options: dv-asphalt · dv-streak · dv-skyline · dv-tireburn · dv-torn
-               · dv-split (or remove the class for the plain red/gold default). -->
-          <div id="downloadGroup" class="download-group dv-tireburn" hidden>
-            <button
-              id="downloadBuild"
-              class="download-build"
-              type="button"
-              title="Download the latest build"
-              aria-haspopup="true"
-              aria-expanded="false"
-            >
-              <svg class="download-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M12 3v12" /><path d="m7 11 5 5 5-5" /><path d="M4 21h16" />
-              </svg>
-              <span class="download-text">
-                <strong>Download build</strong>
-                <small id="downloadMeta">latest</small>
+        <div class="b5-destination">
+          <div class="b5-destination__art" aria-hidden="true">
+            <img class="b5-destination__logo" src="/static/b5-ui/assets/paradise-city.webp" width="1000" height="540" alt="" fetchpriority="high" />
+            <span class="b5-destination__label">One unit at a time.</span>
+          </div>
+          <div class="b5-connection wp-build">
+            <div class="b5-connection__top">
+              <span class="b5-connection__kicker">THE LATEST PC BUILD</span>
+              <span id="connection" class="b5-status" data-tone="warning"><span id="connectionText">Connecting</span></span>
+            </div>
+            <!-- Download build: the chooser offers the full game or the exe-only update.
+                 Change the artwork with data-skin: asphalt · streak · skyline · tireburn · torn · split. -->
+            <div id="downloadGroup" class="b5-download-group" data-b5-download-menu hidden>
+              <button
+                id="downloadBuild"
+                class="b5-download"
+                type="button"
+                data-skin="tireburn"
+                popovertarget="downloadMenu"
+                aria-controls="downloadMenu"
+                title="Download the latest build"
+              >
+                <svg class="b5-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 3v12" /><path d="m7 11 5 5 5-5" /><path d="M4 21h16" />
+                </svg>
+                <span><strong>Download build</strong><small id="downloadMeta">latest</small></span>
+              </button>
+              <span id="downloadCount" class="b5-download-counter" title="Total downloads" hidden>
+                <strong class="dc-num">0</strong><small>Downloads</small>
               </span>
-            </button>
-            <div id="downloadMenu" class="download-menu" role="menu" hidden></div>
-            <span id="downloadCount" class="badge download-badge" title="Total downloads" hidden>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"
-                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M12 3v12" /><path d="m7 11 5 5 5-5" /><path d="M4 21h16" />
-              </svg>
-              <span class="dc-num">0</span>
-            </span>
-            <button
-              id="downloadPreview"
-              class="badge download-badge"
-              type="button"
-              title="Preview the files inside this build"
-              aria-label="Preview build contents"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" />
-              </svg>
-            </button>
-          </div>
-          <span id="serverTime" class="server-time">—</span>
-          <div class="connection" id="connection">
-            <span class="pulse"></span>
-            <span id="connectionText">Connecting</span>
+              <button
+                id="downloadPreview"
+                class="b5-download-preview"
+                type="button"
+                title="Preview the files inside this build"
+                aria-label="Preview build contents"
+              >
+                <svg class="b5-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" />
+                </svg>
+              </button>
+              <div id="downloadMenu" class="b5-download-menu" popover="auto" role="region" aria-label="Build downloads"></div>
+            </div>
+            <span id="subtitle" class="b5-hint">Connecting to work server…</span>
           </div>
         </div>
-      </header>
+      </section>
 
-      <main>
-        <!-- Headline metrics: three donuts, each split into the states that make up its total -->
-        <section class="metrics" aria-label="Progress summary">
-          <article class="card metric ring-card" title="Completion includes done translation units and external implementations, shown separately in the legend.">
-            <div class="ring" id="tuRing">
-              <svg viewBox="0 0 120 120" aria-hidden="true">
-                <circle class="ring-track" cx="60" cy="60" r="52" />
-                <g class="ring-segments"></g>
-              </svg>
-              <div class="ring-label">
-                <strong id="tuPercent">0%</strong>
-                <span>complete</span>
-              </div>
-            </div>
-            <div class="metric-body">
-              <span class="label">Translation Units</span>
-              <div class="metric-total" id="tuCount">—</div>
-              <div class="legend" id="tuLegend"></div>
-              <small class="metric-note">active goal · <span id="activeGoal">Whole program</span></small>
-              <small class="metric-note" id="tuEvidenceNote">Recorded status from the work ledger.</small>
-              <small class="metric-note" id="sourceSyncNote" hidden></small>
-            </div>
-          </article>
-          <article class="card metric ring-card" title="Coverage includes recorded functions and external implementations. The total includes every function in the shipped X360 binary, including unidentified functions.">
-            <div class="ring" id="fnRing">
-              <svg viewBox="0 0 120 120" aria-hidden="true">
-                <circle class="ring-track" cx="60" cy="60" r="52" />
-                <g class="ring-segments"></g>
-              </svg>
-              <div class="ring-label">
-                <strong id="fnPercent">0%</strong>
-                <span>covered</span>
-              </div>
-            </div>
-            <div class="metric-body">
-              <span class="label">Functions</span>
-              <div class="metric-total" id="fnCount">—</div>
-              <div class="legend" id="fnLegend"></div>
-              <small class="metric-note" id="fnStatusNote">Coverage recorded in the work ledger.</small>
-              <small class="metric-note" id="fnEvidenceNote"></small>
-            </div>
-          </article>
-          <article class="card metric ring-card" title="Translation units available through compiled source or a verified external provider in the PC build inputs.">
-            <div class="ring" id="exeRing">
-              <svg viewBox="0 0 120 120" aria-hidden="true">
-                <circle class="ring-track" cx="60" cy="60" r="52" />
-                <g class="ring-segments"></g>
-              </svg>
-              <div class="ring-label">
-                <strong id="exePercent">0%</strong>
-                <span>available</span>
-              </div>
-            </div>
-            <div class="metric-body">
-              <span class="label">Available in Build</span>
-              <div class="metric-total" id="exeCount">—</div>
-              <div class="legend" id="exeLegend"></div>
-            </div>
-          </article>
-        </section>
+      <!-- Headline metrics: three donuts, each split into the states that make up its total -->
+      <section class="b5-stat-strip wp-metrics" aria-label="Progress summary">
+        <article class="b5-stat wp-metric" title="Completion includes done translation units and external implementations, shown separately in the legend.">
+          <div class="b5-ring wp-ring" id="tuRing">
+            <svg viewBox="0 0 120 120" aria-hidden="true">
+              <circle class="b5-ring__track" cx="60" cy="60" r="52" />
+              <g class="ring-segments"></g>
+            </svg>
+            <span class="b5-ring__label"><strong id="tuPercent">0%</strong><small>complete</small></span>
+          </div>
+          <div class="wp-metric__body">
+            <span class="b5-stat__label">Translation units</span>
+            <div class="metric-total" id="tuCount">—</div>
+            <div class="legend" id="tuLegend"></div>
+            <small class="metric-note">active goal · <span id="activeGoal">Whole program</span></small>
+            <small class="metric-note" id="tuEvidenceNote">Recorded status from the work ledger.</small>
+            <small class="metric-note" id="sourceSyncNote" hidden></small>
+          </div>
+        </article>
+        <article class="b5-stat wp-metric" title="Coverage includes recorded functions and external implementations. The total includes every function in the shipped X360 binary, including unidentified functions.">
+          <div class="b5-ring wp-ring" id="fnRing">
+            <svg viewBox="0 0 120 120" aria-hidden="true">
+              <circle class="b5-ring__track" cx="60" cy="60" r="52" />
+              <g class="ring-segments"></g>
+            </svg>
+            <span class="b5-ring__label"><strong id="fnPercent">0%</strong><small>covered</small></span>
+          </div>
+          <div class="wp-metric__body">
+            <span class="b5-stat__label">Functions</span>
+            <div class="metric-total" id="fnCount">—</div>
+            <div class="legend" id="fnLegend"></div>
+            <small class="metric-note" id="fnStatusNote">Coverage recorded in the work ledger.</small>
+            <small class="metric-note" id="fnEvidenceNote"></small>
+          </div>
+        </article>
+        <article class="b5-stat wp-metric" title="Translation units available through compiled source or a verified external provider in the PC build inputs.">
+          <div class="b5-ring wp-ring" id="exeRing">
+            <svg viewBox="0 0 120 120" aria-hidden="true">
+              <circle class="b5-ring__track" cx="60" cy="60" r="52" />
+              <g class="ring-segments"></g>
+            </svg>
+            <span class="b5-ring__label"><strong id="exePercent">0%</strong><small>available</small></span>
+          </div>
+          <div class="wp-metric__body">
+            <span class="b5-stat__label">Available in build</span>
+            <div class="metric-total" id="exeCount">—</div>
+            <div class="legend" id="exeLegend"></div>
+          </div>
+        </article>
+      </section>
 
-
-        <!-- Explorer: search/browse every TU and function -->
-        <section class="card explorer" id="progressExplorer" aria-label="Progress explorer">
-          <div class="panel-head">
-            <div class="explorer-tabs" id="explorerTabs">
-              <button class="tab active" type="button" data-tab="tus" aria-pressed="true">Translation Units</button>
-              <button class="tab" type="button" data-tab="funcs" aria-pressed="false">Functions</button>
-              <button class="tab" type="button" data-tab="linked" aria-pressed="false">Available in Build</button>
+      <!-- Explorer: search/browse every TU and function -->
+      <section class="wp-section" id="progress" aria-labelledby="progress-title">
+        <div class="b5-section-header">
+          <div>
+            <div class="b5-eyebrow">THE WORK LEDGER / EVERY UNIT, EVERY FUNCTION</div>
+            <h2 class="b5-heading" id="progress-title">Progress map<span class="b5-accent">.</span></h2>
+          </div>
+          <div class="explorer-view-tools">
+            <span id="explorerCount" class="b5-ribbon b5-ribbon--gold">Loading…</span>
+            <div class="b5-filter-group b5-filter-group--menu" id="explorerViews" role="group" aria-label="Explorer view">
+              <button class="b5-filter" type="button" data-view="map" data-b5-value="map" aria-pressed="true">Map</button>
+              <button class="b5-filter" type="button" data-view="list" data-b5-value="list" aria-pressed="false">List</button>
             </div>
-            <div class="explorer-view-tools">
-              <span id="explorerCount" class="badge">Loading…</span>
-              <div class="explorer-views evo-seg" id="explorerViews" aria-label="Explorer view">
-                <button type="button" data-view="map" class="active" aria-pressed="true">Map</button>
-                <button type="button" data-view="list" aria-pressed="false">List</button>
-              </div>
+          </div>
+        </div>
+        <div class="b5-panel b5-panel--ink explorer" id="progressExplorer" aria-label="Progress explorer">
+          <div class="b5-panel__header">
+            <div class="b5-filter-group b5-filter-group--menu" id="explorerTabs" role="group" aria-label="Explorer mode">
+              <button class="b5-filter" type="button" data-tab="tus" data-b5-value="tus" aria-pressed="true">Translation Units</button>
+              <button class="b5-filter" type="button" data-tab="funcs" data-b5-value="funcs" aria-pressed="false">Functions</button>
+              <button class="b5-filter" type="button" data-tab="linked" data-b5-value="linked" aria-pressed="false">Available in Build</button>
             </div>
           </div>
 
           <div class="explorer-controls">
-            <input
-              type="search"
-              id="explorerSearch"
-              class="search-input"
-              placeholder="Search by name, source, or path…"
-              autocomplete="off"
-            />
-            <select id="filterStatus" class="filter"><option value="">All statuses</option></select>
-            <select id="filterSource" class="filter tus-only"><option value="">All sources</option></select>
-            <select id="filterGoal" class="filter tus-only"><option value="">All goals</option></select>
-            <select id="sortBy" class="filter tus-only">
+            <label class="b5-search wp-search">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m15 15 5 5" /></svg>
+              <input type="search" id="explorerSearch" placeholder="Search by name, source, or path…" aria-label="Search the explorer" autocomplete="off" />
+            </label>
+            <select id="filterStatus" class="b5-select" data-b5-select aria-label="Translation unit status"><option value="">All statuses</option></select>
+            <select id="filterSource" class="b5-select tus-only" data-b5-select aria-label="Source"><option value="">All sources</option></select>
+            <select id="filterGoal" class="b5-select tus-only" data-b5-select aria-label="Goal"><option value="">All goals</option></select>
+            <select id="sortBy" class="b5-select tus-only" data-b5-select aria-label="Sort">
               <option value="queue">Sort: Queue rank</option>
               <option value="id" selected>Sort: Name</option>
               <option value="funcs">Sort: Functions</option>
               <option value="updated">Sort: Updated</option>
               <option value="status">Sort: Status</option>
             </select>
-            <button id="sortOrder" class="filter order-btn" title="Toggle order">↑</button>
+            <button id="sortOrder" class="b5-button b5-button--ink order-btn" type="button" title="Toggle order" aria-label="Toggle sort order">↑</button>
           </div>
 
           <div id="progressMap" class="progress-map">
             <div class="map-toolbar">
               <nav id="mapBreadcrumbs" class="map-breadcrumbs" aria-label="Map location"></nav>
               <div class="map-navigation">
-                <button id="mapUp" type="button" class="filter" disabled>Up</button>
-                <button id="mapReset" type="button" class="filter" disabled>Reset zoom</button>
+                <button id="mapUp" type="button" class="b5-button b5-button--ink" disabled>Up</button>
+                <button id="mapReset" type="button" class="b5-button b5-button--ink" disabled>Reset zoom</button>
               </div>
             </div>
             <p id="mapExplanation" class="map-explanation"></p>
             <div id="mapLegend" class="map-legend" aria-label="Map legend"></div>
             <div id="mapStatus" class="map-status" role="status">
               <span id="mapStatusText">Loading progress map…</span>
-              <button id="mapRetry" type="button" class="filter" hidden>Retry</button>
+              <button id="mapRetry" type="button" class="b5-button b5-button--ink" hidden>Retry</button>
             </div>
             <div id="progressMapViewport" class="map-viewport">
               <canvas id="progressMapCanvas" tabindex="0" role="group"
@@ -259,8 +251,8 @@
                 <span id="mapSelectionMeta">Select a tile to inspect it; select a group to zoom.</span>
               </div>
               <div class="map-selection-actions">
-                <button id="mapActivate" type="button" class="filter" hidden>Open details</button>
-                <button id="mapUnitDetails" type="button" class="filter" hidden>Unit details</button>
+                <button id="mapActivate" type="button" class="b5-button b5-button--ink" hidden>Open details</button>
+                <button id="mapUnitDetails" type="button" class="b5-button b5-button--ink" hidden>Unit details</button>
               </div>
             </div>
             <div class="map-footnotes">
@@ -268,54 +260,45 @@
               <span id="mapZeroNote" hidden></span>
               <span id="mapKeyboardHelp">Groups zoom in. Tiles open details. Keyboard: arrows to select, Enter to open, Escape to go up.</span>
             </div>
-            <span id="mapAnnouncement" class="visually-hidden" aria-live="polite"></span>
+            <span id="mapAnnouncement" class="b5-sr-only" aria-live="polite"></span>
           </div>
 
           <div id="explorerList" class="explorer-list hidden">
-          <div class="table-wrap">
-            <table class="explorer-table">
-              <thead id="explorerHead"></thead>
-              <tbody id="explorerBody"></tbody>
-            </table>
-          </div>
-
-          <div class="explorer-foot">
-            <span id="explorerRange" class="muted-text">—</span>
-            <div class="pager">
-              <button id="pagePrev" class="filter">Prev</button>
-              <div id="pageButtons" class="page-buttons" aria-label="Pages"></div>
-              <button id="pageNext" class="filter">Next</button>
-              <span id="pageStatus" class="page-status">Page 1 of 1</span>
-              <label class="page-jump">
-                <span>Jump</span>
-                <input id="pageJump" type="number" min="1" value="1" />
-              </label>
+            <div class="table-wrap">
+              <table class="explorer-table">
+                <thead id="explorerHead"></thead>
+                <tbody id="explorerBody"></tbody>
+              </table>
             </div>
+            <nav id="explorerPager" class="b5-pagination explorer-foot" data-b5-pager data-b5-page-size="50" data-b5-unit="results" aria-label="Explorer pages"></nav>
           </div>
-          </div>
-        </section>
+        </div>
+      </section>
 
-        <!-- Byte matching: the native Xbox 360 tree compiled with the XDK, function by function
-             against the console's own bytes. Fed by the workflow repo's bytematch.yml. -->
-        <section class="card verified-panel bytematch-panel" id="bytematchCard" aria-label="Byte matching">
+      <!-- Byte matching: the native Xbox 360 tree compiled with the XDK, function by function
+           against the console's own bytes. Fed by the workflow repo's bytematch.yml. -->
+      <section class="wp-section" id="bytematch" aria-labelledby="bytematch-title">
+        <div class="b5-section-header">
+          <div>
+            <div class="b5-eyebrow">XBOX 360 / THE XDK AGAINST ARTIST</div>
+            <h2 class="b5-heading" id="bytematch-title">Byte matching<span class="b5-accent">.</span></h2>
+          </div>
+        </div>
+        <div class="b5-panel b5-panel--ink verified-panel bytematch-panel" id="bytematchCard" aria-label="Byte matching">
           <div class="vp-head">
             <div>
-              <span class="label">Byte matching</span>
               <div class="metric-total" id="bytematchCount">&middot;</div>
               <p class="vp-intro">The native Xbox 360 tree (b5-decomp <code>x360</code>) compiled with the console's own XDK compiler and compared with the shipped game, function by function. Exact means the same bytes outside the fields the linker fills in, with the same callees and constants. Contributors measure where the XDK is installed; every push to the branch or to the records refreshes this panel.</p>
             </div>
             <div class="vp-facts" id="bytematchFacts" aria-label="Byte-match facts"></div>
           </div>
           <div class="vp-grid">
-            <div class="ring big" id="bytematchRing">
+            <div class="b5-ring wp-ring big" id="bytematchRing">
               <svg viewBox="0 0 120 120" aria-hidden="true">
-                <circle class="ring-track" cx="60" cy="60" r="52" />
+                <circle class="b5-ring__track" cx="60" cy="60" r="52" />
                 <g class="ring-segments"></g>
               </svg>
-              <div class="ring-label">
-                <strong id="bytematchPercent">0%</strong>
-                <span>functions match</span>
-              </div>
+              <span class="b5-ring__label"><strong id="bytematchPercent">0%</strong><small>functions match</small></span>
             </div>
             <div class="vp-legend">
               <div class="legend" id="bytematchLegend"></div>
@@ -335,19 +318,19 @@
           <!-- The PC progress map's renderer (progress-map.js), on the X360 byte-match states.
                Element ids carry the x360 prefix the MapController maps them through. -->
           <div class="bm-map">
-            <div class="panel-head bm-map-head">
-              <div class="explorer-tabs" id="x360MapTabs">
-                <button class="tab active" type="button" data-x360mode="x360tus" aria-pressed="true">Translation Units</button>
-                <button class="tab" type="button" data-x360mode="x360funcs" aria-pressed="false">Functions</button>
+            <div class="bm-map-head">
+              <div class="b5-filter-group b5-filter-group--menu" id="x360MapTabs" role="group" aria-label="X360 map mode">
+                <button class="b5-filter" type="button" data-x360mode="x360tus" data-b5-value="x360tus" aria-pressed="true">Translation Units</button>
+                <button class="b5-filter" type="button" data-x360mode="x360funcs" data-b5-value="x360funcs" aria-pressed="false">Functions</button>
               </div>
-              <span id="x360MapCount" class="badge">Loading&hellip;</span>
+              <span id="x360MapCount" class="b5-ribbon b5-ribbon--gold">Loading&hellip;</span>
             </div>
             <div id="x360ProgressMap" class="progress-map">
               <div class="map-toolbar">
                 <nav id="x360MapBreadcrumbs" class="map-breadcrumbs" aria-label="X360 map location"></nav>
                 <div class="map-navigation">
-                  <button id="x360MapUp" type="button" class="filter" disabled>Up</button>
-                  <button id="x360MapReset" type="button" class="filter" disabled>Reset zoom</button>
+                  <button id="x360MapUp" type="button" class="b5-button b5-button--ink" disabled>Up</button>
+                  <button id="x360MapReset" type="button" class="b5-button b5-button--ink" disabled>Reset zoom</button>
                 </div>
               </div>
               <p id="x360MapExplanation" class="map-explanation"></p>
@@ -371,8 +354,8 @@
                   <span id="x360MapSelectionMeta">Select a tile to inspect it; select a group to zoom.</span>
                 </div>
                 <div class="map-selection-actions">
-                  <button id="x360MapActivate" type="button" class="filter" hidden>Open details</button>
-                  <button id="x360MapUnitDetails" type="button" class="filter" hidden>Unit details</button>
+                  <button id="x360MapActivate" type="button" class="b5-button b5-button--ink" hidden>Open details</button>
+                  <button id="x360MapUnitDetails" type="button" class="b5-button b5-button--ink" hidden>Unit details</button>
                 </div>
               </div>
               <div class="map-footnotes">
@@ -380,7 +363,7 @@
                 <span id="x360MapZeroNote" hidden></span>
                 <span id="x360MapKeyboardHelp">Groups zoom in. Tiles list their functions below. Keyboard: arrows to select, Enter to open, Escape to go up.</span>
               </div>
-              <span id="x360MapAnnouncement" class="visually-hidden" aria-live="polite"></span>
+              <span id="x360MapAnnouncement" class="b5-sr-only" aria-live="polite"></span>
             </div>
           </div>
           <div class="bm-areas">
@@ -393,99 +376,91 @@
           <div class="vp-evidence bm-explorer" id="bytematchExplorer" aria-label="Byte-match functions">
             <div class="evidence-body">
               <div class="evidence-controls">
-                <input
-                  type="search"
-                  id="bytematchSearch"
-                  class="search-input"
-                  placeholder="Filter by function, ARTIST address or source&hellip;"
-                  autocomplete="off"
-                />
+                <label class="b5-search wp-search">
+                  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m15 15 5 5" /></svg>
+                  <input type="search" id="bytematchSearch" placeholder="Filter by function, ARTIST address or source&hellip;" aria-label="Filter byte-match functions" autocomplete="off" />
+                </label>
                 <div id="bytematchChips" class="evidence-chips" role="group" aria-label="Filter by state"></div>
               </div>
               <div id="bytematchList" class="evidence-list bm-list"></div>
               <div class="evidence-foot">
                 <span id="bytematchRange" class="muted-text">&mdash;</span>
-                <div class="pager">
-                  <button id="bmPagePrev" class="filter" type="button">Prev</button>
+                <div class="mini-pager">
+                  <button id="bmPagePrev" class="b5-page-button" type="button">Prev</button>
                   <span id="bmPageStatus" class="page-status">Page 1 of 1</span>
-                  <button id="bmPageNext" class="filter" type="button">Next</button>
+                  <button id="bmPageNext" class="b5-page-button" type="button">Next</button>
                 </div>
               </div>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <!-- Evolution: every ring's totals over time -->
-        <section class="card evolution-panel" id="evolutionCard" aria-label="Evolution">
+      <!-- Evolution: every ring's totals over time -->
+      <section class="wp-section" id="evolution" aria-labelledby="evolution-title">
+        <div class="b5-section-header">
+          <div>
+            <div class="b5-eyebrow">OVER TIME / EVERY NUMBER ON THIS PAGE</div>
+            <h2 class="b5-heading" id="evolution-title">Evolution<span class="b5-accent">.</span></h2>
+          </div>
+          <div class="evo-controls">
+            <div class="b5-filter-group b5-filter-group--menu" id="evolutionRange" role="group" aria-label="Range">
+              <button class="b5-filter" type="button" data-range="30" data-b5-value="30" aria-pressed="false">30 days</button>
+              <button class="b5-filter" type="button" data-range="90" data-b5-value="90" aria-pressed="false">90 days</button>
+              <button class="b5-filter" type="button" data-range="0" data-b5-value="0" aria-pressed="true">All</button>
+            </div>
+            <div class="b5-filter-group b5-filter-group--menu" id="evolutionMode" role="group" aria-label="Scale">
+              <button class="b5-filter" type="button" data-mode="count" data-b5-value="count" aria-pressed="true">Counts</button>
+              <button class="b5-filter" type="button" data-mode="share" data-b5-value="share" aria-pressed="false">Shares</button>
+            </div>
+          </div>
+        </div>
+        <div class="b5-panel b5-panel--ink evolution-panel" id="evolutionCard" aria-label="Evolution">
           <div class="vp-head">
             <div>
-              <span class="label">Evolution</span>
               <div class="metric-total" id="evolutionCount">&middot;</div>
               <p class="vp-intro">Every number on this page, over time. Pick the series to compare: counts share one axis; shares plot each series over its own total.</p>
-            </div>
-            <div class="evo-controls">
-              <div class="evo-seg" id="evolutionRange" role="group" aria-label="Range">
-                <button type="button" data-range="30">30 days</button>
-                <button type="button" data-range="90">90 days</button>
-                <button type="button" data-range="0" class="active">All</button>
-              </div>
-              <div class="evo-seg" id="evolutionMode" role="group" aria-label="Scale">
-                <button type="button" data-mode="count" class="active">Counts</button>
-                <button type="button" data-mode="share">Shares</button>
-              </div>
             </div>
           </div>
           <div class="evo-picker" id="evolutionPicker"></div>
           <div class="evo-chart" id="evolutionChart"></div>
           <div class="evo-legend" id="evolutionLegend"></div>
-        </section>
+        </div>
+      </section>
 
-        <!-- Console gaps: what the console's code does that our PC code does not, file by file.
-             A to-do list from the static audits CI runs on every decomp commit, with no score:
-             each gap is a lead to check, not a measure of progress. -->
-        <section class="card verified-panel gaps-panel" id="gapsCard" aria-label="Console gaps">
-          <div class="vp-head">
-            <div>
-              <span class="label">Console gaps</span>
-              <p class="vp-intro">What the console's code does that our PC code does not yet: switch cases with no arm, events never posted, calls never made, functions with no body, and bodies that are still stand-ins. CI compares every reconstructed body with the console's pseudocode on each decomp commit. Each gap is a lead to check, not a verdict.</p>
-            </div>
-            <span class="badge" id="evidenceMeta">&middot;</span>
+      <!-- Console gaps: what the console's code does that our PC code does not, file by file.
+           A to-do list from the static audits CI runs on every decomp commit, with no score:
+           each gap is a lead to check, not a measure of progress. -->
+      <section class="wp-section" id="gaps" aria-labelledby="gaps-title">
+        <div class="b5-section-header">
+          <div>
+            <div class="b5-eyebrow">CONSOLE AUDITS / LEADS, NOT VERDICTS</div>
+            <h2 class="b5-heading" id="gaps-title">Console gaps<span class="b5-accent">.</span></h2>
           </div>
+          <span class="b5-ribbon b5-ribbon--gold" id="evidenceMeta">&middot;</span>
+        </div>
+        <div class="b5-panel b5-panel--ink verified-panel gaps-panel" id="gapsCard" aria-label="Console gaps">
+          <p class="vp-intro">What the console's code does that our PC code does not yet: switch cases with no arm, events never posted, calls never made, functions with no body, and bodies that are still stand-ins. CI compares every reconstructed body with the console's pseudocode on each decomp commit. Each gap is a lead to check, not a verdict.</p>
           <div class="vp-evidence" id="evidence" aria-label="Console gaps by file">
             <div class="vp-evidence-head">
-              <div class="explorer-tabs" id="evidenceTabs">
-                <button class="tab active" data-tab="audit" title="Each reconstructed body compared with the console's own function">Gaps by file</button>
-                <button class="tab" data-tab="stubs" title="Bodies that are still stand-ins">Stubs</button>
+              <div class="b5-filter-group b5-filter-group--menu" id="evidenceTabs" role="group" aria-label="Gap list">
+                <button class="b5-filter" type="button" data-tab="audit" data-b5-value="audit" aria-pressed="true" title="Each reconstructed body compared with the console's own function">Gaps by file</button>
+                <button class="b5-filter" type="button" data-tab="stubs" data-b5-value="stubs" aria-pressed="false" title="Bodies that are still stand-ins">Stubs</button>
               </div>
             </div>
             <div class="evidence-body">
               <p id="evidenceIntro" class="evidence-intro"></p>
               <div class="evidence-controls">
-                <input
-                  type="search"
-                  id="evidenceSearch"
-                  class="search-input"
-                  placeholder="Filter by file path&hellip;"
-                  autocomplete="off"
-                />
+                <label class="b5-search wp-search">
+                  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m15 15 5 5" /></svg>
+                  <input type="search" id="evidenceSearch" placeholder="Filter by file path&hellip;" aria-label="Filter by file path" autocomplete="off" />
+                </label>
                 <div id="evidenceChips" class="evidence-chips" role="group" aria-label="Filter"></div>
               </div>
               <div class="evidence-grid">
                 <div class="evidence-main">
                   <div id="evidenceList" class="evidence-list"></div>
-                  <div class="evidence-foot">
-                    <span id="evidenceRange" class="muted-text">&mdash;</span>
-                    <div class="pager">
-                      <button id="evPagePrev" class="filter" type="button">Prev</button>
-                      <div id="evPageButtons" class="page-buttons" aria-label="Pages"></div>
-                      <button id="evPageNext" class="filter" type="button">Next</button>
-                      <span id="evPageStatus" class="page-status">Page 1 of 1</span>
-                      <label class="page-jump">
-                        <span>Jump</span>
-                        <input id="evPageJump" type="number" min="1" value="1" />
-                      </label>
-                    </div>
-                  </div>
+                  <nav id="evidencePager" class="b5-pagination evidence-foot" data-b5-pager data-b5-page-size="25" data-b5-unit="files" aria-label="Console gap pages"></nav>
                 </div>
                 <aside class="evidence-side">
                   <h3 id="evidenceTopTitle">Largest switch gaps</h3>
@@ -495,12 +470,21 @@
               </div>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <!-- GitHub repository panel -->
-        <section class="card gh-panel" aria-label="GitHub repository">
-          <div class="panel-head">
-            <h2>
+      <!-- GitHub repository panel -->
+      <section class="wp-section" id="repository" aria-labelledby="repository-title">
+        <div class="b5-section-header">
+          <div>
+            <div class="b5-eyebrow">GITHUB / THE DECOMP SOURCE</div>
+            <h2 class="b5-heading" id="repository-title">The repository<span class="b5-accent">.</span></h2>
+          </div>
+          <span id="ghRate" class="gh-rate"></span>
+        </div>
+        <div class="b5-panel b5-panel--ink gh-panel" aria-label="GitHub repository">
+          <div class="b5-panel__header">
+            <h3 class="gh-title">
               <svg class="gh-mark" viewBox="0 0 16 16" aria-hidden="true">
                 <path
                   fill="currentColor"
@@ -509,8 +493,7 @@
               </svg>
               <a id="repoLink" href="#" target="_blank" rel="noopener">repository</a>
               <span class="branch-tag" id="repoBranch">dev</span>
-            </h2>
-            <span id="ghRate" class="gh-rate"></span>
+            </h3>
           </div>
           <p id="repoDesc" class="gh-desc">Loading repository…</p>
 
@@ -518,37 +501,49 @@
 
           <div class="gh-body">
             <div class="gh-commits">
-              <h3>Latest commit</h3>
+              <h4>Latest commit</h4>
               <div id="latestCommit" class="latest-commit empty">Loading…</div>
-              <h3 class="recent-head">Recent commits</h3>
+              <h4 class="recent-head">Recent commits</h4>
               <ol id="commitList" class="commit-list empty"></ol>
             </div>
 
             <div class="gh-tree">
               <div class="tree-head">
-                <h3>File tree</h3>
+                <h4>File tree</h4>
                 <span id="treeMeta" class="tree-meta"></span>
               </div>
               <div id="fileTree" class="file-tree empty">Loading…</div>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <!-- Work coordination grid -->
-        <section class="grid">
-          <section class="card panel agents">
-            <div class="panel-head">
-              <h2>Agents</h2>
-              <span id="agentCount" class="badge">0 active</span>
+      <!-- Work coordination grid -->
+      <section class="wp-section" id="work" aria-labelledby="work-title">
+        <div class="b5-section-header">
+          <div>
+            <div class="b5-eyebrow">WORK SERVER / LIVE COORDINATION</div>
+            <h2 class="b5-heading" id="work-title">Who's working<span class="b5-accent">.</span></h2>
+          </div>
+        </div>
+        <div class="grid">
+          <section class="b5-panel b5-panel--paint b5-roster agents" aria-labelledby="agents-title">
+            <div class="b5-panel__header">
+              <h3 id="agents-title">Agents</h3>
+              <span id="agentCount" class="b5-count-tile" title="Agents with active work">0</span>
             </div>
-            <div id="attributionNote" class="attribution-note" hidden></div>
-            <div id="agents" class="agent-list empty">No active claims.</div>
+            <div class="b5-panel__body">
+              <p id="agentSummary">Everyone who claims work through the server.</p>
+              <div id="attributionNote" class="attribution-note" hidden></div>
+              <div id="agents" class="agent-list empty">No active claims.</div>
+            </div>
+            <div class="b5-panel__footer"><span class="b5-dot"></span>Work server / live roster</div>
           </section>
 
-          <section class="card panel active-work">
-            <div class="panel-head">
-              <h2>Active Work</h2>
-              <span id="activeWorkCount" class="badge">0 TUs</span>
+          <section class="b5-panel b5-panel--ink panel active-work" aria-labelledby="active-work-title">
+            <div class="b5-panel__header">
+              <h3 class="b5-section-title" id="active-work-title">Active Work</h3>
+              <span id="activeWorkCount" class="b5-ribbon b5-ribbon--gold">0 TUs</span>
             </div>
             <div class="table-wrap">
               <table>
@@ -565,112 +560,113 @@
             </div>
           </section>
 
-          <section class="card panel next-work">
-            <div class="panel-head">
-              <h2>Next Queue</h2>
-              <span id="nextCount" class="badge">0 ready</span>
+          <section class="b5-panel b5-panel--ink panel next-work" aria-labelledby="next-title">
+            <div class="b5-panel__header">
+              <h3 class="b5-section-title" id="next-title">Next Queue</h3>
+              <span id="nextCount" class="b5-ribbon b5-ribbon--gold">0 ready</span>
             </div>
             <div class="mini-controls">
-              <input
-                type="search"
-                id="queueSearch"
-                class="search-input"
-                placeholder="Search by TU or path…"
-                autocomplete="off"
-              />
-              <select id="queueFilterSource" class="filter"><option value="">All sources</option></select>
+              <label class="b5-search wp-search">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m15 15 5 5" /></svg>
+                <input type="search" id="queueSearch" placeholder="Search by TU or path…" aria-label="Search the queue" autocomplete="off" />
+              </label>
+              <select id="queueFilterSource" class="b5-select" data-b5-select aria-label="Queue source"><option value="">All sources</option></select>
             </div>
             <div id="nextQueue" class="queue empty">No available TUs.</div>
             <div class="mini-foot">
               <span id="queueRange" class="muted-text">—</span>
               <div class="mini-pager">
-                <button id="queuePrev" class="filter">Prev</button>
+                <button id="queuePrev" class="b5-page-button" type="button">Prev</button>
                 <span id="queuePageStatus" class="page-status">Page 1 of 1</span>
-                <button id="queueNext" class="filter">Next</button>
+                <button id="queueNext" class="b5-page-button" type="button">Next</button>
               </div>
             </div>
           </section>
 
-          <section class="card panel events">
-            <div class="panel-head">
-              <h2>Live Events</h2>
-              <span id="eventCount" class="badge">0 events</span>
+          <section class="b5-panel b5-panel--ink panel events" aria-labelledby="events-title">
+            <div class="b5-panel__header">
+              <h3 class="b5-section-title" id="events-title">Live Events</h3>
+              <span id="eventCount" class="b5-ribbon b5-ribbon--gold">0 events</span>
             </div>
             <div class="mini-controls">
-              <input
-                type="search"
-                id="eventsSearch"
-                class="search-input"
-                placeholder="Search by actor, target, or detail…"
-                autocomplete="off"
-              />
-              <select id="eventsFilterAction" class="filter"><option value="">All events</option></select>
-              <select id="eventsFilterActor" class="filter"><option value="">All actors</option></select>
+              <label class="b5-search wp-search">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m15 15 5 5" /></svg>
+                <input type="search" id="eventsSearch" placeholder="Search by actor, target, or detail…" aria-label="Search events" autocomplete="off" />
+              </label>
+              <select id="eventsFilterAction" class="b5-select" data-b5-select aria-label="Event type"><option value="">All events</option></select>
+              <select id="eventsFilterActor" class="b5-select" data-b5-select aria-label="Event actor"><option value="">All actors</option></select>
             </div>
             <div id="events" class="event-table empty"></div>
             <div class="mini-foot">
               <span id="eventsRange" class="muted-text">—</span>
               <div class="mini-pager">
-                <button id="eventsPrev" class="filter">Prev</button>
+                <button id="eventsPrev" class="b5-page-button" type="button">Prev</button>
                 <span id="eventsPageStatus" class="page-status">Page 1 of 1</span>
-                <button id="eventsNext" class="filter">Next</button>
+                <button id="eventsNext" class="b5-page-button" type="button">Next</button>
               </div>
             </div>
           </section>
 
-          <section class="card panel goals">
-            <div class="panel-head">
-              <h2>Goals</h2>
-              <span id="goalCount" class="badge">0 goals</span>
+          <section class="b5-panel b5-panel--ink panel goals" aria-labelledby="goals-title">
+            <div class="b5-panel__header">
+              <h3 class="b5-section-title" id="goals-title">Goals</h3>
+              <span id="goalCount" class="b5-ribbon b5-ribbon--gold">0 goals</span>
             </div>
             <div id="goals" class="goal-list empty">No goals imported.</div>
           </section>
 
-          <section class="card panel blocked">
-            <div class="panel-head">
-              <h2>Blocked</h2>
-              <span id="blockedListCount" class="badge">0 TUs</span>
+          <section class="b5-panel b5-panel--ink panel blocked" aria-labelledby="blocked-title">
+            <div class="b5-panel__header">
+              <h3 class="b5-section-title" id="blocked-title">Blocked</h3>
+              <span id="blockedListCount" class="b5-ribbon b5-ribbon--gold">0 TUs</span>
             </div>
             <div class="mini-controls">
-              <input
-                type="search"
-                id="blockedSearch"
-                class="search-input"
-                placeholder="Search by TU, path, or reason…"
-                autocomplete="off"
-              />
-              <select id="blockedFilterSource" class="filter"><option value="">All sources</option></select>
+              <label class="b5-search wp-search">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m15 15 5 5" /></svg>
+                <input type="search" id="blockedSearch" placeholder="Search by TU, path, or reason…" aria-label="Search blocked work" autocomplete="off" />
+              </label>
+              <select id="blockedFilterSource" class="b5-select" data-b5-select aria-label="Blocked source"><option value="">All sources</option></select>
             </div>
             <div id="blockedList" class="blocked-list empty">No blocked work.</div>
             <div class="mini-foot">
               <span id="blockedRange" class="muted-text">—</span>
               <div class="mini-pager">
-                <button id="blockedPrev" class="filter">Prev</button>
+                <button id="blockedPrev" class="b5-page-button" type="button">Prev</button>
                 <span id="blockedPageStatus" class="page-status">Page 1 of 1</span>
-                <button id="blockedNext" class="filter">Next</button>
+                <button id="blockedNext" class="b5-page-button" type="button">Next</button>
               </div>
             </div>
           </section>
-        </section>
-      </main>
-    </div>
-
-    <!-- TU detail drawer: the data the server hands to agents -->
-    <div id="detailOverlay" class="overlay hidden">
-      <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
-        <div class="drawer-head">
-          <div class="drawer-titlebar">
-            <button id="detailBack" class="drawer-back hidden" type="button" aria-label="Go back">Back</button>
-            <h2 id="detailTitle">Translation Unit</h2>
-          </div>
-          <button id="detailClose" class="drawer-close" aria-label="Close">✕</button>
         </div>
-        <div id="detailBody" class="drawer-body"></div>
-      </aside>
-    </div>
+      </section>
+    </main>
+
+    <footer class="b5-site-footer b5-shell">
+      <a class="b5-site-footer__brand" href="/">PARADISE DECOMP <span>/</span> BUILT FOR THE COMMUNITY</a>
+      <div class="b5-site-footer__meta">
+        <span>SERVER TIME <span id="serverTime">—</span></span>
+        <span>·</span>
+        <a href="https://github.com/BurnoutDecomp/b5-decomp" target="_blank" rel="noopener noreferrer">Project on GitHub ↗</a>
+        <span>·</span>
+        <a href="https://online.decomp.adriwin.fr/" target="_blank" rel="noopener noreferrer">Paradise Online ↗</a>
+      </div>
+    </footer>
+
+    <!-- TU detail drawer: the data the server hands to agents. The shared native drawer
+         owns opening, focus and Escape; app.js owns its TU/profile/goal history. -->
+    <dialog id="detailDialog" class="b5-dialog b5-dialog--drawer b5-dialog--ink wp-drawer" aria-labelledby="detailTitle" data-b5-density="compact">
+      <div class="b5-dialog__header">
+        <div class="drawer-titlebar">
+          <button id="detailBack" class="b5-back" type="button" aria-label="Go back" hidden>Back</button>
+          <h2 id="detailTitle">Translation Unit</h2>
+        </div>
+        <button id="detailClose" class="b5-icon-button b5-close--game" type="button" aria-label="Close">✕</button>
+      </div>
+      <div id="detailBody" class="b5-dialog__body drawer-body"></div>
+    </dialog>
 
     <script src="/static/d3-hierarchy.min.js?v=3.1.2" defer></script>
-    <script src="/static/progress-map.js?v=4" defer></script>
-    <script src="/static/app.js?v=43" defer></script>
+    <script src="/static/progress-map.js?v=5" defer></script>
+    <script type="module" src="/static/app.js?v=44"></script>
   </body>
 </html>

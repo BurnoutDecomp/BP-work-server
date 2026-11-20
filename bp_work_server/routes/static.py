@@ -4,6 +4,9 @@ from importlib.resources import files
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
+from starlette.types import Scope
 
 router = APIRouter()
 
@@ -24,6 +27,23 @@ def is_preview_bot(user_agent: str | None) -> bool:
 
 def static_dir():
     return files("bp_work_server").joinpath("static")
+
+
+class StaticAssets(StaticFiles):
+    """/static, with the shared UI library revalidated on every use.
+
+    static/b5-ui is a build of b5-decomp-webui loaded as ES modules, and their imports
+    name no version. Without Cache-Control a browser caches by heuristic, so after a
+    deploy it could pair a fresh app.js?v= with library modules from before it. The
+    ETag turns each revalidation into a 304. Other files keep their ?v= tags.
+    """
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        # get_path() joins with the OS separator.
+        if path.replace("\\", "/").startswith("b5-ui/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 @router.get("/", response_class=HTMLResponse)

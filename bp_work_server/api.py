@@ -9,7 +9,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
 from bp_work_server import __version__, history
@@ -17,7 +16,7 @@ from bp_work_server.decomp import DecompRepo
 from bp_work_server.dependencies import auth_required
 from bp_work_server.github import GitHubClient
 from bp_work_server.routes import admin, dashboard, downloads, events, github, static, work
-from bp_work_server.routes.static import static_dir
+from bp_work_server.routes.static import StaticAssets, static_dir
 from bp_work_server.services.dashboard import warm_dashboard_state
 from bp_work_server.store import WorkStore
 from bp_work_server.sync import sync_workflow_repo
@@ -118,7 +117,7 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
         )
         return response
 
-    app.mount("/static", StaticFiles(directory=str(static_dir())), name="static")
+    app.mount("/static", StaticAssets(directory=str(static_dir())), name="static")
     app.include_router(static.router)
     app.include_router(admin.router)
     app.include_router(work.router)

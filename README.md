@@ -72,7 +72,8 @@ This repo contains an MVP server:
   `BP_DL_UPDATE_PER_DAY`), and with `BP_DOWNLOADS_ACCEL` set nginx streams the file
   from an internal location so the multi-GB body never passes through Python.
 - File-tree entries and TU destinations link straight to the file on GitHub.
-- Burnout Paradise themed dashboard (drop a `logo.png` into the static folder).
+- Burnout Paradise themed dashboard built on the shared b5-decomp-webui library, the
+  same look and components as Paradise Online (see *Look and shared UI* below).
 - Small stdlib HTTP client for `work.py` integration.
 
 PostgreSQL is the right production database once more people are using it, but
@@ -255,12 +256,27 @@ bp-work-server --db data\bp-work.sqlite3 warm-attribution-cache `
 > purely from Git attribution. Any reconstructed events left from that era are
 > hidden by default (`BP_HIDE_RECONSTRUCTED=0` to reveal them).
 
-## Branding
+## Look and shared UI
 
-The header shows `/static/logo.png` if present and falls back to a `B5` mark
-otherwise. Drop a Burnout Paradise logo at
-`bp_work_server/static/logo.png` to brand the dashboard; the rest of the theme
-adapts around it.
+The dashboard shares its look with Paradise Online (`b5-decomp-server`): both pages
+are built from the [b5-decomp-webui](https://github.com/Adriwin06/b5-decomp-webui)
+library. `bp_work_server/static/b5-ui/` is a build of it, and `webui.json` there
+names the version and commit. It supplies the fonts (self-hosted, no font CDN), the
+palette, the game artwork, the page chrome (header, hero, stat strip, section
+headings, footer) and the shared controls: brush tabs and dropdowns, ribbons,
+pagers, the detail drawer and the download chooser. `static/app.css` only arranges
+them and draws this dashboard's data (rings, maps, lists, charts); `static/app.js`
+is an ES module that imports the library.
+
+To update the library, from a checkout next to this repository:
+
+```powershell
+cd ..\b5-decomp-webui
+npm run export -- ..\BP-work-server\bp_work_server\static\b5-ui
+```
+
+Commit the refreshed folder. Use the library's classes for new shared controls rather
+than styling them again in `app.css`; see its component reference.
 
 ## Tests
 

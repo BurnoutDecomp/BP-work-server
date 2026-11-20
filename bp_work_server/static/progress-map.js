@@ -213,14 +213,18 @@
       this.context = this.canvas.getContext("2d");
       const theme = getComputedStyle(document.documentElement);
       const token = (name, fallback) => theme.getPropertyValue(name).trim() || fallback;
-      this.palette = { ...colors, done: token("--green", colors.done),
-        compiled: token("--gold", colors.compiled), in_progress: token("--blue", colors.in_progress),
-        blocked: token("--red-bright", colors.blocked), recorded: token("--gold", colors.recorded),
-        external: token("--purple", colors.external),
-        linked: token("--blue", colors.linked) };
-      this.theme = { background: token("--bg", "#0a0809"), group: "#211c19",
-        text: token("--text", "#ece6da"), headFont: token("--font-head", "Oswald, sans-serif"),
-        monoFont: token("--font-mono", "'JetBrains Mono', monospace") };
+      const green = token("--green", colors.done), gold = token("--gold", colors.compiled);
+      const orange = token("--orange", colors.bm_nonmatching), purple = token("--purple", colors.external);
+      const grey = token("--grey", colors.todo), dim = token("--dim", colors.unidentified);
+      this.palette = { ...colors, done: green, compiled: gold, in_progress: token("--blue", colors.in_progress),
+        blocked: token("--red-bright", colors.blocked), recorded: gold, external: purple,
+        todo: grey, unrecorded: grey, unlinked: grey, unidentified: dim,
+        linked: token("--blue", colors.linked),
+        bm_exact: green, bm_matched: green, bm_close: gold, bm_partial: gold,
+        bm_nonmatching: orange, bm_compiled: orange, bm_missing: grey, bm_sdk: purple, bm_unnamed: dim };
+      this.theme = { background: token("--bg", "#100e0e"), group: "#211c1b",
+        text: token("--text", "#f1eee5"), headFont: token("--font-head", "Oswald, sans-serif"),
+        monoFont: token("--font-mono", "Consolas, monospace") };
       this.viewport = this.$("progressMapViewport");
       this.tooltip = this.$("progressMapTooltip");
       this.highlight = this.$("mapHighlight");

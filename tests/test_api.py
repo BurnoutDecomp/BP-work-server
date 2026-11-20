@@ -70,6 +70,21 @@ def test_theme_color_reaches_link_previews_but_not_browsers(tmp_path):
     assert browser.headers["vary"] == "User-Agent"
 
 
+def test_shared_ui_library_is_revalidated_and_other_static_files_are_not(tmp_path):
+    client, _ = make_client(tmp_path)
+
+    module = client.get("/static/b5-ui/pager.js")
+    asset = client.get("/static/b5-ui/assets/seal-paradise-city.png")
+    app_css = client.get("/static/app.css?v=1")
+    again = client.get("/static/b5-ui/pager.js", headers={"If-None-Match": module.headers["etag"]})
+
+    assert module.status_code == 200 and module.headers["cache-control"] == "no-cache"
+    assert asset.status_code == 200 and asset.headers["cache-control"] == "no-cache"
+    assert app_css.status_code == 200 and "cache-control" not in app_css.headers
+    assert again.status_code == 304 and again.headers["cache-control"] == "no-cache"
+    assert client.get("/static/b5-ui/missing.js").status_code == 404
+
+
 def test_dashboard_snapshot_compression_preserves_data_and_skips_other_routes(tmp_path):
     client, _ = make_client(tmp_path)
     compressed = client.get("/dashboard/state", headers={"Accept-Encoding": "gzip"})
