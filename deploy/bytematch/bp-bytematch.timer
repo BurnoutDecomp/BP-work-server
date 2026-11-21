@@ -1,0 +1,10 @@
+[Unit]
+Description=Backstop for the byte-match runner: a request queued just as a run finished
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=10min
+Unit=bp-bytematch.service
+
+[Install]
+WantedBy=timers.target

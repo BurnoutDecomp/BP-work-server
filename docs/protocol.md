@@ -151,6 +151,25 @@ Lists workers (`token`, `username`, `active`, `is_admin`, `created_at`, `last_se
 
 Revokes a worker id (`204`; `404` if unknown). Revoked ids can no longer authenticate.
 
+### `POST /admin/bytematch/measure`  (admin)
+
+Body `{"sha": "<full x360 commit>"}`. Queues a byte-match measurement of that native commit
+for the root runner (`deploy/bytematch/README.md`) and answers its status: `202` when newly
+queued, `200` for one already queued, running or finished. A failed measurement, or one whose
+runner stopped, is queued again. Used by BP-Decomp_Workflow's `bytematch.yml`
+(`tools/bytematch/remote.py`).
+
+### `GET /admin/bytematch/measure/{sha}`  (admin)
+
+The status: `state` (`queued`, `running`, `done`, `failed`, `superseded` when the commit stopped
+being the tip of `x360` before it was measured), `progress`, `error`, and `result` (counts)
+once done. `404` for a commit never requested.
+
+### `GET /admin/bytematch/measure/{sha}/bundle`  (admin)
+
+The finished measurement as gzip-compressed JSON: the records whose result changed, the
+sources whose records go away, and `state.json`. `404` until the state is `done`.
+
 ### `GET /next?n=5&goal=boot-trace`
 
 Returns dependency-ranked `todo` TUs. If `goal` is omitted, the imported active goal

@@ -134,6 +134,10 @@ class SyncRequest(BaseModel):
     metadata_only: bool = False
 
 
+class BytematchMeasureRequest(BaseModel):
+    sha: str = Field(..., description="Full commit id on b5-decomp's x360 branch")
+
+
 class SyncResponse(ImportResponse):
     repo_url: str
     workflow_root: str
