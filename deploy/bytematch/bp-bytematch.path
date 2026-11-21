@@ -1,0 +1,9 @@
+[Unit]
+Description=Start the byte-match runner when the work server queues a measurement
+
+[Path]
+DirectoryNotEmpty=/var/lib/bp-work-server/bytematch/queue
+Unit=bp-bytematch.service
+
+[Install]
+WantedBy=paths.target

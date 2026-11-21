@@ -3,9 +3,12 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Query, status
+from fastapi.responses import FileResponse, JSONResponse
 
+from bp_work_server import bytematch_jobs
 from bp_work_server.dependencies import get_store, require_admin_worker
 from bp_work_server.models import (
+    BytematchMeasureRequest,
     ImportResponse,
     SyncRequest,
     SyncResponse,
@@ -128,3 +131,40 @@ def sync_workflow(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+
+# --- byte matching: CI asks the server to measure a native commit (bytematch_jobs) ---------
+@router.post("/bytematch/measure")
+def bytematch_measure(req: BytematchMeasureRequest, admin: str = Depends(require_admin_worker)) -> JSONResponse:
+    """Queue a measurement of one x360 commit; answers its status (202 when newly queued)."""
+    try:
+        current, queued = bytematch_jobs.request(req.sha, admin)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    if queued:
+        log.info("admin bytematch measure sha=%s by=%s", current["sha"], admin)
+    return JSONResponse(current, status_code=status.HTTP_202_ACCEPTED if queued else status.HTTP_200_OK)
+
+
+@router.get("/bytematch/measure/{sha}")
+def bytematch_measure_status(sha: str, _admin: str = Depends(require_admin_worker)) -> dict:
+    try:
+        current = bytematch_jobs.status(sha)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    if current is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no measurement of that commit")
+    return current
+
+
+@router.get("/bytematch/measure/{sha}/bundle")
+def bytematch_measure_bundle(sha: str, _admin: str = Depends(require_admin_worker)) -> FileResponse:
+    try:
+        path = bytematch_jobs.bundle(sha)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    if path is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no finished measurement of that commit")
+    return FileResponse(path, media_type="application/gzip", filename=f"bytematch-{sha[:12]}.json.gz")

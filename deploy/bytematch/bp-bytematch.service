@@ -1,0 +1,16 @@
+[Unit]
+Description=Byte-match runner: measure queued x360 commits (the XDK under Wine, in a container)
+Documentation=file:///opt/bp-work-server/deploy/bytematch/README.md
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/bp-bytematch/runner.py
+Environment=BP_BYTEMATCH_DIR=/var/lib/bp-work-server/bytematch
+Environment=BP_BYTEMATCH_PRIVATE=/var/lib/bp-bytematch
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=8h

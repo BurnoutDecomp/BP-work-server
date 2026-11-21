@@ -37,6 +37,14 @@ jobs:
             git submodule update --init --recursive --force
             # Reinstall in case dependencies or the package metadata changed.
             .venv/bin/pip install -e . --quiet
+            # The byte-match runner runs as root from its own copy, once it is set up
+            # (deploy/bytematch/README.md): refresh the copy and its units from this tree.
+            if [ -d /usr/local/lib/bp-bytematch ]; then
+              install -m 755 deploy/bytematch/runner.py /usr/local/lib/bp-bytematch/runner.py
+              install -m 644 deploy/bytematch/bp-bytematch.service deploy/bytematch/bp-bytematch.path \
+                deploy/bytematch/bp-bytematch.timer /etc/systemd/system/
+              systemctl daemon-reload
+            fi
             # The service runs as bpwork; keep the tree owned by it.
             chown -R bpwork:bpwork /opt/bp-work-server
             systemctl restart bp-work-server.service
