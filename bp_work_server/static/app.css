@@ -244,6 +244,27 @@ main a:not([class]):hover,
   font-size: 40px;
 }
 
+/* Side by side, the three columns tighten together as the window narrows (gutters, rings,
+   the gap between ring and text), so each headline total stays on one line. */
+@media (min-width: 1151px) {
+  .wp-metrics {
+    --b5-stat-gutter: clamp(12px, 1.1vw, 18px);
+  }
+
+  .wp-metric {
+    gap: clamp(12px, 1.1vw, 18px);
+  }
+
+  .wp-metric .wp-ring {
+    width: clamp(108px, 8.6vw, 124px);
+    height: clamp(108px, 8.6vw, 124px);
+  }
+
+  .wp-metric .wp-ring .b5-ring__label strong {
+    font-size: clamp(26px, 2.1vw, 30px);
+  }
+}
+
 .metric-total {
   margin-top: 2px;
   color: var(--text);
@@ -2893,7 +2914,7 @@ html::-webkit-scrollbar-corner,
     row-gap: 22px;
   }
   .wp-metrics > .b5-stat {
-    padding-left: 0;
+    padding-inline: 0;
     border-right: 0;
   }
   .wp-metrics > .b5-stat + .b5-stat {
