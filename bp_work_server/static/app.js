@@ -926,6 +926,28 @@ function downloadView(b, builds) {
   };
 }
 
+// The hero centres its copy against the build panel beside it, and a download chooser that
+// opens in place (lanes under a sign, a drawer under a bar) makes that panel taller, which
+// would carry the copy down by half the growth. Hold it where it stood while the chooser was
+// closed: note its place before the chooser reacts (capture phase), then cancel any drift as
+// the panel grows and shrinks. Stacked on a phone, the panel grows below and nothing moves.
+function holdHeroCopy() {
+  const copy = document.querySelector(".wp-hero .b5-hero__copy");
+  const slot = el("downloadSlot");
+  if (!copy || !slot) return;
+  let rest = null;
+  const note = () => {
+    if (!state.download || !state.download.opened) rest = copy.offsetTop;
+  };
+  slot.addEventListener("click", note, true);
+  slot.addEventListener("keydown", note, true);
+  new ResizeObserver(() => {
+    const drift = rest === null ? 0 : copy.offsetTop - rest;
+    copy.style.translate = drift ? `0 ${-drift}px` : "";
+    if (!drift && !(state.download && state.download.opened)) rest = null;
+  }).observe(slot);
+}
+
 // Draw the download control once, then keep it current: a new build redraws it; a new count
 // or age changes in place, and an open chooser (with any quota note in it) is left alone
 // unless the build changed.
@@ -2746,6 +2768,7 @@ refresh();
 connectStream();
 refreshGithub();
 refreshDownload();
+holdHeroCopy();
 initExplorer();
 initEvidence();
 initMiniPanels();
