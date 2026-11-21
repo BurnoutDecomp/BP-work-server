@@ -879,19 +879,11 @@ async function refreshGithub() {
   }
 }
 
+// The odometer in the tachometer pod carries the figure for the eye; refreshDownload puts it
+// in words in the button's name.
 function setDownloadCount(n) {
-  const counter = el("downloadCount");
-  if (!counter) return;
-  if (n == null) {
-    counter.hidden = true;
-    return;
-  }
-  // the drums carry the figure for the eye, the hidden number for everyone else
-  const num = counter.querySelector(".dc-num");
-  if (num) num.textContent = fmtInt(n);
-  setOdometer(el("downloadOdometer"), n, { digits: 3 });
-  counter.title = `${fmtInt(n)} downloader${n === 1 ? "" : "s"} (unique addresses per day; the full game and the update each count once)`;
-  counter.hidden = false;
+  const odometer = el("downloadOdometer");
+  if (odometer) setOdometer(odometer, Number(n || 0), { digits: 3 });
 }
 
 async function refreshDownload() {
@@ -913,14 +905,21 @@ async function refreshDownload() {
     const commit = latest.commit_short || String(latest.commit_sha || "").slice(0, 12);
     text("downloadPlateNumber", commit.slice(0, 7).toUpperCase());
     el("downloadPlate").hidden = !commit;
-    text("downloadCommit", commit ? `commit ${commit}, ` : "");
+    text("downloadBadge", latest.id != null ? `No. ${latest.id}` : "");
+    const downloads = Number(latest.downloads || 0);
+    // said before the details: "number 179, commit 3add8adc5a37, 1 download, 2h ago · 4.69 GB"
+    text("downloadCommit", [
+      latest.id != null ? `number ${latest.id}` : "",
+      commit ? `commit ${commit}` : "",
+      `${fmtInt(downloads)} download${downloads === 1 ? "" : "s"}`,
+    ].filter(Boolean).join(", ") + ", ");
     const parts = [];
-    if (latest.id != null) parts.push(`No. ${latest.id}`);
     if (latest.built_at) parts.push(relTime(latest.built_at));
     if (latest.size_bytes) parts.push(fmtBytes(latest.size_bytes));
     text("downloadMeta", parts.join(" · ") || "latest");
     button.title = `Download build ${latest.commit_short || latest.commit_sha}: full game (${fmtBytes(latest.size_bytes)})` +
-      (latest.update_url ? ` or the exe-only update (${fmtBytes(latest.bundle_size)})` : "");
+      (latest.update_url ? ` or the exe-only update (${fmtBytes(latest.bundle_size)})` : "") +
+      `. ${fmtInt(latest.downloads || 0)} downloads: unique addresses per day; the full game and the update each count once.`;
     setDownloadCount(latest.downloads || 0);
     // leave an open chooser (and any quota note in it) alone unless the build changed
     if (changed || !el("downloadMenu").matches(":popover-open")) renderDownloadMenu();

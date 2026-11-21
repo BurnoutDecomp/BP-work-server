@@ -120,9 +120,11 @@
               <span class="b5-connection__kicker">THE LATEST PC BUILD</span>
               <span id="connection" class="b5-status" data-tone="warning"><span id="connectionText">Connecting</span></span>
             </div>
-            <!-- Download build: the chooser offers the full game or the exe-only update.
-                 Change the artwork with data-skin: asphalt · streak · skyline · tireburn · torn · split. -->
-            <div id="downloadGroup" class="b5-download-group" data-b5-download-menu hidden>
+            <!-- Download build, an instrument cluster: a tachometer pod (the build's number on its
+                 face, its downloads on the odometer) and the bar that runs out of it; the eye is
+                 the knob on the pod's rim. The chooser offers the full game or the exe-only update.
+                 Change the bar's artwork with data-skin: asphalt · streak · skyline · tireburn · torn · split. -->
+            <div id="downloadGroup" class="b5-download-group b5-download-group--cluster" data-b5-download-menu hidden>
               <button
                 id="downloadBuild"
                 class="b5-download"
@@ -133,6 +135,9 @@
                 title="Download the latest build"
               >
                 <span class="b5-download__boost" aria-hidden="true"></span>
+                <span class="b5-gauge" data-b5-gauge aria-hidden="true">
+                  <span id="downloadBadge" class="b5-gauge__badge"></span><span id="downloadOdometer" class="b5-odometer"></span><span class="b5-gauge__unit">Downloads</span>
+                </span>
                 <svg class="b5-icon" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M12 3v12" /><path d="m7 11 5 5 5-5" /><path d="M4 21h16" />
                 </svg>
@@ -147,9 +152,6 @@
                   </span>
                 </span>
               </button>
-              <span id="downloadCount" class="b5-download-counter" title="Total downloads" hidden>
-                <span id="downloadOdometer" class="b5-odometer"></span><span class="b5-sr-only dc-num">0</span><small>Downloads</small>
-              </span>
               <button
                 id="downloadPreview"
                 class="b5-download-preview"
@@ -749,6 +751,6 @@
 
     <script src="/static/d3-hierarchy.min.js?v=3.1.2" defer></script>
     <script src="/static/progress-map.js?v=5" defer></script>
-    <script type="module" src="/static/app.js?v=53"></script>
+    <script type="module" src="/static/app.js?v=54"></script>
   </body>
 </html>
