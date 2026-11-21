@@ -983,12 +983,6 @@ async function refreshDownload() {
     } else if (changed || !state.download.opened) {
       state.download.update(view);
     }
-    const button = state.download.element;
-    if (button) {
-      button.title = `Download build ${latest.commit_short || latest.commit_sha}: full game (${fmtBytes(latest.size_bytes)})` +
-        (latest.update_url ? ` or the exe-only update (${fmtBytes(latest.bundle_size)})` : "") +
-        `. ${fmtInt(latest.downloads || 0)} downloads: unique addresses per day; the full game and the update each count once.`;
-    }
     slot.hidden = false;
   } catch (error) {
     // No builds published yet (or endpoint unavailable): keep the control hidden.
