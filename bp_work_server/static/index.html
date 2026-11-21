@@ -50,7 +50,7 @@
     <link rel="icon" type="image/svg+xml" href="/static/b5-ui/assets/favicon.svg" />
     <link rel="preload" href="/static/b5-ui/assets/anton-latin.ttf" as="font" type="font/ttf" crossorigin />
     <link rel="stylesheet" href="/static/b5-ui/b5-ui.css?v=0.2.0" />
-    <link rel="stylesheet" href="/static/app.css?v=56" />
+    <link rel="stylesheet" href="/static/app.css?v=57" />
   </head>
   <body class="b5-page">
     <a class="b5-skip-link" href="#progress">Skip to progress</a>
@@ -534,6 +534,13 @@
                 <tbody id="activeWork"></tbody>
               </table>
             </div>
+            <!-- Shown instead of the table while nothing is claimed. -->
+            <div id="activeWorkEmpty" class="b5-empty b5-empty--illustrated active-empty" hidden>
+              <span class="b5-empty__symbol b5-empty__symbol--diamond" aria-hidden="true"></span>
+              <h4>Engines off. Garage open.</h4>
+              <p>No one has a unit claimed right now. Agents claim work from the next queue, and each claim shows up here with its lease.</p>
+              <a class="b5-link" href="#next-title">See the next queue ↓</a>
+            </div>
           </section>
 
           <section class="b5-card wp-card next-work" aria-labelledby="next-title">
@@ -715,11 +722,15 @@
 
     <!-- TU detail drawer: the data the server hands to agents. The shared native drawer
          owns opening, focus and Escape; app.js owns its TU/profile/goal history. -->
-    <dialog id="detailDialog" class="b5-dialog b5-dialog--drawer b5-dialog--ink wp-drawer" aria-labelledby="detailTitle" data-b5-density="compact">
+    <dialog id="detailDialog" class="b5-dialog b5-dialog--drawer b5-dialog--ink wp-drawer" aria-labelledby="detailKind detailTitle" data-b5-density="compact">
       <div class="b5-dialog__header">
         <div class="drawer-titlebar">
           <button id="detailBack" class="b5-back" type="button" aria-label="Go back" hidden>Back</button>
-          <h2 id="detailTitle">Translation Unit</h2>
+          <!-- the kind of view on the red paint, the name it shows under it -->
+          <div class="drawer-heading">
+            <span class="b5-dialog__kind" id="detailKind">Translation unit</span>
+            <h2 id="detailTitle">—</h2>
+          </div>
         </div>
         <button id="detailClose" class="b5-icon-button b5-close--game" type="button" aria-label="Close">✕</button>
       </div>
@@ -728,6 +739,6 @@
 
     <script src="/static/d3-hierarchy.min.js?v=3.1.2" defer></script>
     <script src="/static/progress-map.js?v=5" defer></script>
-    <script type="module" src="/static/app.js?v=50"></script>
+    <script type="module" src="/static/app.js?v=51"></script>
   </body>
 </html>

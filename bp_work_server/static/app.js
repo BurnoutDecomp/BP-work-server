@@ -515,16 +515,11 @@ function renderActiveWork(items) {
   text("activeWorkCount", `${items.length} TUs`);
   const body = el("activeWork");
   clearNode(body);
-  if (!items.length) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = 4;
-    cell.className = "empty";
-    cell.textContent = "No active claims.";
-    row.appendChild(cell);
-    body.appendChild(row);
-    return;
-  }
+  // With nothing claimed, the card shows its empty-garage panel instead of the table.
+  const table = body.closest(".table-wrap");
+  if (table) table.hidden = !items.length;
+  if (el("activeWorkEmpty")) el("activeWorkEmpty").hidden = Boolean(items.length);
+  if (!items.length) return;
   for (const item of items) {
     const row = document.createElement("tr");
     row.className = "clickable";
@@ -1101,14 +1096,14 @@ async function openBuildContents(buildId) {
   state.detailNav.current = { type: "build", id: buildId };
   showDetailOverlay();
   updateDetailBack();
-  text("detailTitle", "Build contents");
+  drawerTitle("Build contents", "Latest PC build");
   const body = el("detailBody");
   body.innerHTML = '<p class="muted-text">Reading zip…</p>';
   try {
     const data = await fetchJson(`/api/builds/${buildId}/contents`, 20000);
     clearNode(body);
+    drawerTitle("Build contents", data.filename);
     const summary = div("zip-summary");
-    summary.appendChild(span("zip-summary-file", data.filename));
     summary.appendChild(
       span(
         "zip-summary-meta",
@@ -1863,7 +1858,7 @@ async function openDetail(tuId, options = {}) {
     : { type: "tu", id: tuId };
   setCurrentDetail(entry, options);
   showDetailOverlay();
-  text("detailTitle", options.functionName ? `Function: ${options.functionName}` : tuId);
+  drawerTitle(options.functionName ? "Function" : "Translation unit", options.functionName || tuId);
   el("detailBody").innerHTML = '<p class="muted-text">Loading…</p>';
   try {
     const detail = await fetchJson(`/api/tu?id=${encodeURIComponent(tuId)}`, 15000);
@@ -1874,7 +1869,7 @@ async function openDetail(tuId, options = {}) {
     else {
       if (options.functionName) {
         setCurrentDetail({ type: "tu", id: tuId }, { push: false });
-        text("detailTitle", tuId);
+        drawerTitle("Translation unit", tuId);
       }
       renderDetail(detail);
     }
@@ -1888,7 +1883,7 @@ async function openDetail(tuId, options = {}) {
 async function openGoalDetail(goalName, options = {}) {
   setCurrentDetail({ type: "goal", id: goalName }, options);
   showDetailOverlay();
-  text("detailTitle", `Goal: ${goalName}`);
+  drawerTitle("Goal", goalName);
   el("detailBody").innerHTML = '<p class="muted-text">Loading...</p>';
   try {
     renderGoalDetail(await fetchJson(`/api/goal?name=${encodeURIComponent(goalName)}`, 15000));
@@ -1901,14 +1896,14 @@ async function openGoalDetail(goalName, options = {}) {
 function openFunctionDetail(tu, fn, options = {}) {
   setCurrentDetail({ type: "func", name: fn.name, tuId: tu.id, tu, fn }, options);
   showDetailOverlay();
-  text("detailTitle", `Function: ${fn.name}`);
+  drawerTitle("Function", fn.name);
   renderFunctionDetail(tu, fn);
 }
 
 async function openProfile(name, githubUsername, options = {}) {
   setCurrentDetail({ type: "profile", name, githubUsername }, options);
   showDetailOverlay();
-  text("detailTitle", `Profile: ${name}`);
+  drawerTitle("Profile", name);
   el("detailBody").innerHTML = '<p class="muted-text">Loading...</p>';
   try {
     const profile = await fetchJson(`/api/profile?name=${encodeURIComponent(name)}`, 15000);
@@ -1918,7 +1913,7 @@ async function openProfile(name, githubUsername, options = {}) {
       name: profile.name,
       githubUsername: profile.github_username || githubUsername,
     };
-    text("detailTitle", `Profile: ${profile.name}`);
+    drawerTitle("Profile", profile.name);
     renderProfileDetail(profile);
   } catch (error) {
     el("detailBody").innerHTML = "";
@@ -1937,9 +1932,15 @@ function closeDetail() {
   }
 }
 
+// The drawer's header: the kind of view on the red paint, the name it shows under it.
+function drawerTitle(kind, name) {
+  text("detailKind", kind);
+  text("detailTitle", name);
+}
+
 function detailSection(title) {
   const wrap = div("detail-section");
-  wrap.appendChild(div("detail-section-title", title));
+  wrap.appendChild(div("detail-section-title b5-drawer-heading", title));
   return wrap;
 }
 
@@ -2038,10 +2039,9 @@ function renderFunctionDetail(tu, fn) {
   body.appendChild(related);
 }
 
+// The shared summary tile, which leans inside the drawer.
 function profileMetric(label, value, meta) {
-  const node = div("profile-metric");
-  node.appendChild(div("profile-metric-value", value));
-  node.appendChild(div("profile-metric-label", label));
+  const node = summaryTile(value, label, "compiled");
   if (meta) node.appendChild(div("tu-meta", meta));
   return node;
 }
@@ -2630,7 +2630,7 @@ function fileRepoLink(file) {
 async function openAuditFile(file, options = {}) {
   setCurrentDetail({ type: "audit", id: file }, options);
   showDetailOverlay();
-  text("detailTitle", `Audit: ${file}`);
+  drawerTitle("Console audit", file);
   el("detailBody").innerHTML = '<p class="muted-text">Loading…</p>';
   try {
     renderAuditFile(await fetchJson(`/api/audit/functions?file=${encodeURIComponent(file)}`, 15000));
@@ -2643,7 +2643,7 @@ async function openAuditFile(file, options = {}) {
 async function openStubFile(file, options = {}) {
   setCurrentDetail({ type: "stubs", id: file }, options);
   showDetailOverlay();
-  text("detailTitle", `Stubs: ${file}`);
+  drawerTitle("Stubs", file);
   el("detailBody").innerHTML = '<p class="muted-text">Loading…</p>';
   try {
     renderStubFile(await fetchJson(`/api/stubs?file=${encodeURIComponent(file)}`, 15000));
@@ -2673,10 +2673,12 @@ function renderAuditFile(data) {
   body.innerHTML = "";
   const rollup = data.rollup || {};
 
-  const banner = div("detail-banner");
-  banner.appendChild(span("tag goal-tag", "console audit"));
-  if (data.tu_id) banner.appendChild(tuButton(data.tu_id, "tag goal-tag"));
-  body.appendChild(banner);
+  // the header already says "Console audit"; the banner keeps the unit's link
+  if (data.tu_id) {
+    const banner = div("detail-banner");
+    banner.appendChild(tuButton(data.tu_id, "tag goal-tag"));
+    body.appendChild(banner);
+  }
 
   const facts = detailSection("Overview");
   facts.appendChild(kv("File", fileRepoLink(data.file)));
@@ -2788,7 +2790,7 @@ function renderStubFile(data) {
 async function openAsmFile(file, options = {}) {
   setCurrentDetail({ type: "asm", id: file }, options);
   showDetailOverlay();
-  text("detailTitle", `Instruction shape: ${file}`);
+  drawerTitle("Instruction shape", file);
   el("detailBody").innerHTML = '<p class="muted-text">Loading\u2026</p>';
   try {
     renderAsmFile(await fetchJson(`/api/asm/functions?file=${encodeURIComponent(file)}`, 15000));
@@ -3012,7 +3014,7 @@ function tuAuditSection(d) {
   const asmNames = Object.keys(asm).sort((a, b) =>
     (asm[a].score == null ? 101 : asm[a].score) - (asm[b].score == null ? 101 : asm[b].score));
   if (asmNames.length) {
-    const sub = div("detail-section-title");
+    const sub = div("detail-section-title b5-drawer-heading");
     const r = audit.asm_rollup || {};
     sub.textContent = `Instruction shape (${fmtInt(asmNames.length)} of this TU's functions in the built exe` +
       (r.functions ? `; file: ${fmtInt(r.a || 0)} A, ${fmtInt(r.b || 0)} B, ${fmtInt(r.c || 0)} C` : "") + ")";
@@ -3022,7 +3024,7 @@ function tuAuditSection(d) {
     if (asmNames.length > 40) section.appendChild(div("audit-meta", `${fmtInt(asmNames.length - 40)} more in the file's instruction-shape view.`));
   }
   if (stubs.length) {
-    const sub = div("detail-section-title");
+    const sub = div("detail-section-title b5-drawer-heading");
     sub.textContent = `Stubs in this file (${fmtInt(stubs.length)})`;
     sub.style.marginTop = "14px";
     section.appendChild(sub);
