@@ -84,7 +84,7 @@ html {
 
 /* Boards follow one another, and the section's introduction, with room to breathe. */
 .wp-body > .b5-panel--board,
-.wp-body > .vp-grid + .b5-panel--board {
+.wp-body > .bm-overview + .b5-panel--board {
   margin-top: 28px;
 }
 
@@ -1269,12 +1269,106 @@ main a:not([class]):hover,
   font-size: 0.92em;
 }
 
-/* top-aligned: the ring follows its introduction rather than floating mid-row */
-.vp-grid {
+/* ---------- Byte matching: the overview ---------- */
+/* The measure, its ring and the facts on the left; how it moved and what matched last
+   on the right, from the top of the section. */
+.bm-overview {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.25fr);
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 28px 40px;
+  align-items: start;
+}
+
+.bm-main {
+  display: grid;
+  gap: 28px;
+  min-width: 0;
+}
+
+.bm-intro .metric-total {
+  font-size: 34px;
+}
+
+/* top-aligned: the ring follows its introduction rather than floating mid-row */
+.bm-ring-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 28px;
   align-items: start;
+}
+
+/* Beside the ring, its states one to a line: the left column is narrower than the row. */
+.bm-ring-row .vp-legend .legend {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 420px;
+}
+
+/* The facts under the ring: three shares with their bars, the counts below them. */
+.bm-facts {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.bm-fact {
+  grid-column: span 2;
+  min-width: 0;
+  padding: 14px 16px 15px;
+  color: var(--text);
+}
+
+.bm-fact strong {
+  font-size: 32px;
+  line-height: 1.1;
+}
+
+/* two lines for every label, so the three bars line up */
+.bm-fact:not(.bm-fact--count) > span:first-of-type {
+  min-height: 2.5em;
+}
+
+.bm-fact .b5-meter__bar {
+  --b5-meter-color: var(--b5-tone);
+  margin-top: 13px;
+}
+
+.bm-fact__detail {
+  display: block;
+  margin-top: 9px;
+  color: var(--faint);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+/* a count: its figure beside the label and the line behind it */
+.bm-fact--count {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 16px;
+  grid-column: span 3;
+}
+
+.bm-fact--count strong {
+  grid-row: span 2;
+  min-width: 1.1em;
+  font-size: 36px;
+}
+
+.bm-fact--count > span {
+  margin-top: 0;
+}
+
+.bm-fact--count .bm-fact__detail {
+  margin-top: 4px;
+}
+
+.bm-facts[data-counts="3"] .bm-fact--count {
+  grid-column: span 2;
+}
+
+.bm-facts[data-counts="1"] .bm-fact--count {
+  grid-column: 1 / -1;
 }
 
 .vp-legend .legend {
@@ -1317,38 +1411,6 @@ main a:not([class]):hover,
 
 .vp-block > .b5-card__title {
   margin-bottom: 10px;
-}
-
-/* the facts row at the top right: shared summary tiles */
-/* as many tiles per row as fit, so four or five facts share one row */
-.vp-facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
-  gap: 10px;
-  align-content: start;
-  width: min(100%, 640px);
-  flex-shrink: 0;
-}
-
-.vp-facts > .b5-ribbon {
-  grid-column: 1 / -1;
-  justify-self: end;
-  margin-bottom: 2px;
-}
-
-.vp-facts .b5-summary {
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.12s ease;
-}
-
-.vp-facts .b5-summary:hover {
-  background: var(--surface-hover);
-}
-
-.vp-facts .b5-summary strong {
-  font-size: 22px;
 }
 
 .vp-history {
@@ -2541,20 +2603,20 @@ html::-webkit-scrollbar-corner,
 }
 
 @container wp-sections (max-width: 1086px) {
-  /* the facts take the full width under the introduction */
   .vp-head {
     flex-direction: column;
     align-items: stretch;
   }
-  .vp-grid {
-    grid-template-columns: auto minmax(0, 1fr);
+  /* byte matching: one column, the chart beside the recent matches under it */
+  .bm-overview {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .vp-side {
-    grid-column: 1 / -1;
+  .bm-recent li:nth-child(n + 6) {
+    display: none;
+  }
+  .bm-side {
     grid-template-columns: 1fr 1fr;
-  }
-  .vp-facts {
-    width: 100%;
+    align-items: start;
   }
 }
 
@@ -2562,8 +2624,8 @@ html::-webkit-scrollbar-corner,
   .gh-body {
     grid-template-columns: 1fr;
   }
-  .vp-grid,
-  .vp-side {
+  .bm-ring-row,
+  .bm-side {
     grid-template-columns: 1fr;
   }
   .vp-legend .legend {
@@ -2573,11 +2635,23 @@ html::-webkit-scrollbar-corner,
     flex-direction: column;
     align-items: flex-start;
   }
-  .vp-facts {
+}
+
+/* Phones: each share across the width, the counts two to a row, figure above label. */
+@container wp-sections (max-width: 560px) {
+  .bm-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .vp-facts > .b5-ribbon {
-    justify-self: start;
+  .bm-fact {
+    grid-column: 1 / -1;
+  }
+  .bm-facts .bm-fact--count,
+  .bm-facts[data-counts] .bm-fact--count {
+    display: block;
+    grid-column: auto;
+  }
+  .bm-fact--count > span {
+    margin-top: 4px;
   }
 }
 

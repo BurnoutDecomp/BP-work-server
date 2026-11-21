@@ -3867,6 +3867,7 @@ function renderBytematch(s) {
       meter.querySelector("[data-b5-progress-label]").textContent = "not measured yet";
     }
     clearNode(el("bytematchFacts"));
+    if (el("bytematchStamp")) el("bytematchStamp").hidden = true;
     renderBytematchHistory([]);
     renderBytematchRecent([]);
     renderBytematchAreas([]);
@@ -3894,43 +3895,64 @@ function renderBytematchFacts(s) {
   clearNode(host);
   const meta = s.meta || {};
   const objects = (s.totals || {}).objects || {};
-  if (meta.b5_commit) {
-    const b = span("b5-ribbon b5-ribbon--gold", `x360 ${String(meta.b5_commit).slice(0, 10)} · ${relTime(meta.generated_at)}`);
-    b.title = `summary built ${fmtTime(meta.generated_at)}${meta.toolchain ? ` · ${meta.toolchain}` : ""}`;
-    host.appendChild(b);
+  // the summary's commit and age, at the right of the section's header
+  const stamp = el("bytematchStamp");
+  if (stamp) {
+    stamp.hidden = !meta.b5_commit;
+    if (meta.b5_commit) {
+      stamp.textContent = `x360 ${String(meta.b5_commit).slice(0, 10)} · ${relTime(meta.generated_at)}`;
+      stamp.title = `summary built ${fmtTime(meta.generated_at)}${meta.toolchain ? ` · ${meta.toolchain}` : ""}`;
+    }
   }
-  const fact = (n, label, title, cls, onClick) => {
-    const c = summaryTile(n, label, cls, "button");
-    c.type = "button";
-    if (title) c.title = title;
-    if (onClick) c.addEventListener("click", onClick);
-    host.appendChild(c);
+  // A fact: its figure and label, then (for a share) a car-stat bar, and the counts
+  // behind it in a line; the title keeps the longer explanation.
+  const fact = (value, label, detail, title, kind, share) => {
+    const tile = summaryTile(value, label, kind);
+    tile.classList.add("bm-fact");
+    if (share == null) tile.classList.add("bm-fact--count");
+    else {
+      const bar = span("b5-meter__bar");
+      bar.setAttribute("aria-hidden", "true");
+      bar.style.setProperty("--b5-meter", String(Math.max(0, Math.min(100, share)) / 100));
+      tile.appendChild(bar);
+    }
+    const note = document.createElement("small");
+    note.className = "bm-fact__detail";
+    note.textContent = detail;
+    tile.appendChild(note);
+    if (title) tile.title = title;
+    host.appendChild(tile);
   };
-  const pctOf = (k) => `${Number((s.percent || {})[k] || 0).toFixed(2)}%`;
+  const pct = (k) => Number((s.percent || {})[k] || 0);
+  const pctOf = (k) => `${pct(k).toFixed(2)}%`;
+  const all = (s.totals || {}).all || {};
   const game = (s.totals || {}).game || {};
   const sdk = (s.totals || {}).sdk || {};
-  fact(pctOf("image_bytes"), "of the image's code bytes match",
-    `By size instead of count: ${fmtInt((s.totals.all || {}).matched_bytes)} of ${fmtInt((s.totals.all || {}).bytes)} bytes of code, ` +
-    "exact functions of ours plus XDK library code.", "done");
-  fact(pctOf("exact_functions"), "of our functions exact",
+  fact(pctOf("image_bytes"), "of the image's code bytes match", `${fmtInt(all.matched_bytes)} of ${fmtInt(all.bytes)} bytes`,
+    `By size instead of count: ${fmtInt(all.matched_bytes)} of ${fmtInt(all.bytes)} bytes of code, ` +
+    "exact functions of ours plus XDK library code.", "done", pct("image_bytes"));
+  fact(pctOf("exact_functions"), "of our functions exact", `${fmtInt(game.exact)} of ${fmtInt(game.functions)} functions · ${pctOf("exact_bytes")} by size`,
     `${fmtInt(game.exact)} of the ${fmtInt(game.functions)} functions we compile from source (the image minus ` +
-    `${fmtInt(sdk.functions)} XDK library functions and the unnamed ones). By size: ${pctOf("exact_bytes")} of their code.`, "compiled");
-  fact(pctOf("fuzzy_bytes"), "fuzzy match of our code",
-    "How close our compiled code is overall: each function's fuzzy instruction score weighted by its size (exact = 100%, no body = 0%).", "progress");
+    `${fmtInt(sdk.functions)} XDK library functions and the unnamed ones). By size: ${pctOf("exact_bytes")} of their code.`, "compiled", pct("exact_functions"));
+  fact(pctOf("fuzzy_bytes"), "fuzzy match of our code", "instruction score, weighted by size",
+    "How close our compiled code is overall: each function's fuzzy instruction score weighted by its size (exact = 100%, no body = 0%).", "progress", pct("fuzzy_bytes"));
   if (objects.sources) {
-    fact(fmtInt(objects.sources - (objects.compiled || 0)), "objects fail to compile",
+    fact(fmtInt(objects.sources - (objects.compiled || 0)), "objects fail to compile", `of ${fmtInt(objects.sources)} native sources measured`,
       `${fmtInt(objects.sources)} native sources measured; these failed the XDK compile.`, "blocked");
   }
   if (objects.stale) {
-    fact(fmtInt(objects.stale), "measured before a source change",
+    fact(fmtInt(objects.stale), "measured before a source change", "their verdicts stand until the next measurement",
       "Records whose source file changed on the branch since it was measured. Their verdicts stand until the next measurement.", "todo");
   }
   if (meta.verified_commit) {
     const behind = meta.behind;
     fact(behind == null ? "?" : fmtInt(behind), "commits since the last full refresh",
+      `every record proven at x360 ${String(meta.verified_commit).slice(0, 10)}${meta.verified_at ? ` · ${relTime(meta.verified_at)}` : ""}`,
       `Every record was last proven current at x360 ${String(meta.verified_commit).slice(0, 10)}${meta.verified_at ? ` (${fmtTime(meta.verified_at)})` : ""}.`,
       behind ? "todo" : "compiled");
   }
+  // two or three counts share the row under the shares
+  host.dataset.counts = String(host.querySelectorAll(".bm-fact--count").length);
 }
 
 function renderBytematchHistory(history) {
@@ -4013,7 +4035,8 @@ function renderBytematchRecent(recent) {
     host.appendChild(div("muted-text", "No function has matched yet."));
     return;
   }
-  for (const r of recent.slice(0, 5)) {
+  // seven beside the ring and its facts; the narrower layouts show five (app.css)
+  for (const r of recent.slice(0, 7)) {
     const li = document.createElement("li");
     li.appendChild(span("top-n", fmtCompact(r.size)));
     const body = div("");

@@ -50,7 +50,7 @@
     <link rel="icon" type="image/svg+xml" href="/static/b5-ui/assets/favicon.svg" />
     <link rel="preload" href="/static/b5-ui/assets/anton-latin.ttf" as="font" type="font/ttf" crossorigin />
     <link rel="stylesheet" href="/static/b5-ui/b5-ui.css?v=0.2.0" />
-    <link rel="stylesheet" href="/static/app.css?v=55" />
+    <link rel="stylesheet" href="/static/app.css?v=56" />
   </head>
   <body class="b5-page">
     <a class="b5-skip-link" href="#progress">Skip to progress</a>
@@ -326,28 +326,34 @@
             <div class="b5-eyebrow">XBOX 360 / THE XDK AGAINST ARTIST</div>
             <h2 class="b5-heading" id="bytematch-title">Byte matching<span class="b5-accent">.</span></h2>
           </div>
+          <!-- the x360 commit and age of the summary the panel shows -->
+          <span id="bytematchStamp" class="b5-ribbon b5-ribbon--gold" hidden></span>
         </div>
         <div class="wp-body bytematch-panel" id="bytematchCard" aria-label="Byte matching">
-          <div class="vp-head">
-            <div>
-              <div class="metric-total" id="bytematchCount">&middot;</div>
-              <p class="vp-intro">The native Xbox 360 tree (b5-decomp <code>x360</code>) compiled with the console's own XDK compiler and compared with the shipped game, function by function. Exact means the same bytes outside the fields the linker fills in, with the same callees and constants. Contributors measure where the XDK is installed; every push to the branch or to the records refreshes this panel.</p>
+          <!-- The measure, its ring and the facts on the left; how it moved and what matched
+               last on the right, from the top. -->
+          <div class="bm-overview">
+            <div class="bm-main">
+              <div class="bm-intro">
+                <div class="metric-total" id="bytematchCount">&middot;</div>
+                <p class="vp-intro">The native Xbox 360 tree (b5-decomp <code>x360</code>) compiled with the console's own XDK compiler and compared with the shipped game, function by function. Exact means the same bytes outside the fields the linker fills in, with the same callees and constants. Contributors measure where the XDK is installed; every push to the branch or to the records refreshes this panel.</p>
+              </div>
+              <div class="bm-ring-row">
+                <div class="b5-ring wp-ring big" id="bytematchRing">
+                  <svg viewBox="0 0 120 120" aria-hidden="true">
+                    <circle class="b5-ring__track" cx="60" cy="60" r="52" />
+                    <g class="ring-segments"></g>
+                  </svg>
+                  <span class="b5-ring__label"><strong id="bytematchPercent">0%</strong><small>functions match</small></span>
+                </div>
+                <div class="vp-legend">
+                  <div class="legend" id="bytematchLegend"></div>
+                  <small class="vp-hint">The ring is every function of ARTIST. A function matches when it is exact (compiled from our source, byte for byte) or comes from an XDK library (linked, byte-identical). The facts below give the same by code size and for our source alone. Click a state to list its functions.</small>
+                </div>
+              </div>
+              <div class="bm-facts" id="bytematchFacts" role="group" aria-label="Byte-match facts"></div>
             </div>
-            <div class="vp-facts" id="bytematchFacts" aria-label="Byte-match facts"></div>
-          </div>
-          <div class="vp-grid">
-            <div class="b5-ring wp-ring big" id="bytematchRing">
-              <svg viewBox="0 0 120 120" aria-hidden="true">
-                <circle class="b5-ring__track" cx="60" cy="60" r="52" />
-                <g class="ring-segments"></g>
-              </svg>
-              <span class="b5-ring__label"><strong id="bytematchPercent">0%</strong><small>functions match</small></span>
-            </div>
-            <div class="vp-legend">
-              <div class="legend" id="bytematchLegend"></div>
-              <small class="vp-hint">The ring is every function of ARTIST. A function matches when it is exact (compiled from our source, byte for byte) or comes from an XDK library (linked, byte-identical). The facts above give the same by code size and for our source alone. Click a state to list its functions.</small>
-            </div>
-            <div class="vp-side">
+            <div class="vp-side bm-side">
               <div class="b5-card b5-card--compact vp-block">
                 <h3 class="b5-card__title">Functions over published summaries</h3>
                 <div id="bytematchHistory" class="vp-history"></div>
@@ -722,6 +728,6 @@
 
     <script src="/static/d3-hierarchy.min.js?v=3.1.2" defer></script>
     <script src="/static/progress-map.js?v=5" defer></script>
-    <script type="module" src="/static/app.js?v=49"></script>
+    <script type="module" src="/static/app.js?v=50"></script>
   </body>
 </html>
