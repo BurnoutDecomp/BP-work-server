@@ -1,0 +1,1351 @@
+/* ============================================================
+   The dashboard on a phone. index.html loads this sheet for windows up to 680 px wide,
+   after app.css, so each rule here replaces the wider layout's rule of the same name.
+   The same page, packed for the width: smaller type, figures and rings; controls that
+   stay one row and slide sideways when they run long; short pages of a list instead of
+   scrolling boxes inside the page; and the long explanations folded to their first lines
+   (app.js adds the button that opens them).
+   ============================================================ */
+
+/* ---------- Page ---------- */
+.b5-shell {
+  width: calc(100% - 28px);
+}
+
+/* a section the navigation jumps to lands just under the header's one remaining row */
+html:has(.b5-site-header) {
+  scroll-padding-top: 52px;
+}
+
+/* The library raises compact controls to 44 px on a touch screen. 36 px is still a
+   comfortable target, with room between targets, and stops every row reading as a button. */
+.wp-main,
+.wp-drawer {
+  --b5-control-height: 36px;
+}
+
+.wp-main .b5-panel__header,
+.wp-main .b5-panel__body {
+  --b5-panel-padding: 12px;
+}
+
+.wp-main {
+  padding-bottom: 28px;
+}
+
+.wp-section {
+  margin-top: 34px;
+  padding-top: 22px;
+  font-size: 13px;
+}
+
+.wp-section::before {
+  width: 96px;
+}
+
+.wp-sections > .wp-section:first-child {
+  margin-top: 30px;
+}
+
+.wp-body > .b5-panel--board,
+.wp-body > .bm-overview + .b5-panel--board {
+  margin-top: 16px;
+}
+
+/* ---------- Header: the brand scrolls away, the sections stay ----------
+   Two rows: the brand, then the sections with the license chip at their end. The header
+   sticks 44 px above the window's top, so once the page moves only the second row stays. */
+.b5-site-header {
+  top: -44px;
+  flex-wrap: wrap;
+  align-content: start;
+  gap: 0 10px;
+  min-height: 0;
+  padding-top: 0;
+}
+
+.b5-brand {
+  flex: 1 0 100%;
+  height: 44px;
+  gap: 9px;
+  font-size: 16px;
+}
+
+.b5-brand__mark {
+  width: 28px;
+  height: 28px;
+}
+
+.b5-brand__subtitle {
+  margin-top: 1px;
+  font-size: 8.5px;
+  letter-spacing: 1.2px;
+}
+
+.b5-site-nav {
+  order: 1;
+  flex: 1 1 0;
+  justify-content: flex-start;
+  gap: 18px;
+  width: auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.b5-site-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.b5-site-nav a {
+  padding-block: 11px 10px;
+  font-size: 13.5px;
+}
+
+/* "Byte matching" reads "Matching", "Console gaps" "Gaps" */
+.b5-site-nav a > .wp-nav-long {
+  display: none;
+}
+
+.wp-license-chip {
+  order: 2;
+  align-self: center;
+  gap: 7px;
+  min-height: 30px;
+  margin-left: 0;
+  padding: 2px 9px 2px 2px;
+}
+
+.wp-license-chip .b5-license-chip__class {
+  min-width: 30px;
+  height: 24px;
+  padding-inline: 6px;
+}
+
+.wp-license-chip .b5-license-chip__value {
+  font-size: 11px;
+}
+
+/* ---------- Hero: the title, a line of copy and the download sign ---------- */
+.b5-hero {
+  gap: 0;
+  min-height: 0;
+  padding: 16px 0 4px;
+}
+
+.b5-hero__copy > .b5-eyebrow {
+  font-size: 9.5px;
+}
+
+.b5-hero__title {
+  margin: 10px 0 12px;
+  font-size: 38px;
+}
+
+.b5-hero__mark {
+  margin: 6px 0 0 -8px;
+  padding: 4px 30px 8px 12px;
+  font-size: 60px;
+}
+
+.b5-hero__copy > p {
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.b5-hero__copy > p br {
+  display: none;
+}
+
+/* The sections' row right above goes to the map, and the art is the scenery's again. */
+.b5-hero__copy > .b5-button--paint,
+.b5-destination__art {
+  display: none;
+}
+
+.b5-connection {
+  margin: 14px 0 0;
+  padding: 8px 0 0 10px;
+}
+
+.wp-build .wp-download {
+  margin: 8px 0 6px;
+}
+
+.wp-build #subtitle {
+  font-size: 11px;
+}
+
+/* ---------- Headline metrics: a small ring beside its states ---------- */
+.wp-metrics {
+  padding-block: 14px 12px;
+  row-gap: 0;
+}
+
+.wp-metrics > .b5-stat + .b5-stat {
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.wp-metric {
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.wp-metric .wp-ring {
+  width: 76px;
+  height: 76px;
+}
+
+.wp-ring .b5-ring__label {
+  gap: 2px;
+}
+
+.wp-ring .b5-ring__label strong,
+.wp-metric .wp-ring .b5-ring__label strong {
+  font-size: 19px;
+}
+
+.wp-ring .b5-ring__label small {
+  font-size: 7px;
+  letter-spacing: 0.3px;
+}
+
+.wp-metric .b5-stat__label {
+  font-size: 11.5px;
+}
+
+.wp-metric .metric-total {
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.wp-metric .legend {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px 12px;
+  margin-top: 5px;
+  font-size: 11.5px;
+}
+
+.wp-metric .legend-row {
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  gap: 5px;
+}
+
+.wp-metric .legend-row .sw {
+  width: 8px;
+  height: 8px;
+}
+
+/* the ring already shows the share; the counts stay */
+.wp-metric .legend-row .lg-pct {
+  display: none;
+}
+
+.wp-metric .metric-note {
+  font-size: 10.5px;
+}
+
+/* the ledger's caveats are the rings' tooltips on a wide screen; here they would double
+   the strip */
+#tuEvidenceNote,
+#fnStatusNote,
+#fnEvidenceNote {
+  display: none;
+}
+
+.wp-ticker {
+  margin-top: 12px;
+}
+
+.wp-ticker.b5-ticker {
+  min-height: 40px;
+}
+
+.wp-ticker .b5-ticker__toggle {
+  width: 36px;
+  height: 36px;
+}
+
+/* ---------- Section headers ---------- */
+.wp-section > .b5-section-header {
+  gap: 6px 12px;
+  margin-bottom: 14px;
+}
+
+.b5-section-header .b5-heading {
+  margin-top: 1px;
+  font-size: 25px;
+}
+
+.b5-section-header .b5-eyebrow {
+  font-size: 9px;
+  letter-spacing: 0.4px;
+}
+
+.b5-section-header[data-b5-index]::before {
+  font-size: 62px;
+}
+
+.wp-main .b5-ribbon {
+  padding: 2px 9px;
+  font-size: 10px;
+}
+
+/* ---------- Panels and cards ---------- */
+.b5-panel--board > .b5-panel__header {
+  gap: 8px 12px;
+  min-height: 0;
+  padding: 10px 12px;
+}
+
+.b5-panel--board > .b5-panel__body {
+  padding: 12px;
+}
+
+.b5-card--compact {
+  padding: 12px 12px 13px;
+}
+
+.b5-card--compact .b5-card__title {
+  font-size: 15px;
+}
+
+/* ---------- Controls ---------- */
+/* A row of painted filters stays one row and slides sideways when it is wider than the
+   phone. The padding keeps the active filter's paint, which overhangs its button, in view. */
+.wp-main .b5-filter-group--paint {
+  flex-wrap: nowrap;
+  gap: 2px;
+  max-width: calc(100% + 20px);
+  margin-inline: -8px -12px;
+  padding: 4px 12px 4px 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.wp-main .b5-filter-group--paint::-webkit-scrollbar {
+  display: none;
+}
+
+/* A row that runs past the edge fades out there, until it is slid to its end. The fade
+   follows the row's own scroll; a row that fits has no scroll timeline and no fade. */
+@property --wp-fade {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes wp-fade-end {
+  from {
+    --wp-fade: 32px;
+  }
+  to {
+    --wp-fade: 0px;
+  }
+}
+
+@supports (animation-timeline: scroll()) {
+  .wp-main .b5-filter-group--paint,
+  .evo-group {
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - var(--wp-fade)), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - var(--wp-fade)), transparent);
+    animation: wp-fade-end linear both;
+    animation-timeline: scroll(self inline);
+  }
+}
+
+.wp-main .b5-filter-group--paint .b5-filter {
+  flex: none;
+  min-height: 32px;
+  padding: 5px 11px;
+  font-size: 14px;
+}
+
+.wp-main .b5-filter-group--paint .b5-filter > span {
+  margin-left: 5px;
+  font-size: 10.5px;
+}
+
+/* Below 16 px iOS zooms the page in when a field takes focus. */
+.wp-main .b5-search input {
+  padding: 7px 0;
+  font-size: 16px;
+}
+
+.wp-main .b5-search input::placeholder {
+  font-size: 13px;
+}
+
+.wp-main .b5-select-trigger {
+  gap: 8px;
+  min-height: 32px;
+  padding-block: 5px 4px;
+  font-size: 14px;
+}
+
+.wp-main .b5-button--ink {
+  min-height: 30px;
+  padding: 4px 2px;
+  font-size: 14px;
+}
+
+.wp-main .b5-pagination {
+  gap: 6px 8px;
+  padding-block: 8px;
+}
+
+.wp-main .b5-page-button {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 14px;
+}
+
+/* A folded explanation: its first two lines, then the button that opens the rest. */
+.wp-clamp:not(.is-open) {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.wp-more:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  margin: 0;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--gold);
+  font: 600 10.5px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.wp-more::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  margin-top: -3px;
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.wp-more[aria-expanded="true"]::after {
+  margin-top: 3px;
+  transform: rotate(225deg);
+}
+
+/* A long list shows its first rows; its button (app.js) opens the rest. */
+[data-fold="3"]:not(.is-open) > :nth-child(n + 4),
+[data-fold="5"]:not(.is-open) > :nth-child(n + 6),
+[data-fold="8"]:not(.is-open) > :nth-child(n + 9) {
+  display: none;
+}
+
+/* ---------- Progress map ---------- */
+.explorer-view-tools {
+  gap: 8px;
+}
+
+.explorer-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+  margin-bottom: 8px;
+}
+
+.explorer-controls .b5-select-wrap {
+  width: 100%;
+}
+
+.explorer-controls .order-btn {
+  justify-self: start;
+}
+
+.map-toolbar,
+.map-selection {
+  flex-direction: row;
+  align-items: center;
+}
+
+.map-toolbar {
+  gap: 8px;
+}
+
+.map-crumb {
+  padding: 4px 2px;
+  font-size: 12px;
+}
+
+.map-navigation {
+  gap: 12px;
+}
+
+.map-explanation {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.map-explanation + .wp-more {
+  margin-bottom: 2px;
+}
+
+.map-legend {
+  gap: 3px 12px;
+  margin: 6px 0 8px;
+  font-size: 11px;
+}
+
+.map-legend-item {
+  gap: 5px;
+}
+
+.map-viewport {
+  height: min(96vw, 380px);
+}
+
+.map-selection {
+  gap: 10px;
+  min-height: 0;
+  padding: 8px 0;
+}
+
+.map-selection-type {
+  font-size: 11.5px;
+}
+
+#mapSelectionName,
+#x360MapSelectionName {
+  font-size: 12.5px;
+}
+
+#mapSelectionMeta,
+#x360MapSelectionMeta {
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.map-footnotes {
+  margin-top: 8px;
+  font-size: 10.5px;
+}
+
+/* no keyboard on a phone */
+#mapKeyboardHelp,
+#x360MapKeyboardHelp {
+  display: none;
+}
+
+/* The list view: each unit or function a card, its name beside its status and the other
+   columns, each named, in a line under them (app.js labels the cells). */
+.explorer-list .table-wrap {
+  max-height: none;
+  overflow: visible;
+}
+
+.explorer-list .table-wrap table,
+.explorer-table tbody {
+  display: block;
+  min-width: 0;
+}
+
+.explorer-table thead {
+  display: none;
+}
+
+.explorer-table tr {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 12px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.explorer-list .table-wrap td,
+.explorer-table td:nth-child(n) {
+  flex: none;
+  width: auto;
+  padding: 0;
+  border: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.explorer-list .table-wrap td:first-child {
+  flex: 1 1 0;
+  order: 1;
+  min-width: 0;
+  color: var(--text);
+}
+
+.explorer-list .table-wrap td:nth-child(2) {
+  order: 2;
+}
+
+/* the line break between the name and status and the other columns */
+.explorer-table tr::before {
+  content: "";
+  flex: 0 0 100%;
+  order: 3;
+  height: 0;
+}
+
+.explorer-list .table-wrap td:nth-child(n + 3) {
+  order: 4;
+}
+
+.explorer-list .table-wrap td:nth-child(n + 3) .tu-meta {
+  margin-left: 4px;
+}
+
+.explorer-list .table-wrap td:nth-child(n + 3)::before {
+  content: attr(data-label) " ";
+  color: var(--faint);
+  font: 9px var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.explorer-list .table-wrap td :is(.tu-meta, .actor-link, .actor-name) {
+  display: inline;
+  margin: 0;
+  font-size: 11px;
+}
+
+.explorer-list .table-wrap td:first-child .tu-meta {
+  display: -webkit-box;
+  margin-top: 2px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  font-size: 10.5px;
+}
+
+.explorer-list .table-wrap td.empty {
+  flex: 1 1 100%;
+}
+
+/* ---------- Section introductions ---------- */
+.vp-head {
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.vp-head .metric-total,
+.bm-intro .metric-total {
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.vp-intro {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ---------- Byte matching ---------- */
+.bm-overview {
+  gap: 16px;
+}
+
+.bm-main {
+  gap: 14px;
+}
+
+.bm-ring-row {
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.wp-ring.big {
+  width: 100px;
+  height: 100px;
+}
+
+.wp-ring.big .b5-ring__label strong {
+  font-size: 21px;
+}
+
+.vp-legend .legend {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 0;
+  font-size: 12px;
+}
+
+.vp-legend .legend-row {
+  gap: 6px;
+  padding: 3px 6px;
+}
+
+.vp-legend .legend-row .lg-pct {
+  min-width: 36px;
+}
+
+.vp-hint {
+  margin-top: 6px;
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+/* The shares and counts two to a row, the first share across the top. */
+.bm-facts {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.bm-facts > .bm-fact,
+.bm-facts > .bm-fact--count,
+.bm-facts[data-counts] > .bm-fact--count {
+  grid-column: auto;
+  padding: 10px 11px 11px;
+}
+
+.bm-facts > .bm-fact:first-child {
+  grid-column: 1 / -1;
+}
+
+.bm-fact strong {
+  font-size: 22px;
+}
+
+.bm-fact > span {
+  font-size: 9px;
+}
+
+.bm-fact:not(.bm-fact--count) > span:first-of-type {
+  min-height: 2.6em;
+}
+
+.bm-facts > .bm-fact:first-child > span:first-of-type {
+  min-height: 0;
+}
+
+.bm-fact .b5-meter__bar {
+  margin-top: 8px;
+}
+
+.bm-fact__detail {
+  margin-top: 6px;
+  font-size: 10.5px;
+}
+
+.bm-facts .bm-fact--count,
+.bm-facts[data-counts] .bm-fact--count {
+  display: block;
+}
+
+.bm-fact--count strong {
+  font-size: 24px;
+}
+
+.bm-fact--count > span {
+  margin-top: 4px;
+}
+
+.bm-side {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.vp-block > .b5-card__title {
+  margin-bottom: 6px;
+}
+
+/* the three newest matches; the function list below has them all */
+.bm-recent li:nth-child(n + 4) {
+  display: none;
+}
+
+.evidence-top li {
+  gap: 8px;
+  padding: 6px 4px;
+}
+
+.evidence-top .top-n {
+  min-width: 28px;
+  font-size: 16px;
+}
+
+.bm-areas > .b5-panel__header > small {
+  font-size: 11px;
+}
+
+.bm-area-list {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+}
+
+.bm-area-row {
+  grid-template-columns: minmax(0, 1fr) 52px auto;
+  gap: 8px;
+  padding: 5px 8px;
+}
+
+.bm-area-nums {
+  font-size: 10.5px;
+}
+
+.bm-area-list > .wp-more,
+.bm-area-list > .muted-text {
+  grid-column: 1 / -1;
+}
+
+/* ---------- The list browsers (byte-match functions, console gaps) ----------
+   A short page of the list instead of a scrolling box: app.js asks for 10 at a time. */
+.evidence-list,
+.bm-explorer .evidence-list.bm-list {
+  flex: none;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  padding-right: 0;
+  overflow: visible;
+}
+
+.evidence-list {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
+}
+
+.evidence-file-meta {
+  overflow-wrap: anywhere;
+}
+
+.evidence-body > .b5-filter-group {
+  margin-bottom: 8px;
+}
+
+.evidence-file-head {
+  gap: 5px 10px;
+  padding: 8px 10px;
+}
+
+.evidence-file-left {
+  flex-basis: 170px;
+}
+
+.evidence-file-path {
+  font-size: 12px;
+}
+
+.evidence-file-meta {
+  font-size: 10.5px;
+}
+
+/* the counts under the path, in one left-aligned run */
+.evidence-file-nums {
+  flex: 1 1 100%;
+  justify-content: flex-start;
+  gap: 4px;
+  margin-left: 0;
+}
+
+/* a function's source and age on one line */
+.bm-row .evidence-file-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bm-row .evidence-file-left {
+  flex-basis: 100%;
+}
+
+.evidence-file-nums .b5-ribbon {
+  padding: 1px 8px;
+  font-size: 9.5px;
+}
+
+.evidence-foot {
+  gap: 6px 10px;
+  margin-top: 8px;
+}
+
+.evidence-intro {
+  margin-bottom: 2px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.evidence-intro + .wp-more {
+  margin-bottom: 6px;
+}
+
+.evidence-grid {
+  gap: 14px;
+}
+
+.evidence-side-note {
+  margin-bottom: 4px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.evidence-top .top-name {
+  font-size: 11.5px;
+}
+
+.evidence-top .top-meta {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  font-size: 10.5px;
+}
+
+.evidence-top + .wp-more {
+  margin-top: 4px;
+}
+
+/* ---------- Who's working ---------- */
+.grid {
+  gap: 12px;
+}
+
+.agents.b5-panel--paint {
+  --b5-paint-inset: 14px;
+}
+
+.agents.b5-panel--paint > .b5-panel__header {
+  margin-bottom: 10px;
+  padding-block: 10px;
+}
+
+.agents.b5-panel--paint > .b5-panel__header h3 {
+  font-size: 19px;
+}
+
+.agents .b5-count-tile {
+  font-size: 17px;
+}
+
+.agents .b5-panel__body > p {
+  margin-top: 0;
+  font-size: 12px;
+}
+
+.agents .agent-list {
+  max-height: none;
+  margin: 6px -14px 0;
+}
+
+.agents .b5-panel__footer {
+  padding-block: 9px;
+}
+
+.agent-row,
+.queue-row,
+.goal-row,
+.blocked-row {
+  padding: 8px 12px 8px 22px;
+}
+
+.agent-row::before,
+.queue-row::before,
+.blocked-row::before,
+.goal-row::before {
+  top: 12px;
+}
+
+.agent-name,
+.tu-name {
+  font-size: 12px;
+}
+
+.agent-name {
+  gap: 5px;
+}
+
+.agent-meta,
+.tu-meta,
+.goal-meta {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.wp-card {
+  max-height: none;
+}
+
+.wp-card > .b5-card__header {
+  margin: 0;
+  padding: 11px 12px 8px 14px;
+}
+
+.wp-card > .b5-card__header .b5-card__title {
+  font-size: 17px;
+}
+
+.wp-card > .queue,
+.wp-card > .goal-list,
+.wp-card > .blocked-list,
+.wp-card > .event-table,
+.wp-card > .table-wrap {
+  overflow: visible;
+}
+
+.mini-controls {
+  gap: 0 12px;
+  padding: 2px 12px 6px;
+}
+
+.mini-controls .wp-search {
+  flex-basis: 100%;
+}
+
+.mini-foot {
+  gap: 6px;
+  padding: 6px 12px;
+}
+
+.mini-pager {
+  gap: 4px;
+}
+
+.empty {
+  padding: 14px 12px;
+  font-size: 12px;
+}
+
+/* nobody working: one line under its sign, not a poster */
+.active-empty.b5-empty--illustrated {
+  min-height: 0;
+  margin: 2px 12px 12px;
+  padding: 12px 12px 12px 58px;
+}
+
+.active-empty .b5-empty__symbol {
+  top: 14px;
+  left: 12px;
+  width: 34px;
+  height: 34px;
+}
+
+.active-empty.b5-empty--illustrated :is(h2, h3, h4) {
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.active-empty.b5-empty--illustrated p {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.active-empty.b5-empty--illustrated .b5-link {
+  min-height: 32px;
+  margin-top: 4px;
+}
+
+/* Live events: each event a card, not a five-column table to slide across. */
+.event-table {
+  max-height: none;
+  overflow: visible;
+}
+
+.event-head {
+  display: none;
+}
+
+.event-row {
+  grid-template-columns: auto auto minmax(0, 1fr);
+  grid-template-areas:
+    "time action actor"
+    "target target target"
+    "detail detail detail";
+  gap: 1px 10px;
+  padding: 7px 12px;
+}
+
+.event-cell {
+  padding: 0;
+}
+
+.event-time {
+  grid-area: time;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.event-action {
+  grid-area: action;
+  color: var(--gold);
+  font-size: 11px;
+}
+
+.event-row > .event-cell:nth-child(3) {
+  grid-area: actor;
+  justify-self: end;
+  font-size: 12px;
+}
+
+.event-target {
+  grid-area: target;
+  font-size: 12px;
+}
+
+/* a server event targets the server: the actor already says so */
+.event-target.is-server {
+  display: none;
+}
+
+.event-detail {
+  display: -webkit-box;
+  grid-area: detail;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* Active work: each claim a card too, its unit and status over its agent and lease. */
+.active-work .table-wrap {
+  max-height: none;
+  overflow: visible;
+}
+
+.active-work .table-wrap table {
+  min-width: 0;
+}
+
+.active-work thead {
+  display: none;
+}
+
+.active-work tbody tr {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.active-work .table-wrap td {
+  width: auto;
+  padding: 0;
+  border: 0;
+  font-size: 12px;
+}
+
+.active-work .table-wrap td:nth-child(2),
+.active-work .table-wrap td:nth-child(4) {
+  justify-self: end;
+}
+
+.active-work .table-wrap td:nth-child(4) {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* The work lists take turns in one place, picked by the tabs above them. */
+.wp-work-tabs {
+  display: flex;
+  margin-top: 4px;
+}
+
+.grid > :is(.next-work, .events, .goals, .blocked) {
+  display: none;
+}
+
+.grid[data-work-tab="next-work"] > .next-work,
+.grid[data-work-tab="events"] > .events,
+.grid[data-work-tab="goals"] > .goals,
+.grid[data-work-tab="blocked"] > .blocked {
+  display: flex;
+}
+
+.grid > .wp-work-tabs + .wp-card {
+  margin-top: -4px;
+}
+
+.goal-row .bar {
+  height: 5px;
+  margin-top: 6px;
+}
+
+/* ---------- Evolution ---------- */
+.evo-board > .b5-panel__header > .b5-board__label {
+  display: none;
+}
+
+.evo-controls {
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+}
+
+.evo-controls > .b5-filter-group {
+  flex: none;
+  max-width: none;
+}
+
+.evo-controls > .b5-filter-group + .b5-filter-group {
+  padding-left: 14px;
+}
+
+/* the range and the scale still share a row on the narrowest phones */
+@media (max-width: 380px) {
+  .evo-controls .b5-filter-group--paint .b5-filter {
+    padding-inline: 8px;
+    font-size: 13px;
+  }
+
+  .evo-controls > .b5-filter-group + .b5-filter-group {
+    padding-left: 8px;
+  }
+}
+
+/* each group of series one row, sliding sideways */
+.evo-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  margin: 0 0 8px;
+}
+
+.evo-group {
+  flex-wrap: nowrap;
+  gap: 4px;
+  margin-inline: -12px;
+  padding-inline: 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.evo-group::-webkit-scrollbar {
+  display: none;
+}
+
+.evo-group-name {
+  flex: none;
+  width: 72px;
+  margin-right: 0;
+  font-size: 9px;
+  line-height: 1.25;
+  letter-spacing: 0.8px;
+}
+
+.evo-chip {
+  flex: none;
+  gap: 5px;
+  padding: 3px 8px 3px 5px;
+  font-size: 11.5px;
+}
+
+.evo-legend {
+  gap: 2px 12px;
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+/* ---------- The repository ---------- */
+.gh-title {
+  gap: 8px;
+  font-size: 18px;
+}
+
+.gh-mark {
+  width: 15px;
+  height: 15px;
+}
+
+.gh-desc {
+  margin-top: 4px;
+  font-size: 12.5px;
+}
+
+.gh-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  padding: 10px 0 14px;
+}
+
+.gh-stat {
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 6px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.gh-stat strong {
+  font-size: 13px;
+}
+
+.gh-body {
+  gap: 12px;
+}
+
+.gh-body .b5-card__title {
+  margin-bottom: 8px;
+}
+
+.gh-body .recent-head {
+  margin-top: 14px;
+}
+
+.latest-commit {
+  padding: 8px 10px;
+}
+
+.commit-msg {
+  font-size: 12.5px;
+}
+
+.commit-meta {
+  font-size: 11px;
+}
+
+.commit-list li {
+  gap: 8px;
+  padding: 7px 0;
+}
+
+.commit-list .sha {
+  font-size: 11px;
+}
+
+.commit-list .body div:first-child {
+  font-size: 12.5px;
+}
+
+.commit-list .body small {
+  font-size: 10.5px;
+}
+
+/* the five newest; GitHub has the rest */
+.commit-list li:nth-child(n + 6) {
+  display: none;
+}
+
+.gh-tree > .file-tree {
+  max-height: 320px;
+}
+
+.file-tree {
+  font-size: 12px;
+}
+
+/* ---------- Footer ---------- */
+.b5-site-footer {
+  gap: 8px;
+  padding: 16px 0 22px;
+}

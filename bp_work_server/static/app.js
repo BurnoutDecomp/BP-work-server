@@ -11,6 +11,11 @@ import { renderDownloadDesign } from "./b5-ui/download-designs.js";
 // billboard-pasted. https://decomp.adriwin.fr/webui shows them all.
 const DOWNLOAD_DESIGN = "sign-game";
 
+// The phone layout (phone.css, windows up to 680 px): lists come 10 rows to a page rather
+// than scrolling in boxes inside the page, and long explanations fold to their first lines.
+const PHONE = window.matchMedia("(max-width: 680px)");
+const pageRows = (wide, phone = 10) => (PHONE.matches ? phone : wide);
+
 const state = {
   lastEventId: 0,
   refreshTimer: null,
@@ -33,7 +38,7 @@ const state = {
     goal: "",
     sort: "id",
     order: "asc",
-    limit: 50,
+    limit: pageRows(50, 20),
     offset: 0,
     total: 0,
     items: [],
@@ -49,7 +54,7 @@ const state = {
     tier: "",
     live: false,
     offset: 0,
-    limit: 25,
+    limit: pageRows(25),
     total: 0,
     items: [],
     summary: null,
@@ -59,9 +64,9 @@ const state = {
   },
   // Client-side mini-explorers for the Live Events and Next Queue panels:
   // the dashboard payload carries the full lists; we filter/search/page here.
-  eventsView: { all: [], q: "", action: "", actor: "", page: 1, perPage: 50, searchTimer: null },
-  queueView: { all: [], q: "", source: "", page: 1, perPage: 50, searchTimer: null },
-  blockedView: { all: [], q: "", source: "", page: 1, perPage: 50, searchTimer: null },
+  eventsView: { all: [], q: "", action: "", actor: "", page: 1, perPage: pageRows(50), searchTimer: null },
+  queueView: { all: [], q: "", source: "", page: 1, perPage: pageRows(50), searchTimer: null },
+  blockedView: { all: [], q: "", source: "", page: 1, perPage: pageRows(50), searchTimer: null },
   // Live Events reconstruction. Backfilled rows share one import timestamp, one
   // bogus commit, and a guessed author; we replace each with one event per real
   // commit (2026+) that touched the file. rawEvents is the unexpanded payload;
@@ -755,7 +760,10 @@ function renderEvents() {
       row.appendChild(actor);
       const target = div("event-cell event-target");
       if (event.tu_id) target.appendChild(tuButton(event.tu_id, "event-tu"));
-      else target.textContent = "server";
+      else {
+        target.textContent = "server";
+        target.classList.add("is-server");   // a phone's event card leaves it out
+      }
       row.appendChild(target);
       const detail = div("event-cell event-detail", detailText(event.detail) || "-");
       row.appendChild(detail);
@@ -1523,13 +1531,20 @@ function renderTuRows(items) {
       linked.appendChild(badge);
       row.insertBefore(linked, fn);
     }
+    labelCells(row, columns);
     row.addEventListener("click", () => openDetail(item.id));
     body.appendChild(row);
   }
 }
 
+// Each cell names its column, which a phone shows in place of the table's header row.
+function labelCells(row, columns) {
+  [...row.cells].forEach((cell, index) => { cell.dataset.label = columns[index]; });
+}
+
 function renderFuncRows(items) {
-  setHead(["Function", "Status", "Translation Unit", "Actor"]);
+  const columns = ["Function", "Status", "Translation Unit", "Actor"];
+  setHead(columns);
   const body = el("explorerBody");
   clearNode(body);
   if (!items.length) return emptyRow(body, 4, "No functions match.");
@@ -1550,6 +1565,7 @@ function renderFuncRows(items) {
       actor.title = "No actor has been linked to this function yet.";
     }
     row.append(name, status, tu, actor);
+    labelCells(row, columns);
     row.addEventListener("click", () => openDetail(item.tu_id, { functionName: item.name }));
     body.appendChild(row);
   }
@@ -2754,9 +2770,94 @@ function connectStream() {
   state.refreshTimer = window.setInterval(refresh, 30000);
 }
 
+// On a phone a long explanation shows its first two lines (phone.css: .wp-clamp) and the
+// More button after it opens the rest. The button shows only while lines are hidden, so a
+// short text, or any text on a wide screen, has none.
+function foldExplanations() {
+  const notes = document.querySelectorAll(".vp-intro, .vp-hint, .evidence-intro, .evidence-side-note, .map-explanation");
+  for (const note of notes) {
+    note.classList.add("wp-clamp");
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "wp-more";
+    more.hidden = true;
+    more.setAttribute("aria-expanded", "false");
+    more.textContent = "More";
+    note.after(more);
+    const check = () => {
+      if (!note.classList.contains("is-open")) more.hidden = note.scrollHeight <= note.clientHeight + 1;
+    };
+    more.addEventListener("click", () => {
+      const open = note.classList.toggle("is-open");
+      more.setAttribute("aria-expanded", String(open));
+      more.textContent = open ? "Less" : "More";
+      check();
+    });
+    new ResizeObserver(check).observe(note);
+    new MutationObserver(check).observe(note, { childList: true, characterData: true, subtree: true });
+  }
+}
+
+// On a phone a long list shows its first rows (phone.css: [data-fold]) and the button after
+// it opens the rest. Call it after each render: it counts the rows again.
+function foldList(list, rows, count, noun) {
+  if (!list) return;
+  list.dataset.fold = String(rows);
+  let more = list.nextElementSibling;
+  if (!more || !more.classList.contains("wp-more")) {
+    more = document.createElement("button");
+    more.type = "button";
+    more.className = "wp-more";
+    list.after(more);
+    more.addEventListener("click", () => {
+      list.classList.toggle("is-open");
+      foldList(list, rows, Number(more.dataset.count), noun);
+    });
+  }
+  const open = list.classList.contains("is-open");
+  more.dataset.count = String(count);
+  more.hidden = count <= rows;
+  more.setAttribute("aria-expanded", String(open));
+  more.textContent = open ? `First ${rows} ${noun}` : `All ${fmtInt(count)} ${noun}`;
+}
+
+// Crossing the phone width changes how many rows a page of each list holds. On a phone the
+// work lists take turns in one place, picked by their tabs (phone.css reads the grid's
+// data-work-tab); "See the next queue" picks the queue.
+function initPhoneLayout() {
+  foldExplanations();
+  const grid = el("workGrid");
+  el("workTabs")?.addEventListener("b5:filterchange", (event) => {
+    if (grid) grid.dataset.workTab = event.detail.value;
+  });
+  document.querySelector('.active-empty a[href="#next-title"]')?.addEventListener("click", () => {
+    createFilterGroup(el("workTabs")).select("next-work");
+  });
+  PHONE.addEventListener("change", () => {
+    for (const view of [state.eventsView, state.queueView, state.blockedView]) {
+      view.perPage = pageRows(50);
+      view.page = 1;
+    }
+    renderEvents();
+    renderQueue();
+    renderBlocked();
+    state.evidence.limit = pageRows(25);
+    loadEvidenceList(true);
+    state.explorer.limit = pageRows(50, 20);
+    state.explorer.offset = 0;
+    if (state.explorer.view === "list") loadExplorer();
+    if (state.bytematch) {
+      state.bytematch.limit = pageRows(25);
+      state.bytematch.offset = 0;
+      loadBytematchList();
+    }
+  });
+}
+
 // Native selects marked data-b5-select get the shared themed dropdown; menu filter groups and
 // pagers are wired the same way. One enhancement root. (The download control wires itself.)
 enhance(document.body);
+initPhoneLayout();
 
 refresh();
 connectStream();
@@ -3526,8 +3627,8 @@ function drawEvolutionChart() {
     return;
   }
   const ns = "http://www.w3.org/2000/svg";
-  const W = Math.max(280, Math.round(host.clientWidth || 600)), H = 280;
-  const padL = 54, padR = 14, padT = 12, padB = 26;
+  const W = Math.max(280, Math.round(host.clientWidth || 600)), H = PHONE.matches ? 200 : 280;
+  const padL = PHONE.matches ? 46 : 54, padR = 14, padT = 12, padB = 26;
   const t0 = Date.parse(points[0].ts), t1 = Date.parse(points[points.length - 1].ts);
   const tSpan = Math.max(1, t1 - t0);   // not `span`: that is the element helper
   const x = (t) => padL + ((t - t0) / tSpan) * (W - padL - padR);
@@ -3957,6 +4058,7 @@ async function loadEvidenceTop() {
         list.appendChild(li);
       }
     }
+    foldList(list, 5, list.children.length, "functions");
   } catch (_) {
     /* the side list is best-effort */
   }
@@ -4005,7 +4107,7 @@ function bmState() {
   if (!state.bytematch) {
     state.bytematch = {
       summary: null, loadedAt: 0, wired: false, status: "", area: "", tu: "", q: "",
-      offset: 0, limit: 25, total: 0, items: [], listSeq: 0,
+      offset: 0, limit: pageRows(25), total: 0, items: [], listSeq: 0,
       map: null, mapMode: "x360tus", mapSnapshot: null, mapLoadedAt: 0, mapInFlight: false,
     };
   }
@@ -4303,6 +4405,7 @@ function renderBytematchAreas(areas) {
     host.appendChild(row);
   }
   if (areas.length > 30) host.appendChild(div("muted-text", `${fmtInt(areas.length - 30)} smaller areas in the list below.`));
+  foldList(host, 8, Math.min(30, areas.length), "areas");
 }
 
 function renderBytematchChips() {

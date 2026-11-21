@@ -149,6 +149,22 @@ html {
   }
 }
 
+/* The long half of a section's name in the navigation ("Byte matching"), which a phone
+   leaves out (phone.css). Not the section number the library styles and hides. */
+.b5-site-nav a > .wp-nav-long {
+  display: inline;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+}
+
+/* The buttons that open a folded explanation or list, and the tabs that put the work lists
+   in one place, exist for the phone layout only. */
+.wp-more,
+.wp-work-tabs {
+  display: none;
+}
+
 /* Crash FM runs under the stat strip, the page's width. */
 .wp-ticker {
   margin-top: 40px;

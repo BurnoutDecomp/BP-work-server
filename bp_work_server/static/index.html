@@ -51,7 +51,9 @@
     <link rel="preload" href="/static/b5-ui/assets/anton-latin.ttf" as="font" type="font/ttf" crossorigin />
     <link rel="stylesheet" href="/static/b5-ui/b5-ui.css?v=0.2.0-2" />
     <link rel="stylesheet" href="/static/b5-ui/download-designs.css?v=0.2.0-2" />
-    <link rel="stylesheet" href="/static/app.css?v=61" />
+    <link rel="stylesheet" href="/static/app.css?v=62" />
+    <!-- The same page laid out for a phone: phone.css replaces app.css's rules up to 680 px. -->
+    <link rel="stylesheet" href="/static/phone.css?v=1" media="(max-width: 680px)" />
   </head>
   <body class="b5-page">
     <a class="b5-skip-link" href="#progress">Skip to progress</a>
@@ -71,8 +73,9 @@
       </button>
       <nav class="b5-site-nav" aria-label="Main navigation">
         <a href="#progress" aria-current="location"><span>01</span> Progress</a>
-        <a href="#bytematch"><span>02</span> Byte matching</a>
-        <a href="#gaps"><span>03</span> Console gaps</a>
+        <!-- a phone shows the short names: Matching, Gaps (phone.css) -->
+        <a href="#bytematch" aria-label="Byte matching"><span>02</span> <span class="wp-nav-long">Byte </span>matching</a>
+        <a href="#gaps" aria-label="Console gaps"><span>03</span> <span class="wp-nav-long">Console </span>gaps</a>
         <a href="#work"><span>04</span> Work</a>
         <a class="b5-site-nav__external" href="https://online.decomp.adriwin.fr/" target="_blank" rel="noopener noreferrer">Online lobbies ↗</a>
       </nav>
@@ -108,7 +111,7 @@
             <span class="b5-hero__line">Paradise City</span>
             <span class="b5-title-mark b5-hero__mark">Rebuilt.</span>
           </h1>
-          <p>Burnout Paradise, rebuilt from the console's own code.<br />Every unit, function and byte, tracked live.</p>
+          <p>Burnout Paradise, rebuilt from the console's own code.<br /> Every unit, function and byte, tracked live.</p>
           <a class="b5-button b5-button--paint" href="#progress"><span class="b5-button__arrow" aria-hidden="true">↘</span> Explore the map</a>
         </div>
         <div class="b5-destination">
@@ -474,7 +477,7 @@
             <h2 class="b5-heading" id="work-title">Who's working<span class="b5-accent">.</span></h2>
           </div>
         </div>
-        <div class="grid">
+        <div class="grid" id="workGrid" data-work-tab="next-work">
           <section class="b5-panel b5-panel--paint b5-roster agents" aria-labelledby="agents-title">
             <div class="b5-panel__header">
               <h3 id="agents-title">Agents</h3>
@@ -514,6 +517,15 @@
               <a class="b5-link" href="#next-title">See the next queue ↓</a>
             </div>
           </section>
+
+          <!-- On a phone the four lists below take turns in one place: these tabs pick which
+               (phone.css). A wider window shows them all and never shows the tabs. -->
+          <div class="b5-filter-group b5-filter-group--paint wp-work-tabs" id="workTabs" role="group" aria-label="Work list">
+            <button class="b5-filter" type="button" data-b5-value="next-work" aria-pressed="true">Queue</button>
+            <button class="b5-filter" type="button" data-b5-value="events" aria-pressed="false">Events</button>
+            <button class="b5-filter" type="button" data-b5-value="goals" aria-pressed="false">Goals</button>
+            <button class="b5-filter" type="button" data-b5-value="blocked" aria-pressed="false">Blocked</button>
+          </div>
 
           <section class="b5-card wp-card next-work" aria-labelledby="next-title">
             <div class="b5-card__header">
@@ -711,6 +723,6 @@
 
     <script src="/static/d3-hierarchy.min.js?v=3.1.2" defer></script>
     <script src="/static/progress-map.js?v=5" defer></script>
-    <script type="module" src="/static/app.js?v=57"></script>
+    <script type="module" src="/static/app.js?v=58"></script>
   </body>
 </html>
