@@ -1,7 +1,15 @@
 // The progress dashboard. Controls, the detail drawer, the release chooser and the pagers
 // are the shared b5-decomp-webui components in /static/b5-ui (webui.json names the build);
 // this module fetches the data and renders the domain views.
-import { closeDialog, createFilterGroup, createPager, createSelect, enhance, openDialog, setOdometer, setProgress } from "./b5-ui/b5-ui.js";
+import { closeDialog, createFilterGroup, createPager, createSelect, enhance, openDialog, setProgress } from "./b5-ui/b5-ui.js";
+import { renderDownloadDesign } from "./b5-ui/download-designs.js";
+
+// The download control's design: any of the b5-ui download designs, which all read the same
+// data, so swapping is this one name. Bars: cluster, dashboard, classic. Road signs: sign,
+// sign-game, sign-exit, sign-route. Licence plates: plate-sunset, plate-paradise,
+// plate-registration, plate-night. Billboards: billboard, billboard-fire, billboard-paint,
+// billboard-pasted. https://decomp.adriwin.fr/webui shows them all.
+const DOWNLOAD_DESIGN = "sign-game";
 
 const state = {
   lastEventId: 0,
@@ -13,6 +21,7 @@ const state = {
   treeCollapsed: {}, // path -> bool, remembers folder state across refreshes
   zipCollapsed: {}, // same, for the build-contents preview tree
   latestBuild: null, // most recent published build (for the download button + preview)
+  download: null, // the download control renderDownloadDesign drew (update, setNote, close)
   actorProfiles: {},
   repo: { owner: "BurnoutDecomp", name: "b5-decomp", ref: "dev" },
   explorer: {
@@ -879,156 +888,116 @@ async function refreshGithub() {
   }
 }
 
-// The odometer in the tachometer pod carries the figure for the eye; refreshDownload puts it
-// in words in the button's name.
-function setDownloadCount(n) {
-  const odometer = el("downloadOdometer");
-  if (odometer) setOdometer(odometer, Number(n || 0), { digits: 3 });
-}
-
-async function refreshDownload() {
-  const group = el("downloadGroup");
-  const button = el("downloadBuild");
-  if (!group || !button) return;
-  try {
-    const data = await fetchJson("/api/builds");
-    const latest = data && data.latest;
-    if (!latest) {
-      group.hidden = true;
-      state.latestBuild = null;
-      return;
-    }
-    const changed = !state.latestBuild || state.latestBuild.id !== latest.id;
-    state.latestBuild = latest;
-    state.builds = data.builds || [];
-    // the commit rides on the plate (its first seven characters), in words for assistive tech
-    const commit = latest.commit_short || String(latest.commit_sha || "").slice(0, 12);
-    text("downloadPlateNumber", commit.slice(0, 7).toUpperCase());
-    el("downloadPlate").hidden = !commit;
-    text("downloadBadge", latest.id != null ? `No. ${latest.id}` : "");
-    const downloads = Number(latest.downloads || 0);
-    // said before the details: "number 179, commit 3add8adc5a37, 1 download, 2h ago · 4.69 GB"
-    text("downloadCommit", [
-      latest.id != null ? `number ${latest.id}` : "",
-      commit ? `commit ${commit}` : "",
-      `${fmtInt(downloads)} download${downloads === 1 ? "" : "s"}`,
-    ].filter(Boolean).join(", ") + ", ");
-    const parts = [];
-    if (latest.built_at) parts.push(relTime(latest.built_at));
-    if (latest.size_bytes) parts.push(fmtBytes(latest.size_bytes));
-    text("downloadMeta", parts.join(" · ") || "latest");
-    button.title = `Download build ${latest.commit_short || latest.commit_sha}: full game (${fmtBytes(latest.size_bytes)})` +
-      (latest.update_url ? ` or the exe-only update (${fmtBytes(latest.bundle_size)})` : "") +
-      `. ${fmtInt(latest.downloads || 0)} downloads: unique addresses per day; the full game and the update each count once.`;
-    setDownloadCount(latest.downloads || 0);
-    // leave an open chooser (and any quota note in it) alone unless the build changed
-    if (changed || !el("downloadMenu").matches(":popover-open")) renderDownloadMenu();
-    group.hidden = false;
-  } catch (error) {
-    // No builds published yet (or endpoint unavailable): keep the button hidden.
-    group.hidden = true;
-  }
-}
-
-// The button opens a chooser (the shared download menu, a native popover): the full game
-// (assets + exe) or the exe-only update for anyone who already has the game folder. The
-// server says whether the assets changed since the previous build, which decides between them.
-function closeDownloadMenu() {
-  const menu = el("downloadMenu");
-  if (menu && menu.matches(":popover-open")) menu.hidePopover();
-}
-
-function downloadOption(title, size, note, url, kind) {
-  const link = document.createElement("a");
-  link.className = "b5-download-option";
-  link.href = url;
-  const icon = span("b5-download-option__icon", "↓");
-  icon.setAttribute("aria-hidden", "true");
-  link.append(
-    icon,
-    span("b5-download-option__title", title),
-    span("b5-download-option__size", size),
-    span("b5-download-option__description", note),
-  );
-  link.addEventListener("click", (event) => {
-    if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-    startDownload(url, kind);
-  });
-  return link;
-}
-
-function renderDownloadMenu() {
-  const menu = el("downloadMenu");
-  const b = state.latestBuild;
-  if (!menu || !b) return;
-  clearNode(menu);
-  const header = div("b5-download-menu__header");
-  header.append(span("b5-eyebrow", "Choose a package"), span("", b.commit_short || String(b.id || "")));
-  menu.appendChild(header);
-  const previous = (state.builds || []).find((x) => x.id !== b.id);
-  const assetsNote = !b.update_url
+// The latest build as the download designs read it: its number, commit, age and count, the
+// full game and the exe-only update (older builds have none), and the note on its assets.
+function downloadView(b, builds) {
+  const previous = (builds || []).find((x) => x.id !== b.id);
+  const text = !b.update_url
     ? "This build predates the exe-only update; the next published build will offer one."
     : b.assets_changed === false && previous
       ? `Game assets unchanged since build ${previous.commit_short || previous.id}${previous.built_at ? ` (${relTime(previous.built_at)})` : ""}: if you already have the game folder, the update is all you need.`
       : b.assets_changed === true
         ? "The game assets changed in this build: take the full game unless you know which files moved."
         : "First published build: take the full game.";
-  menu.appendChild(downloadOption(
-    "Full game", fmtBytes(b.size_bytes),
-    "Everything: the exe, its DLLs and every game asset. For a first install, or when the assets changed.",
-    b.download_url || "/download/latest", "full",
-  ));
-  if (b.update_url) {
-    menu.appendChild(downloadOption(
-      "Update only", fmtBytes(b.bundle_size),
-      "Burnout_PC.exe, its DLLs and the .cgsmap. Drop them over an existing game folder.",
-      b.update_url, "update",
-    ));
-  }
-  const note = document.createElement("footer");
-  note.className = "b5-download-menu__note";
-  note.id = "downloadNote";
-  if (b.update_url && b.assets_changed === false && previous) setDownloadNote(note, assetsNote, "success", "Assets unchanged");
-  else if (b.update_url && b.assets_changed === true) setDownloadNote(note, assetsNote, "warning", "Assets changed");
-  else setDownloadNote(note, assetsNote);
-  menu.appendChild(note);
+  const note = b.update_url && b.assets_changed === false && previous
+    ? { tone: "success", label: "Assets unchanged", text }
+    : b.update_url && b.assets_changed === true
+      ? { tone: "warning", label: "Assets changed", text }
+      : { text };
+  return {
+    number: b.id ?? "",
+    commit: b.commit_short || String(b.commit_sha || "").slice(0, 12),
+    age: b.built_at ? relTime(b.built_at) : "",
+    count: Number(b.downloads || 0),
+    month: b.built_at ? MONTHS[new Date(b.built_at).getUTCMonth()].toUpperCase() : "",
+    site: window.location.host,
+    previous: previous ? previous.id : "",
+    full: {
+      size: fmtBytes(b.size_bytes),
+      href: b.download_url || "/download/latest",
+      blurb: "Everything: the exe, its DLLs and every game asset. For a first install, or when the assets changed.",
+    },
+    update: b.update_url ? {
+      size: fmtBytes(b.bundle_size),
+      href: b.update_url,
+      blurb: "Burnout_PC.exe, its DLLs and the .cgsmap. Drop them over an existing game folder.",
+    } : null,
+    note,
+  };
 }
 
-function setDownloadNote(note, message, tone, label) {
-  clearNode(note);
-  if (label) {
-    const status = span("b5-status", label);
-    if (tone) status.dataset.tone = tone;
-    note.appendChild(status);
+// Draw the download control once, then keep it current: a new build redraws it; a new count
+// or age changes in place, and an open chooser (with any quota note in it) is left alone
+// unless the build changed.
+async function refreshDownload() {
+  const slot = el("downloadSlot");
+  if (!slot) return;
+  try {
+    const data = await fetchJson("/api/builds");
+    const latest = data && data.latest;
+    if (!latest) {
+      slot.hidden = true;
+      state.latestBuild = null;
+      return;
+    }
+    const changed = !state.latestBuild || state.latestBuild.id !== latest.id;
+    state.latestBuild = latest;
+    state.builds = data.builds || [];
+    const view = downloadView(latest, state.builds);
+    if (!state.download) {
+      state.download = renderDownloadDesign(slot, DOWNLOAD_DESIGN, {
+        prefix: "download",
+        data: view,
+        // ask first (a quota may be spent), keeping the chooser open for the answer
+        onChoose: (item, event) => {
+          if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          startDownload(item.href, item.key);
+        },
+        onPreview: () => {
+          if (state.latestBuild) openBuildContents(state.latestBuild.id);
+        },
+      });
+    } else if (changed || !state.download.opened) {
+      state.download.update(view);
+    }
+    const button = state.download.element;
+    if (button) {
+      button.title = `Download build ${latest.commit_short || latest.commit_sha}: full game (${fmtBytes(latest.size_bytes)})` +
+        (latest.update_url ? ` or the exe-only update (${fmtBytes(latest.bundle_size)})` : "") +
+        `. ${fmtInt(latest.downloads || 0)} downloads: unique addresses per day; the full game and the update each count once.`;
+    }
+    slot.hidden = false;
+  } catch (error) {
+    // No builds published yet (or endpoint unavailable): keep the control hidden.
+    slot.hidden = true;
   }
-  const p = document.createElement("p");
-  p.textContent = message;
-  note.appendChild(p);
 }
 
 // Ask first (HEAD is never counted), then navigate. A 429 means this address spent
 // today's allowance for that kind; the menu says so instead of opening a JSON page.
 async function startDownload(url, kind) {
-  const note = el("downloadNote");
+  const download = state.download;
   try {
     const probe = await fetch(url, { method: "HEAD", cache: "no-store" });
     if (probe.status === 429) {
-      if (note) {
-        setDownloadNote(note, kind === "full"
+      download?.setNote({
+        tone: "warning",
+        label: "Daily limit reached",
+        text: kind === "full"
           ? "This address has used today's full-game downloads (3 per day). The exe-only update has a larger allowance; the full game is back tomorrow."
-          : "This address has used today's update downloads. Back tomorrow.", "warning", "Daily limit reached");
-      }
+          : "This address has used today's update downloads. Back tomorrow.",
+      });
       return;
     }
     if (!probe.ok) {
-      if (note) setDownloadNote(note, `Download unavailable (HTTP ${probe.status}).`, "danger", "Unavailable");
+      download?.setNote({ tone: "danger", label: "Unavailable", text: `Download unavailable (HTTP ${probe.status}).` });
       return;
     }
   } catch (_) {
     /* the probe is a courtesy: fall through and let the browser try */
   }
-  closeDownloadMenu();
+  download?.close();
   window.location.href = url;
   window.setTimeout(refreshDownload, 4000);
 }
@@ -1777,13 +1746,6 @@ function initExplorer() {
   el("detailDialog").addEventListener("close", () => {
     if (state.detailNav.current) closeDetail();
   });
-
-  const previewBtn = el("downloadPreview");
-  if (previewBtn) {
-    previewBtn.addEventListener("click", () => {
-      if (state.latestBuild) openBuildContents(state.latestBuild.id);
-    });
-  }
 
   loadFacets();
   loadExplorer();
@@ -2776,8 +2738,8 @@ function connectStream() {
   state.refreshTimer = window.setInterval(refresh, 30000);
 }
 
-// Native selects marked data-b5-select get the shared themed dropdown; download groups,
-// menu filter groups and pagers are wired the same way. One enhancement root.
+// Native selects marked data-b5-select get the shared themed dropdown; menu filter groups and
+// pagers are wired the same way. One enhancement root. (The download control wires itself.)
 enhance(document.body);
 
 refresh();

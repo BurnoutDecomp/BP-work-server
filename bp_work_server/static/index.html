@@ -49,8 +49,9 @@
          (static/b5-ui/webui.json names its version). app.css lays out this dashboard. -->
     <link rel="icon" type="image/svg+xml" href="/static/b5-ui/assets/favicon.svg" />
     <link rel="preload" href="/static/b5-ui/assets/anton-latin.ttf" as="font" type="font/ttf" crossorigin />
-    <link rel="stylesheet" href="/static/b5-ui/b5-ui.css?v=0.2.0" />
-    <link rel="stylesheet" href="/static/app.css?v=60" />
+    <link rel="stylesheet" href="/static/b5-ui/b5-ui.css?v=0.2.0-2" />
+    <link rel="stylesheet" href="/static/b5-ui/download-designs.css?v=0.2.0-2" />
+    <link rel="stylesheet" href="/static/app.css?v=61" />
   </head>
   <body class="b5-page">
     <a class="b5-skip-link" href="#progress">Skip to progress</a>
@@ -120,51 +121,10 @@
               <span class="b5-connection__kicker">THE LATEST PC BUILD</span>
               <span id="connection" class="b5-status" data-tone="warning"><span id="connectionText">Connecting</span></span>
             </div>
-            <!-- Download build, an instrument cluster: a tachometer pod (the build's number on its
-                 face, its downloads on the odometer) and the bar that runs out of it; the eye is
-                 the knob on the pod's rim. The chooser offers the full game or the exe-only update.
-                 Change the bar's artwork with data-skin: asphalt · streak · skyline · tireburn · torn · split. -->
-            <div id="downloadGroup" class="b5-download-group b5-download-group--cluster" data-b5-download-menu hidden>
-              <button
-                id="downloadBuild"
-                class="b5-download"
-                type="button"
-                data-skin="tireburn"
-                popovertarget="downloadMenu"
-                aria-controls="downloadMenu"
-                title="Download the latest build"
-              >
-                <span class="b5-download__boost" aria-hidden="true"></span>
-                <span class="b5-gauge" data-b5-gauge aria-hidden="true">
-                  <span id="downloadBadge" class="b5-gauge__badge"></span><span id="downloadOdometer" class="b5-odometer"></span><span class="b5-gauge__unit">Downloads</span>
-                </span>
-                <svg class="b5-icon" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 3v12" /><path d="m7 11 5 5 5-5" /><path d="M4 21h16" />
-                </svg>
-                <span>
-                  <strong>Download build</strong>
-                  <!-- the build's commit on a Paradise City plate, then its number, age and size -->
-                  <span class="b5-download__meta">
-                    <span id="downloadPlate" class="b5-plate" aria-hidden="true" hidden>
-                      <span class="b5-plate__state">Paradise City</span><span id="downloadPlateNumber" class="b5-plate__number"></span>
-                    </span>
-                    <small><span id="downloadCommit" class="b5-sr-only"></span><span id="downloadMeta">latest</span></small>
-                  </span>
-                </span>
-              </button>
-              <button
-                id="downloadPreview"
-                class="b5-download-preview"
-                type="button"
-                title="Preview the files inside this build"
-                aria-label="Preview build contents"
-              >
-                <svg class="b5-icon" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" />
-                </svg>
-              </button>
-              <div id="downloadMenu" class="b5-download-menu" popover="auto" role="region" aria-label="Build downloads"></div>
-            </div>
+            <!-- Download build: app.js draws the download control here from the latest build, in the
+                 design named by DOWNLOAD_DESIGN (any of the b5-ui download designs; the gallery shows
+                 them all). Its chooser offers the full game or the exe-only update. -->
+            <div id="downloadSlot" class="wp-download" hidden></div>
             <span id="subtitle" class="b5-hint">Connecting to work server…</span>
           </div>
         </div>
@@ -751,6 +711,6 @@
 
     <script src="/static/d3-hierarchy.min.js?v=3.1.2" defer></script>
     <script src="/static/progress-map.js?v=5" defer></script>
-    <script type="module" src="/static/app.js?v=54"></script>
+    <script type="module" src="/static/app.js?v=55"></script>
   </body>
 </html>
