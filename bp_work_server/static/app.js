@@ -1,7 +1,7 @@
 // The progress dashboard. Controls, the detail drawer, the release chooser and the pagers
 // are the shared b5-decomp-webui components in /static/b5-ui (webui.json names the build);
 // this module fetches the data and renders the domain views.
-import { closeDialog, createFilterGroup, createPager, createSelect, enhance, openDialog, setProgress } from "./b5-ui/b5-ui.js";
+import { closeDialog, createFilterGroup, createPager, createSelect, enhance, openDialog, setOdometer, setProgress } from "./b5-ui/b5-ui.js";
 
 const state = {
   lastEventId: 0,
@@ -886,8 +886,10 @@ function setDownloadCount(n) {
     counter.hidden = true;
     return;
   }
+  // the drums carry the figure for the eye, the hidden number for everyone else
   const num = counter.querySelector(".dc-num");
-  if (num) num.textContent = fmtCompact(n);
+  if (num) num.textContent = fmtInt(n);
+  setOdometer(el("downloadOdometer"), n, { digits: 3 });
   counter.title = `${fmtInt(n)} downloader${n === 1 ? "" : "s"} (unique addresses per day; the full game and the update each count once)`;
   counter.hidden = false;
 }
@@ -907,8 +909,13 @@ async function refreshDownload() {
     const changed = !state.latestBuild || state.latestBuild.id !== latest.id;
     state.latestBuild = latest;
     state.builds = data.builds || [];
+    // the commit rides on the plate (its first seven characters), in words for assistive tech
+    const commit = latest.commit_short || String(latest.commit_sha || "").slice(0, 12);
+    text("downloadPlateNumber", commit.slice(0, 7).toUpperCase());
+    el("downloadPlate").hidden = !commit;
+    text("downloadCommit", commit ? `commit ${commit}, ` : "");
     const parts = [];
-    if (latest.commit_short) parts.push(latest.commit_short);
+    if (latest.id != null) parts.push(`No. ${latest.id}`);
     if (latest.built_at) parts.push(relTime(latest.built_at));
     if (latest.size_bytes) parts.push(fmtBytes(latest.size_bytes));
     text("downloadMeta", parts.join(" · ") || "latest");
