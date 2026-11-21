@@ -2070,20 +2070,246 @@ function profileBarList(title, items, labelKey, valueKey, emptyText, metaKey) {
   return section;
 }
 
-function profileSparkline(points) {
-  const wrap = div("profile-spark");
-  if (!points || !points.length) {
-    wrap.appendChild(div("muted-text", "No activity yet."));
-    return wrap;
+// ---- Profile activity: units laid on a real calendar ----------------------
+// The API lists only the days that had activity. The chart puts them on the calendar,
+// empty days and weeks included, so a quiet stretch reads as one. The bucket follows the
+// span: days up to about six weeks, then weeks up to a year, then months. Dates are UTC.
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAY_MS = 86400000;
+let activityChartSeq = 0;
+
+const utcDay = (key) => Date.parse(`${key}T00:00:00Z`);
+const dayKey = (time) => new Date(time).toISOString().slice(0, 10);
+const dayMonth = (time) => `${new Date(time).getUTCDate()} ${MONTHS[new Date(time).getUTCMonth()]}`;
+const monthTick = (date) => (date.getUTCMonth() === 0 ? `Jan ${date.getUTCFullYear()}` : MONTHS[date.getUTCMonth()]);
+
+function activityBuckets(points, now = Date.now()) {
+  const counts = new Map();
+  for (const point of points || []) {
+    const count = Number(point.count || 0);
+    if (count > 0 && /^\d{4}-\d{2}-\d{2}$/.test(String(point.date || ""))) {
+      counts.set(point.date, (counts.get(point.date) || 0) + count);
+    }
   }
-  const max = Math.max(...points.map((point) => Number(point.count || 0)), 1);
-  for (const point of points.slice(-28)) {
-    const bar = div("profile-spark-bar");
-    bar.style.height = `${Math.max(8, (Number(point.count || 0) / max) * 76)}px`;
-    bar.title = `${point.date}: ${fmtInt(point.count)} TUs`;
-    wrap.appendChild(bar);
+  if (!counts.size) return null;
+  const keys = [...counts.keys()].sort();
+  const today = utcDay(dayKey(now));
+  const first = utcDay(keys[0]);
+  const end = Math.max(today, utcDay(keys[keys.length - 1]));
+  const start = Math.min(first, end - 13 * DAY_MS); // never fewer than two weeks
+  const spanDays = Math.round((end - start) / DAY_MS) + 1;
+  const unit = spanDays <= 45 ? "day" : spanDays <= 371 ? "week" : "month";
+  let from = start;
+  if (unit === "week") from -= ((new Date(from).getUTCDay() + 6) % 7) * DAY_MS; // back to Monday
+  if (unit === "month") from = Date.UTC(new Date(from).getUTCFullYear(), new Date(from).getUTCMonth(), 1);
+  const buckets = [];
+  while (from <= end) {
+    const date = new Date(from);
+    const to =
+      unit === "day" ? from
+      : unit === "week" ? from + 6 * DAY_MS
+      : Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1) - DAY_MS;
+    let count = 0;
+    let days = 0;
+    for (let time = from; time <= to; time += DAY_MS) {
+      const value = counts.get(dayKey(time)) || 0;
+      count += value;
+      if (value) days += 1;
+    }
+    buckets.push({ from, to, count, days, current: from <= today && today <= to });
+    from = to + DAY_MS;
   }
-  return wrap;
+  return { unit, buckets, first, end, activeDays: counts.size };
+}
+
+function activityPeriod(unit, bucket) {
+  const from = new Date(bucket.from);
+  if (unit === "day") return `${WEEKDAYS[from.getUTCDay()]} ${dayMonth(bucket.from)}`;
+  if (unit === "month") return `${MONTHS[from.getUTCMonth()]} ${from.getUTCFullYear()}`;
+  return from.getUTCMonth() === new Date(bucket.to).getUTCMonth()
+    ? `${from.getUTCDate()}–${dayMonth(bucket.to)}`
+    : `${dayMonth(bucket.from)} – ${dayMonth(bucket.to)}`;
+}
+
+// Time labels under the bars: Mondays for days, the week that holds the 1st for weeks,
+// every month for months; at most seven, so they never crowd. Day labels name the month
+// only on the first label and where it changes (26 Oct, 2 Nov, 9, 16).
+function activityTicks(unit, buckets) {
+  let ticks = [];
+  buckets.forEach((bucket, index) => {
+    const from = new Date(bucket.from);
+    const to = new Date(bucket.to);
+    if (unit === "day" && from.getUTCDay() === 1) ticks.push({ index, time: bucket.from });
+    else if (unit === "month") ticks.push({ index, label: monthTick(from) });
+    else if (unit === "week" && from.getUTCDate() === 1) ticks.push({ index, label: monthTick(from) });
+    else if (unit === "week" && from.getUTCMonth() !== to.getUTCMonth()) ticks.push({ index, label: monthTick(to) });
+  });
+  if (unit !== "month" && (!ticks.length || ticks[0].index >= 4)) {
+    ticks.unshift({ index: 0, time: buckets[0].from, label: unit === "week" ? monthTick(new Date(buckets[0].from)) : undefined });
+  }
+  if (ticks.length > 7) {
+    const every = Math.ceil(ticks.length / 7);
+    ticks = ticks.filter((_, i) => i % every === 0);
+  }
+  if (unit === "day") {
+    let month = -1;
+    for (const tick of ticks) {
+      const date = new Date(tick.time);
+      tick.label = date.getUTCMonth() === month ? String(date.getUTCDate()) : dayMonth(tick.time);
+      month = date.getUTCMonth();
+    }
+  }
+  return ticks;
+}
+
+// Round gridline values from 0 up to the tallest bar, three or four of them.
+function activityScale(max) {
+  const raw = max / 4;
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  const norm = raw / magnitude;
+  const step = Math.max(1, (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * magnitude);
+  const values = [];
+  for (let value = 0; value <= max; value += step) values.push(value);
+  return values;
+}
+
+// Place a label along the time axis; near either end it hangs inward instead of centring.
+function placeAlong(node, fraction) {
+  node.style.setProperty("--x", String(fraction));
+  if (fraction < 0.05) node.classList.add("is-start");
+  else if (fraction > 0.95) node.classList.add("is-end");
+}
+
+function profileActivity(points) {
+  const figure = document.createElement("figure");
+  figure.className = "activity";
+  const data = activityBuckets(points);
+  if (!data) {
+    figure.appendChild(div("muted-text", "No activity yet."));
+    return figure;
+  }
+  const { unit, buckets } = data;
+  const max = Math.max(...buckets.map((bucket) => bucket.count), 1);
+  const peak = buckets.reduce((best, bucket, index) => (bucket.count > buckets[best].count ? index : best), 0);
+  const seq = ++activityChartSeq;
+  const firstDate = new Date(data.first);
+  const endDate = new Date(data.end);
+  const range = `${dayMonth(data.first)}${firstDate.getUTCFullYear() !== endDate.getUTCFullYear() ? ` ${firstDate.getUTCFullYear()}` : ""} – ${dayMonth(data.end)} ${endDate.getUTCFullYear()}`;
+  const daysText = (count) => `${fmtInt(count)} active day${count === 1 ? "" : "s"}`;
+
+  const head = document.createElement("figcaption");
+  head.className = "activity-head";
+  head.append(span("activity-title", `Units per ${unit}`), span("activity-range", `${range} · ${daysText(data.activeDays)}`));
+
+  const chart = div("activity-chart");
+  const yAxis = div("activity-y");
+  const grid = div("activity-grid");
+  yAxis.setAttribute("aria-hidden", "true");
+  grid.setAttribute("aria-hidden", "true");
+  const scale = activityScale(max);
+  for (const value of scale) {
+    const label = span("", fmtInt(value));
+    label.style.setProperty("--at", String(value / max));
+    yAxis.appendChild(label);
+    if (value > 0) {
+      const line = document.createElement("i");
+      line.style.setProperty("--at", String(value / max));
+      grid.appendChild(line);
+    }
+  }
+  yAxis.style.width = `${Math.max(...scale.map((value) => fmtInt(value).length))}ch`;
+
+  const bars = div("activity-bars");
+  bars.tabIndex = 0;
+  bars.setAttribute("role", "listbox");
+  bars.setAttribute("aria-label", `Units per ${unit}, ${range}. Arrow keys step through the ${unit}s.`);
+  const describe = (bucket) =>
+    `${activityPeriod(unit, bucket)}${bucket.current ? " (so far)" : ""}: ${fmtInt(bucket.count)} unit${bucket.count === 1 ? "" : "s"}` +
+    (unit === "day" ? "" : `, ${daysText(bucket.days)}`);
+  const cols = buckets.map((bucket, index) => {
+    const col = div(index === peak ? "activity-col is-peak" : "activity-col");
+    col.id = `activity-${seq}-${index}`;
+    col.setAttribute("role", "option");
+    col.setAttribute("aria-selected", "false");
+    col.setAttribute("aria-label", describe(bucket));
+    col.style.setProperty("--v", String(bucket.count / max));
+    if (bucket.count) col.appendChild(span("activity-bar"));
+    bars.appendChild(col);
+    return col;
+  });
+
+  const peakLabel = span("activity-peak", fmtInt(buckets[peak].count));
+  peakLabel.setAttribute("aria-hidden", "true");
+  placeAlong(peakLabel, (peak + 0.5) / buckets.length);
+  const frame = div("activity-frame");
+  frame.append(grid, bars, peakLabel);
+
+  const xAxis = div("activity-x");
+  xAxis.setAttribute("aria-hidden", "true");
+  for (const tick of activityTicks(unit, buckets)) {
+    const label = span("", tick.label);
+    placeAlong(label, (tick.index + 0.5) / buckets.length);
+    xAxis.appendChild(label);
+  }
+  chart.append(yAxis, frame, xAxis);
+
+  // The readout names the bar under the pointer, or the selected one (the busiest at first).
+  const readout = div("activity-readout");
+  readout.setAttribute("aria-hidden", "true");
+  const when = span("activity-when");
+  const tag = span("activity-tag");
+  const value = document.createElement("strong");
+  value.className = "activity-value";
+  const units = span("activity-unit");
+  const days = span("activity-days");
+  readout.append(when, tag, value, units, days);
+
+  let selected = peak;
+  const show = (index) => {
+    const bucket = buckets[index];
+    when.textContent = activityPeriod(unit, bucket);
+    tag.textContent = bucket.current ? "so far" : index === peak ? `busiest ${unit}` : "";
+    tag.hidden = !tag.textContent;
+    value.textContent = fmtInt(bucket.count);
+    units.textContent = bucket.count === 1 ? "unit" : "units";
+    days.textContent = unit === "day" ? "" : daysText(bucket.days);
+    cols.forEach((col, i) => col.classList.toggle("is-shown", i === index));
+  };
+  const select = (index) => {
+    selected = Math.max(0, Math.min(buckets.length - 1, index));
+    cols.forEach((col, i) => col.setAttribute("aria-selected", String(i === selected)));
+    bars.setAttribute("aria-activedescendant", cols[selected].id);
+    show(selected);
+  };
+  const indexOf = (event) => cols.indexOf(event.target.closest(".activity-col"));
+  bars.addEventListener("pointermove", (event) => {
+    const index = indexOf(event);
+    if (index >= 0) show(index);
+  });
+  bars.addEventListener("pointerleave", () => show(selected));
+  bars.addEventListener("click", (event) => {
+    const index = indexOf(event);
+    if (index >= 0) select(index);
+  });
+  bars.addEventListener("keydown", (event) => {
+    const moves = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 };
+    let next = null;
+    if (event.key in moves) next = selected + moves[event.key];
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = buckets.length - 1;
+    if (next === null) return;
+    event.preventDefault();
+    select(next);
+  });
+  select(peak);
+
+  const note = div(
+    "activity-note",
+    "Each unit holding their code counts once, on the day its file last changed — by anyone, so a big shared commit lands in everyone's chart.",
+  );
+  figure.append(head, chart, readout, note);
+  return figure;
 }
 
 function renderProfileDetail(profile) {
@@ -2128,7 +2354,7 @@ function renderProfileDetail(profile) {
   body.appendChild(overview);
 
   const activity = detailSection("Activity");
-  activity.appendChild(profileSparkline(profile.activity_by_day || []));
+  activity.appendChild(profileActivity(profile.activity_by_day || []));
   body.appendChild(activity);
 
   const statusItems = Object.entries(profile.status_counts || {})
@@ -2145,6 +2371,18 @@ function renderProfileDetail(profile) {
   body.appendChild(profileEventList(profile.recent_events || []));
 }
 
+// A path or qualified name that wraps at its separators (/ and ::), not mid-word.
+function pathNode(className, text) {
+  const node = span(className, "");
+  String(text ?? "")
+    .split(/(?<=\/|::)/)
+    .forEach((part, index) => {
+      if (index) node.appendChild(document.createElement("wbr"));
+      node.appendChild(document.createTextNode(part));
+    });
+  return node;
+}
+
 function profileTuList(title, items, emptyText) {
   const section = detailSection(`${title} (${items.length})`);
   if (!items.length) {
@@ -2154,14 +2392,14 @@ function profileTuList(title, items, emptyText) {
   for (const item of items) {
     const row = div("dep-row clickable profile-tu-row");
     const main = div("goal-tu-main");
-    main.appendChild(span("dep-name", item.id));
+    main.appendChild(pathNode("dep-name", item.id));
     const meta = [];
     if (item.source) meta.push(item.source);
     if (Number(item.lines || 0) > 0) meta.push(`${fmtInt(item.lines)} lines`);
     else if (item.basis === "review_pass") meta.push("reviewed");
     if (item.percent) meta.push(`${item.percent}%`);
-    if (item.dest_path) meta.push(item.dest_path);
-    main.appendChild(div("tu-meta", meta.join(" | ")));
+    if (meta.length) main.appendChild(div("tu-meta", meta.join(" | ")));
+    if (item.dest_path) main.appendChild(pathNode("tu-path", item.dest_path));
     row.appendChild(main);
     if (item.status) row.appendChild(statusPill(item.status));
     row.addEventListener("click", () => openDetail(item.id));
@@ -2179,13 +2417,13 @@ function profileFuncList(title, items) {
   for (const item of items) {
     const row = div("dep-row clickable profile-tu-row");
     const main = div("goal-tu-main");
-    main.appendChild(span("dep-name", item.name));
+    main.appendChild(pathNode("dep-name", item.name));
     const meta = [];
-    if (item.tu_id) meta.push(item.tu_id);
     if (Number(item.lines || 0) > 0) meta.push(`${fmtInt(item.lines)} lines`);
     else if (item.basis === "completed_by") meta.push("completed");
     if (item.percent) meta.push(`${item.percent}%`);
-    main.appendChild(div("tu-meta", meta.join(" | ")));
+    if (meta.length) main.appendChild(div("tu-meta", meta.join(" | ")));
+    if (item.tu_id) main.appendChild(pathNode("tu-path", item.tu_id));
     row.appendChild(main);
     if (item.status) row.appendChild(statusPill(item.status));
     row.addEventListener("click", () => openDetail(item.tu_id));
