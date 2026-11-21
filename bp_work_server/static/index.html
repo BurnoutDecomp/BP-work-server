@@ -50,7 +50,7 @@
     <link rel="icon" type="image/svg+xml" href="/static/b5-ui/assets/favicon.svg" />
     <link rel="preload" href="/static/b5-ui/assets/anton-latin.ttf" as="font" type="font/ttf" crossorigin />
     <link rel="stylesheet" href="/static/b5-ui/b5-ui.css?v=0.2.0" />
-    <link rel="stylesheet" href="/static/app.css?v=54" />
+    <link rel="stylesheet" href="/static/app.css?v=55" />
   </head>
   <body class="b5-page">
     <a class="b5-skip-link" href="#progress">Skip to progress</a>
@@ -63,10 +63,10 @@
       <!-- The decomp license rides in the header once the summary's rings have scrolled
            away (app.js), so it never sits beside the figures it repeats. It opens the
            whole license. -->
-      <button class="b5-license-chip wp-license-chip" id="licenseChip" type="button" popovertarget="licenseCard" aria-expanded="false" aria-label="Decomp license" data-b5-reveal>
-        <span class="b5-license-chip__class" id="licenseChipClass" aria-hidden="true">L</span>
+      <button class="b5-license-chip wp-license-chip" id="licenseChip" type="button" popovertarget="licenseCard" aria-expanded="false" data-b5-reveal>
+        <span class="b5-license-chip__class" id="licenseChipClass">L</span>
         <span class="b5-license-chip__rank" id="licenseChipRank">Learner's permit</span>
-        <span class="b5-license-chip__value" id="licenseChipValue">—</span>
+        <span class="b5-license-chip__value" id="licenseChipValue">—</span><span class="b5-sr-only"> of translation units complete</span>
       </button>
       <nav class="b5-site-nav" aria-label="Main navigation">
         <a href="#progress" aria-current="location"><span>01</span> Progress</a>
@@ -722,6 +722,6 @@
 
     <script src="/static/d3-hierarchy.min.js?v=3.1.2" defer></script>
     <script src="/static/progress-map.js?v=5" defer></script>
-    <script type="module" src="/static/app.js?v=48"></script>
+    <script type="module" src="/static/app.js?v=49"></script>
   </body>
 </html>

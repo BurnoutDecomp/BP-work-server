@@ -2403,16 +2403,7 @@ function reportRing(id, pct) {
   if (!meter || !Number.isFinite(pct)) return;
   setProgress(meter, pct);
   meter.removeAttribute("aria-valuetext");
-  if (id === "tu") {
-    text("licenseChipValue", `${pct.toFixed(1)}%`);
-    labelLicenseChip();
-  }
-}
-
-// The chip's name carries what it shows, rank and figure, whatever the width hides.
-function labelLicenseChip() {
-  const chip = el("licenseChip");
-  if (chip) chip.setAttribute("aria-label", `${el("licenseChipRank")?.textContent}: ${el("licenseChipValue")?.textContent} of translation units complete`);
+  if (id === "tu") text("licenseChipValue", `${pct.toFixed(1)}%`);
 }
 
 // The license chip arrives in the header once the rings have gone under it, and leaves
@@ -2465,7 +2456,6 @@ function renderLicense(complete, tus, sourceCommit) {
   text("licenseClass", rank.badge);
   text("licenseChipRank", rank.name);
   text("licenseChipClass", rank.badge);
-  labelLicenseChip();
   if (next) {
     const needed = Math.max(0, Math.ceil((next.min / 100) * tus) - complete);
     text("licenseNext", `Next: ${next.name} at ${next.min}% · ${fmtInt(needed)} ${needed === 1 ? "unit" : "units"} to go`);

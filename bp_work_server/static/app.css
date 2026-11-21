@@ -90,7 +90,8 @@ html {
 
 /* ---------- The license chip and card, the news ticker ---------- */
 
-/* Beside the brand; under 1150 px the badge and figure alone, the rank in its name. */
+/* Beside the brand; under 1150 px the badge and figure alone, the rank still in the
+   button's name. */
 .wp-license-chip {
   margin-right: auto;
 }
@@ -130,7 +131,13 @@ html {
 
 @media (max-width: 1150px) {
   .wp-license-chip .b5-license-chip__rank {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 
