@@ -20,7 +20,8 @@ The measuring code is BP-Decomp_Workflow's `tools/bytematch/wine.py` and its ima
 
 ## Security model
 
-- The web app (`bpwork`) never runs Docker and is not in the `docker` group. It writes a request
+- The web app (`bpwork`) never runs Docker and is not in the `docker` group. It runs in its own
+  container without the Docker socket (`deploy/docker/`). It writes a request
   naming a commit and serves the files the runner writes back (`bp_work_server/bytematch_jobs.py`).
 - The runner runs as root but never trusts those files. It reads only request names, which must
   be full commit ids. It writes into the web app's folder as the web app's own user, and reads

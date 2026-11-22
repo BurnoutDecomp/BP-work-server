@@ -1,0 +1,20 @@
+# BP Work Server under systemd: runs the Compose project in /opt/bp-work-server.
+# The deploy workflow installs this file to /etc/systemd/system/; see deploy/docker/README.md.
+[Unit]
+Description=BP Work Server (Docker)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/bp-work-server
+# Start the container (recreating it when the image changed) and wait for its health check.
+ExecStart=/usr/bin/docker compose up --detach --wait --wait-timeout 120 --remove-orphans
+ExecReload=/usr/bin/docker compose up --detach --wait --wait-timeout 120 --remove-orphans
+ExecStop=/usr/bin/docker compose stop
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

@@ -283,6 +283,13 @@ The deploy workflow checks the submodule out after each pull, and the server ask
 browsers to revalidate those files. Use the library's classes for new shared controls
 rather than styling them again in `app.css`; see its component reference.
 
+## Production
+
+The live server runs this app in Docker under systemd: `Dockerfile` and `compose.yaml` build
+and run it, and every push to `main` redeploys it through `.github/workflows/deploy.yml`.
+[deploy/docker/README.md](deploy/docker/README.md) covers the layout, deploys and first-time
+setup. `requirements.lock` pins the dependency versions the image installs.
+
 ## Tests
 
 ```powershell

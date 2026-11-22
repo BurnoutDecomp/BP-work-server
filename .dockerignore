@@ -1,0 +1,22 @@
+# Only what the image runs: the package, pyproject.toml, README.md (package metadata) and
+# requirements.lock. Local data, clones and environments stay out.
+.git
+**/.git
+.github
+.claude
+.venv
+venv
+data
+docs
+tests
+deploy
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.ruff_cache
+*.egg-info
+**/*.bak*
+*.ps1
+compose.yaml
+Dockerfile
+.dockerignore

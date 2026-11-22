@@ -20,6 +20,8 @@ jobs:
           host: adriwin.fr
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # The image build can take a few minutes when dependencies change.
+          command_timeout: 20m
           script: |
             set -e
             # The tree is owned by bpwork; let root's git work in it and in the UI submodule.
@@ -28,25 +30,29 @@ jobs:
                 git config --global --add safe.directory "$dir"
             done
             cd /opt/bp-work-server
-            # Raise the maintenance curtain: nginx serves the static page while this exists.
-            touch /opt/bp-work-server/maintenance.flag
             git fetch origin main
             git reset --hard origin/main
             # The dashboard's UI library is a submodule (b5-decomp-webui, dist branch).
             git submodule sync --recursive
             git submodule update --init --recursive --force
-            # Reinstall in case dependencies or the package metadata changed.
-            .venv/bin/pip install -e . --quiet
+            # The app runs in Docker (deploy/docker/README.md). Build the new image while the
+            # running container keeps serving; a failed build stops here, before any downtime.
+            docker compose build --pull
+            # Raise the maintenance curtain: nginx serves the static page while this exists.
+            touch /opt/bp-work-server/maintenance.flag
             # The byte-match runner runs as root from its own copy, once it is set up
             # (deploy/bytematch/README.md): refresh the copy and its units from this tree.
             if [ -d /usr/local/lib/bp-bytematch ]; then
               install -m 755 deploy/bytematch/runner.py /usr/local/lib/bp-bytematch/runner.py
               install -m 644 deploy/bytematch/bp-bytematch.service deploy/bytematch/bp-bytematch.path \
                 deploy/bytematch/bp-bytematch.timer /etc/systemd/system/
-              systemctl daemon-reload
             fi
-            # The service runs as bpwork; keep the tree owned by it.
+            # The unit that runs the container comes from this tree too.
+            install -m 644 deploy/docker/bp-work-server.service /etc/systemd/system/bp-work-server.service
+            systemctl daemon-reload
+            # nginx serves deploy/maintenance.html from this tree; keep it owned by bpwork.
             chown -R bpwork:bpwork /opt/bp-work-server
+            # Recreate the container on the new image; the unit waits for its health check.
             systemctl restart bp-work-server.service
             # Wait for the app to actually answer before dropping the curtain.
             for i in $(seq 1 30); do
@@ -57,4 +63,7 @@ jobs:
             done
             # Lower the curtain (kept up if deploy failed earlier, thanks to set -e).
             rm -f /opt/bp-work-server/maintenance.flag
+            # Drop the image this build replaced.
+            docker image prune --force --filter label=org.opencontainers.image.title=bp-work-server
             systemctl --no-pager status bp-work-server.service | head -n 5
+            docker compose ps

@@ -1,0 +1,51 @@
+# BP Work Server in production. systemd runs this project as bp-work-server.service
+# (deploy/docker/bp-work-server.service); deploy/docker/README.md covers the setup.
+name: bp-work-server
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        # The host's bpwork account (id -u bpwork / id -g bpwork).
+        APP_UID: ${BP_UID:-999}
+        APP_GID: ${BP_GID:-990}
+    image: bp-work-server:local
+    container_name: bp-work-server
+    # Host networking keeps the app on 127.0.0.1:8765, where nginx proxies to it, and keeps
+    # nginx as the peer uvicorn trusts for X-Forwarded-For. Nothing is published.
+    network_mode: host
+    # Server settings (paths, GitHub repos, Drive remote). Not in git; see
+    # deploy/docker/bp-work-server.env.example.
+    env_file: /etc/bp-work-server/bp-work-server.env
+    command:
+      - --db
+      - /var/lib/bp-work-server/bp-work.sqlite3
+      - --users-db
+      - /var/lib/bp-work-server/bp-work-users.sqlite3
+      - serve
+      - --host
+      - 127.0.0.1
+      - --port
+      - "8765"
+    volumes:
+      # Databases, clones, assets, build downloads and the byte-match queue. nginx serves
+      # downloads/ and the byte-match runner reads bytematch/ from the same host path.
+      - /var/lib/bp-work-server:/var/lib/bp-work-server
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 20s
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      start_interval: 2s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
