@@ -21,6 +21,13 @@ log = logging.getLogger(__name__)
 # ~5s rebuild, pinning a core continuously. 15s collapses that to a trickle.
 DASHBOARD_CACHE_TTL = float(os.environ.get("BP_DASHBOARD_CACHE_TTL", "15"))
 
+# The page itself is sent with the figures written in (services/page.py). When the cached
+# state has expired it waits this long for a rebuild (well under a second on production),
+# then goes out with the last state built rather than keep a reader waiting.
+PAGE_STATE_WAIT = float(os.environ.get("BP_PAGE_STATE_WAIT", "2"))
+# app.js reloads the byte-match summary once a minute; the page's copy is kept as long.
+PAGE_BYTEMATCH_TTL = 60.0
+
 
 async def decomp_health(decomp: DecompRepo) -> dict:
     """Clone freshness, or an empty dict for a repo object that cannot report it."""
@@ -63,6 +70,8 @@ def build_dashboard_state(
         started = time.perf_counter()
         data = store.dashboard_state(attribution_repo_rev=attribution_repo_rev)
         cache["data"] = data
+        # what the page shows while a rebuild runs; invalidation leaves it alone
+        cache["last"] = data
         cache["attribution_repo_rev"] = attribution_repo_rev
         cache["expires_at"] = now + DASHBOARD_CACHE_TTL
         log.debug("dashboard_state built in %.3fs", time.perf_counter() - started)
@@ -86,6 +95,52 @@ async def warm_dashboard_state(app: Any, store: WorkStore) -> None:
         raise
     except Exception:
         log.exception("dashboard state warm-up failed; the first request will build it")
+
+
+async def dashboard_state_for_page(app: Any, wait: float = PAGE_STATE_WAIT) -> dict | None:
+    """The state the page is sent with: the cached one while fresh, else a rebuild that
+    comes within `wait` seconds, else the last one built (None before the first)."""
+    cache = app.state.dashboard_cache
+    data = cache.get("data")
+    if data is not None and time.monotonic() < cache["expires_at"]:
+        return data
+
+    async def rebuild() -> dict:
+        repo_rev = await repo_revision(app.state.decomp)
+        return await asyncio.to_thread(build_dashboard_state, app, app.state.store, repo_rev)
+
+    def report(done: asyncio.Future) -> None:
+        if not done.cancelled() and done.exception() is not None:
+            log.error("dashboard state for the page failed", exc_info=done.exception())
+
+    # One rebuild at a time, however many pages are asked for while it runs. One that
+    # outlasts the wait still lands in the cache, for the next reader, and its failure is
+    # logged whenever it comes.
+    task = getattr(app.state, "page_state_rebuild", None)
+    if task is None or task.done():
+        task = app.state.page_state_rebuild = asyncio.ensure_future(rebuild())
+        task.add_done_callback(report)
+    try:
+        return await asyncio.wait_for(asyncio.shield(task), wait)
+    except TimeoutError:
+        log.info("dashboard state took over %.1fs; the page shows the last one built", wait)
+    except Exception:
+        pass  # report() logs it
+    return cache.get("data") or cache.get("last")
+
+
+async def bytematch_summary_for_page(app: Any) -> dict | None:
+    """The byte-match summary the page is sent with, kept PAGE_BYTEMATCH_TTL."""
+    cache = app.state.page_bytematch_cache
+    if cache["data"] is not None and time.monotonic() < cache["expires_at"]:
+        return cache["data"]
+    try:
+        data = await asyncio.to_thread(app.state.store.bytematch_summary)
+    except Exception:
+        log.exception("byte-match summary for the page failed")
+        return cache["data"]
+    cache.update(data=data, expires_at=time.monotonic() + PAGE_BYTEMATCH_TTL)
+    return data
 
 
 def invalidate_dashboard_cache(request: Request) -> None:

@@ -325,6 +325,10 @@ function detailText(detail) {
 
 /* ---------------- Work dashboard ---------------- */
 
+// The server sends the page with what render() and renderBytematch() draw already in it,
+// for readers that run no script (services/page.py follows these functions by name), and
+// these redraw it in place. A change to their text or markup goes in both.
+
 async function refresh() {
   if (state.dashboardInFlight) return;
   state.dashboardInFlight = true;

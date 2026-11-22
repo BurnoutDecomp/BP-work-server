@@ -94,12 +94,12 @@
       </div>
       <p class="b5-license__next" id="licenseNext">Reading the work ledger…</p>
       <div class="b5-license__stats">
-          <div class="b5-meter" id="meterUnits" data-tone="success" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Units complete"><span class="b5-meter__label">Units complete</span><span class="b5-meter__value" data-b5-progress-label>—</span><span class="b5-meter__bar"></span></div>
-          <div class="b5-meter" id="meterFuncs" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Functions covered"><span class="b5-meter__label">Functions covered</span><span class="b5-meter__value" data-b5-progress-label>—</span><span class="b5-meter__bar"></span></div>
-          <div class="b5-meter" id="meterBuild" data-tone="info" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="In the build"><span class="b5-meter__label">In the build</span><span class="b5-meter__value" data-b5-progress-label>—</span><span class="b5-meter__bar"></span></div>
-          <div class="b5-meter" id="meterMatch" data-tone="success" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="X360 byte match"><span class="b5-meter__label">X360 byte match</span><span class="b5-meter__value" data-b5-progress-label>—</span><span class="b5-meter__bar"></span></div>
+          <div class="b5-meter" id="meterUnits" data-tone="success" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Units complete"><span class="b5-meter__label">Units complete</span> <span class="b5-meter__value" data-b5-progress-label>—</span> <span class="b5-meter__bar"></span></div>
+          <div class="b5-meter" id="meterFuncs" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Functions covered"><span class="b5-meter__label">Functions covered</span> <span class="b5-meter__value" data-b5-progress-label>—</span> <span class="b5-meter__bar"></span></div>
+          <div class="b5-meter" id="meterBuild" data-tone="info" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="In the build"><span class="b5-meter__label">In the build</span> <span class="b5-meter__value" data-b5-progress-label>—</span> <span class="b5-meter__bar"></span></div>
+          <div class="b5-meter" id="meterMatch" data-tone="success" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="X360 byte match"><span class="b5-meter__label">X360 byte match</span> <span class="b5-meter__value" data-b5-progress-label>—</span> <span class="b5-meter__bar"></span></div>
       </div>
-      <div class="b5-license__stamp"><span>Valid in Paradise City</span><span id="licenseNumber" title="The b5-decomp commit the ledger was reconciled at">No. —</span></div>
+      <div class="b5-license__stamp"><span>Valid in Paradise City</span> <span id="licenseNumber" title="The b5-decomp commit the ledger was reconciled at">No. —</span></div>
     </article>
 
     <main class="wp-main" data-b5-density="compact">
@@ -133,7 +133,10 @@
         </div>
       </section>
 
-      <!-- Headline metrics: three donuts, each split into the states that make up its total -->
+      <!-- Headline metrics: three donuts, each split into the states that make up its total.
+           The server sends them, like the licence, the ticker, byte matching and the work
+           lists, with the current figures already in (services/page.py), for whoever reads
+           the page without running app.js; app.js redraws them in place. -->
       <section class="b5-stat-strip wp-metrics" aria-label="Progress summary">
         <article class="b5-stat wp-metric" title="Completion includes done translation units and external implementations, shown separately in the legend.">
           <div class="b5-ring wp-ring" id="tuRing">
@@ -141,7 +144,7 @@
               <circle class="b5-ring__track" cx="60" cy="60" r="52" />
               <g class="ring-segments"></g>
             </svg>
-            <span class="b5-ring__label"><strong id="tuPercent">0%</strong><small>complete</small></span>
+            <span class="b5-ring__label"><strong id="tuPercent">0%</strong> <small>complete</small></span>
           </div>
           <div class="wp-metric__body">
             <span class="b5-stat__label">Translation units</span>
@@ -158,7 +161,7 @@
               <circle class="b5-ring__track" cx="60" cy="60" r="52" />
               <g class="ring-segments"></g>
             </svg>
-            <span class="b5-ring__label"><strong id="fnPercent">0%</strong><small>covered</small></span>
+            <span class="b5-ring__label"><strong id="fnPercent">0%</strong> <small>covered</small></span>
           </div>
           <div class="wp-metric__body">
             <span class="b5-stat__label">Functions</span>
@@ -174,7 +177,7 @@
               <circle class="b5-ring__track" cx="60" cy="60" r="52" />
               <g class="ring-segments"></g>
             </svg>
-            <span class="b5-ring__label"><strong id="exePercent">0%</strong><small>available</small></span>
+            <span class="b5-ring__label"><strong id="exePercent">0%</strong> <small>available</small></span>
           </div>
           <div class="wp-metric__body">
             <span class="b5-stat__label">Available in build</span>
@@ -321,7 +324,7 @@
                     <circle class="b5-ring__track" cx="60" cy="60" r="52" />
                     <g class="ring-segments"></g>
                   </svg>
-                  <span class="b5-ring__label"><strong id="bytematchPercent">0%</strong><small>functions match</small></span>
+                  <span class="b5-ring__label"><strong id="bytematchPercent">0%</strong> <small>functions match</small></span>
                 </div>
                 <div class="vp-legend">
                   <div class="legend" id="bytematchLegend"></div>

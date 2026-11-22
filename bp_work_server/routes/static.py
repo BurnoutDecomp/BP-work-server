@@ -9,6 +9,8 @@ from starlette.exceptions import HTTPException
 from starlette.responses import Response
 from starlette.types import Scope
 
+from bp_work_server.services.page import dashboard_page
+
 router = APIRouter()
 
 # <meta name="theme-color"> is for link previews: Discord draws the embed's left bar in it.
@@ -52,12 +54,15 @@ class StaticAssets(StaticFiles):
 
 
 @router.get("/", response_class=HTMLResponse)
-def dashboard(request: Request) -> HTMLResponse:
+async def dashboard(request: Request) -> HTMLResponse:
     html = static_dir().joinpath("index.html").read_text(encoding="utf-8")
+    # The figures go out in the page itself, for whoever reads it without running app.js.
+    html = await dashboard_page(request.app, html)
     if not is_preview_bot(request.headers.get("user-agent")):
         html = html.replace(THEME_COLOR_META, "")
-    # the page differs by client: no cache may hand a bot's copy to a browser
-    return HTMLResponse(html, headers={"Vary": "User-Agent"})
+    # The page differs by client: no cache may hand a bot's copy to a browser. Its figures
+    # are live: a cached copy is checked again first.
+    return HTMLResponse(html, headers={"Vary": "User-Agent", "Cache-Control": "no-cache"})
 
 
 @router.get("/health")

@@ -90,6 +90,7 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
     app.state.decomp = DecompRepo()
     app.state.dashboard_cache = {"expires_at": 0.0, "data": None}
     app.state.dashboard_cache_lock = threading.Lock()
+    app.state.page_bytematch_cache = {"expires_at": 0.0, "data": None}
     app.state.progress_map_cache = {}
     app.state.progress_map_cache_lock = threading.Lock()
     app.state.attribution_warm_lock = asyncio.Lock()
