@@ -25,8 +25,6 @@ DASHBOARD_CACHE_TTL = float(os.environ.get("BP_DASHBOARD_CACHE_TTL", "15"))
 # state has expired it waits this long for a rebuild (well under a second on production),
 # then goes out with the last state built rather than keep a reader waiting.
 PAGE_STATE_WAIT = float(os.environ.get("BP_PAGE_STATE_WAIT", "2"))
-# app.js reloads the byte-match summary once a minute; the page's copy is kept as long.
-PAGE_BYTEMATCH_TTL = 60.0
 
 
 async def decomp_health(decomp: DecompRepo) -> dict:
@@ -129,18 +127,19 @@ async def dashboard_state_for_page(app: Any, wait: float = PAGE_STATE_WAIT) -> d
     return cache.get("data") or cache.get("last")
 
 
-async def bytematch_summary_for_page(app: Any) -> dict | None:
-    """The byte-match summary the page is sent with, kept PAGE_BYTEMATCH_TTL."""
-    cache = app.state.page_bytematch_cache
-    if cache["data"] is not None and time.monotonic() < cache["expires_at"]:
-        return cache["data"]
+async def warm_github(github: Any) -> None:
+    """Read the repository from GitHub once right after startup.
+
+    The page the server sends draws its repository panel from the last overview, and it
+    never makes the first GitHub request itself (it would wait on it): without this, the
+    page would go out with an empty panel until a browser had asked /github/overview.
+    """
     try:
-        data = await asyncio.to_thread(app.state.store.bytematch_summary)
+        await github.overview()
+    except asyncio.CancelledError:
+        raise
     except Exception:
-        log.exception("byte-match summary for the page failed")
-        return cache["data"]
-    cache.update(data=data, expires_at=time.monotonic() + PAGE_BYTEMATCH_TTL)
-    return data
+        log.exception("GitHub warm-up failed; the first /github/overview will read it")
 
 
 def invalidate_dashboard_cache(request: Request) -> None:

@@ -1,21 +1,26 @@
 """The dashboard page, sent with its figures already in it.
 
-app.js draws every figure on the page from /dashboard/state and /api/bytematch/summary. A
-client that runs no script (a link preview, a search engine, an assistant reading the page
-for someone) used to get the loading shell alone: "Connecting to work server…", "0%
-complete", "No available TUs.". So the server writes the same figures into the page it
-sends, from the same data and in the markup app.js draws, and app.js redraws them in place
-when it runs: a browser has the figures from the first paint, and nothing moves when the
-script arrives.
+app.js draws everything on the page from the server's JSON (/dashboard/state, the byte-match
+summary, the builds, the GitHub overview, the lists' own endpoints). A client that runs no
+script (a link preview, a search engine, an assistant reading the page for someone) used to
+get the loading shell alone: "Connecting to work server…", "0% complete", "No available
+TUs.". So the server writes the same content into the page it sends, from the same data and
+in the markup app.js draws, and app.js redraws it in place when it runs: a browser has it
+from the first paint, and nothing moves when the script arrives.
 
-Written in: the summary rings with their legends and the licence, the Crash FM ticker, byte
-matching's ring, bars, status line and recent matches, the first page of each work list,
-the server time, and the link-preview description. The maps, the charts, the explorer and
-the console gaps stay app.js's alone. Times are UTC here; app.js gives them in the reader's
-own zone.
+Written in: the download sign, the summary rings with their legends and the licence, the
+Crash FM ticker; byte matching's ring, bars, status line, recent matches, history legend,
+areas and function list; the console gaps' filters, files and largest gaps; each work list;
+the evolution chart's series, span and legend; the repository panel; the server time and
+the link-preview description. Lists come a phone's page at a time (LIST_ROWS), which a wider
+window's script lengthens. Only drawings made to the reader's window and saved settings stay
+app.js's alone: the two maps and the two charts' lines. Times are UTC here; app.js gives
+them in the reader's own zone.
 
 Each function below follows the app.js function of the same name (render, setDonut,
-renderLicense, renderTicker, renderBytematchFacts…): change one, change the other.
+renderLicense, renderTicker, renderBytematchFacts, renderEvidenceList, renderGithub…), and
+the sign follows its design in the UI library's download-designs.js: change one, change the
+other. tests/test_page.py renders the sign with the library itself and compares.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ import html
 import logging
 import math
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
@@ -32,7 +38,7 @@ from functools import lru_cache
 from html.parser import HTMLParser
 from typing import Any, Iterator
 
-from bp_work_server.services.dashboard import bytematch_summary_for_page, dashboard_state_for_page
+from bp_work_server.services.dashboard import dashboard_state_for_page
 
 log = logging.getLogger(__name__)
 
@@ -40,8 +46,8 @@ log = logging.getLogger(__name__)
 # headline figures in it.
 STATIC_DESCRIPTION = "Live progress dashboard for the Burnout Paradise decompilation project."
 
-# Rows on the first page of each work list: a phone's page (app.js pageRows). A wider
-# window's script makes it 50.
+# Rows on the first page of each list: a phone's page (app.js pageRows). A wider window's
+# script makes it 25 or 50.
 LIST_ROWS = 10
 
 RING_CIRCUMFERENCE = 326.7
@@ -231,6 +237,11 @@ def clamp(value: float, low: float = 0, high: float = 100) -> float:
     return max(low, min(high, value))
 
 
+def js_round(value: float) -> int:
+    """Math.round: a half goes up."""
+    return math.floor(value + 0.5)
+
+
 def fixed(value: float, digits: int = 1) -> str:
     """Number.prototype.toFixed: a half rounds up, as in the browser."""
     return str(Decimal(value).quantize(Decimal(1).scaleb(-digits), rounding=ROUND_HALF_UP))
@@ -344,13 +355,14 @@ RIBBON_TONES = {
 }
 
 
-def ribbon(tone: str | None, label: str) -> str:
+def ribbon(tone: str | None, label: str, title: str | None = None) -> str:
     tone_attr = f' data-tone="{esc(tone)}"' if tone else ""
-    return f'<span class="b5-ribbon"{tone_attr}>{esc(label)}</span>'
+    title_attr = f' title="{esc(title)}"' if title else ""
+    return f'<span class="b5-ribbon"{tone_attr}{title_attr}>{esc(label)}</span>'
 
 
-def pill(kind: str, label: str) -> str:
-    return ribbon(RIBBON_TONES.get(kind), label)
+def pill(kind: str, label: str, title: str | None = None) -> str:
+    return ribbon(RIBBON_TONES.get(kind), label, title)
 
 
 def tu_button(tu_id: Any, cls: str = "tu-name") -> str:
@@ -727,17 +739,27 @@ def render_blocked(edits: Edits, items: list[dict]) -> None:
 
 # ---------------------------------------------------------------- byte matching
 
+@dataclass
+class ByteState:
+    key: str
+    label: str
+    color: str
+    pill: str
+    title: str
+
+
 BM_STATES = [
-    ("exact", "exact", "green",
-     "The same bytes as ARTIST outside the fields the linker fills in, with the same callees and constants. "
-     "Click: newest first."),
-    ("sdk", "XDK library", "purple", "Byte-identical to a function of the XDK's own libraries: linked, never written."),
-    ("nonmatching", "compiled, not matching", "amber",
-     "The native tree compiles a body for it, but the instructions differ. Click: closest to matching first."),
-    ("missing", "no compiled body", "crimson",
-     "No object of the native tree defines this function yet. Click: smallest first."),
-    ("unnamed", "not yet named", "dim",
-     "Functions of the console image without a name; nothing can be paired with them yet."),
+    ByteState("exact", "exact", "green", "done",
+              "The same bytes as ARTIST outside the fields the linker fills in, with the same callees and constants. "
+              "Click: newest first."),
+    ByteState("sdk", "XDK library", "purple", "external",
+              "Byte-identical to a function of the XDK's own libraries: linked, never written."),
+    ByteState("nonmatching", "compiled, not matching", "amber", "compiled",
+              "The native tree compiles a body for it, but the instructions differ. Click: closest to matching first."),
+    ByteState("missing", "no compiled body", "crimson", "blocked",
+              "No object of the native tree defines this function yet. Click: smallest first."),
+    ByteState("unnamed", "not yet named", "dim", "todo",
+              "Functions of the console image without a name; nothing can be paired with them yet."),
 ]
 
 
@@ -745,11 +767,114 @@ def render_bytematch(edits: Edits, summary: dict[str, Any], now: datetime) -> No
     counts = summary.get("status_counts") or {}
     whole = (summary.get("totals") or {}).get("all") or {}
     set_donut(edits, "bytematch", [
-        Segment(label, (counts.get(key) or {}).get("functions"), color, title) for key, label, color, title in BM_STATES
+        Segment(st.label, (counts.get(st.key) or {}).get("functions"), st.color, st.title) for st in BM_STATES
     ], num((summary.get("percent") or {}).get("matched_functions")),
         f"{fmt_int(whole.get('matched'))} / {fmt_int(whole.get('functions'))} functions byte-match ARTIST")
     render_bytematch_facts(edits, summary, now)
+    render_bytematch_history(edits, summary.get("history") or [])
     render_bytematch_recent(edits, summary.get("recent") or [], now)
+    render_bytematch_areas(edits, summary.get("areas") or [])
+    render_bytematch_chips(edits, counts)
+
+
+def render_bytematch_history(edits: Edits, history: list[dict]) -> None:
+    """The chart's legend, under a placeholder of the chart's height: app.js draws the lines
+    to the box's width, which the server does not know, and the box keeps its height."""
+    points = [point for point in history if point.get("functions") is not None][-365:]
+    if len(points) < 2:
+        first = points[0] if points else None
+        edits.html("bytematchHistory", '<div class="muted-text vh-empty">' + esc(
+            f"One published summary so far (x360 {str(first.get('commit') or '')[:10]}: {fmt_int(first.get('exact'))} "
+            f"exact of {fmt_int(first.get('functions'))}). The lines start with the next one." if first
+            else "No summary published yet.") + "</div>")
+        return
+
+    def value(point: dict, key: str) -> float:
+        return num(point.get("exact")) + num(point.get("nonmatching")) if key == "compiled" else num(point.get(key))
+
+    start, end = points[0], points[-1]
+    items = "".join(
+        f'<span class=""><span class="vh-sw {cls}"></span> {label} {fmt_int(value(start, key))} → '
+        f"{fmt_int(value(end, key))}</span>"
+        for cls, label, key in (("vh-sw-paired", "compiled bodies", "compiled"), ("vh-sw-clean", "exact", "exact"),
+                                ("vh-sw-nobody", "no compiled body", "missing"))
+    )
+    edits.html("bytematchHistory", '<svg viewBox="0 0 320 96" style="height: 96px" aria-hidden="true"></svg>'
+                                   f'<div class="vp-shape-legend">{items}</div>')
+
+
+def render_bytematch_areas(edits: Edits, areas: list[dict]) -> None:
+    if not areas:
+        edits.html("bytematchAreas", '<div class="muted-text">No areas yet.</div>')
+        return
+    rows = []
+    for area in areas[:30]:
+        size = num(area.get("bytes"))
+        exact = 100 * num(area.get("exact_bytes")) / size if size else 0
+        fuzzy = 100 * num(area.get("fuzzy_bytes")) / size if size else 0
+        title = (f"{area.get('area')}: {fmt_int(area.get('exact'))} exact, {fmt_int(area.get('nonmatching'))} not "
+                 f"matching, {fmt_int(area.get('missing'))} missing; {fmt_int(area.get('exact_bytes'))} of "
+                 f"{fmt_int(area.get('bytes'))} bytes exact, {fixed(fuzzy)}% fuzzy")
+        rows.append(
+            f'<button type="button" class="bm-area-row" title="{esc(title)}"><span class="bm-area-name">'
+            f'{esc(area.get("area"))}</span><div class="bm-bar"><div class="bm-bar-fuzzy" style="width: '
+            f'{fixed(min(100, fuzzy), 2)}%;"></div><div class="bm-bar-exact" style="width: {fixed(min(100, exact), 2)}%;">'
+            f'</div></div><span class="bm-area-nums">{fmt_int(area.get("exact"))} / {fmt_int(area.get("functions"))} · '
+            f"{fixed(exact)}%</span></button>"
+        )
+    if len(areas) > 30:
+        rows.append(f'<div class="muted-text">{fmt_int(len(areas) - 30)} smaller areas in the list below.</div>')
+    edits.html("bytematchAreas", "".join(rows))
+    # a phone shows the first 8 (phone.css [data-fold]); app.js adds the button for the rest
+    edits.attr("bytematchAreas", "data-fold", "8")
+
+
+def evidence_chip(label: str, count: Any, active: bool, color: str | None) -> str:
+    """A painted filter: an optional state swatch, the label, then its count."""
+    swatch = f'<i class="sw sw-{color}" aria-hidden="true"></i>' if color else ""
+    number = f'<span class="">{fmt_int(count)}</span>' if count is not None else ""
+    return (f'<button type="button" class="b5-filter" aria-pressed="{"true" if active else "false"}">'
+            f"{swatch}{esc(label)}{number}</button>")
+
+
+def render_bytematch_chips(edits: Edits, counts: dict[str, Any]) -> None:
+    edits.html("bytematchChips", evidence_chip("all", None, True, None) + "".join(
+        evidence_chip(st.label, (counts.get(st.key) or {}).get("functions") or 0, False, st.color) for st in BM_STATES
+    ))
+
+
+def render_bytematch_list(edits: Edits, page: dict[str, Any], measured: bool, repo: dict[str, str], now: datetime) -> None:
+    items = page.get("items") or []
+    total = int(num(page.get("total")))
+    cards = [] if items else [f'<div class="muted-text">{"No functions match." if measured else "Nothing measured yet."}</div>']
+    states = {st.key: st for st in BM_STATES}
+    for item in items:
+        meta = esc(f"ARTIST {js_string(item.get('artist'))} · {fmt_int(item.get('size'))} bytes")
+        if item.get("source"):
+            href = f"https://github.com/{repo['owner']}/{repo['name']}/blob/x360/{item['source']}"
+            meta += f' · <a href="{esc(href)}" target="_blank" rel="noopener">{esc(item["source"])}</a>'
+        elif item.get("tu"):
+            meta += esc(f" · {item['tu']}")
+        if item.get("first_exact"):
+            meta += esc(f" · exact since {rel_time(item['first_exact'], now)}")
+        state = states.get(item.get("status"))
+        nums = pill(state.pill, state.label) if state else pill("todo", str(item.get("status")))
+        if item.get("status") == "nonmatching":
+            nums += pill("todo", f"{fixed(num(item.get('score')))}%",
+                         "Fuzzy match: how alike its instructions are to the original's")
+        if item.get("stale"):
+            nums += pill("live", "source changed", "Its source file changed on the branch after this verdict was measured.")
+        cards.append(
+            f'<div class="evidence-file bm-row"><div class="evidence-file-head"><div class="evidence-file-left">'
+            f'<div class="evidence-file-path">{esc(item.get("name"))}</div><div class="evidence-file-meta">{meta}</div>'
+            f'</div><div class="evidence-file-nums">{nums}</div></div></div>'
+        )
+    edits.html("bytematchList", "".join(cards))
+    edits.text("bytematchRange", f"{fmt_int(1 if total else 0)}–{fmt_int(min(total, LIST_ROWS))} of {fmt_int(total)} functions")
+    edits.text("bmPageStatus", f"Page 1 of {fmt_int(max(1, math.ceil(total / LIST_ROWS)))}")
+    edits.attr("bmPagePrev", "disabled", True)
+    if LIST_ROWS >= total:
+        edits.attr("bmPageNext", "disabled", True)
 
 
 def bytematch_meter(label: str, value: float, note: str, title: str, tone: str | None = None) -> str:
@@ -844,6 +969,464 @@ def render_bytematch_recent(edits: Edits, recent: list[dict], now: datetime) -> 
     edits.html("bytematchRecent", "".join(items))
 
 
+# ---------------------------------------------------------------- console gaps
+
+EVIDENCE_AUDIT_CHIPS = [
+    ("", "all files", "", ""),
+    ("NO_BODY", "no body", "crimson", "NO_BODY"),
+    ("MISSING_CASE", "switch gaps", "red", "MISSING_CASE"),
+    ("EXTRA_CASE", "misfiled case ids", "red", "EXTRA_CASE"),
+    ("MISSING_EVENT", "missing event posts", "red", "MISSING_EVENT"),
+    ("MISSING_CALLEE", "missing callees", "red", "MISSING_CALLEE"),
+    ("MISSING_ASSERT", "missing asserts", "amber", "MISSING_ASSERT"),
+]
+
+
+def render_evidence_summary(edits: Edits, audit: dict[str, Any], now: datetime) -> None:
+    """The audit tab, as the panel opens: every file with a gap, no filter."""
+    funcaudit = audit.get("funcaudit") or {}
+    if funcaudit.get("commit"):
+        when = funcaudit.get("generated_at") or funcaudit.get("imported_at")
+        edits.text("evidenceMeta", f"b5-decomp {str(funcaudit['commit'])[:10]} · {rel_time(when, now)}")
+    else:
+        edits.text("evidenceMeta", "no audit yet")
+    if funcaudit.get("generated_at"):
+        edits.attr("evidenceMeta", "title", f"audited {fmt_time(funcaudit['generated_at'])}")
+    edits.text("evidenceIntro", "Files ranked by their gaps. Open one to see each function and what the console's "
+                                "version has that ours lacks.")
+    categories = funcaudit.get("categories") or {}
+    chips = []
+    for key, label, color, category in EVIDENCE_AUDIT_CHIPS:
+        count = (categories.get(category) or {}).get("functions", 0) if category else None
+        if category and not count:
+            continue
+        chips.append(evidence_chip(label, count, key == "", color))
+    edits.html("evidenceChips", "".join(chips))
+
+
+def pager(total: int, page_size: int, unit: str, page: int = 1) -> str:
+    """The UI library's numbered pager (pager.js), as createPager().set() draws it."""
+    pages = max(1, math.ceil(total / page_size))
+    page = max(1, min(pages, page))
+    first, last = ((page - 1) * page_size + 1 if total else 0), min(page * page_size, total)
+    shown = (f"{fmt_int(first)}–{fmt_int(last)} of {fmt_int(total)}{f' {unit}' if unit else ''}" if total
+             else f"No {unit or 'results'}")
+
+    def button(text: str, target: int, key: str, disabled: bool = False) -> str:
+        extra = ""
+        if key == "number":
+            extra = f' aria-label="Page {target}"' + (' aria-current="page"' if target == page else "")
+        return (f'<button type="button" class="b5-page-button" data-b5-page="{target}" data-b5-page-key="{key}"'
+                f'{" disabled" if disabled else ""}{extra}>{esc(text)}</button>')
+
+    parts = [button("Previous", page - 1, "previous", page == 1)]
+    previous = 0
+    for number in sorted(n for n in {1, pages, page - 1, page, page + 1} if 1 <= n <= pages):
+        if previous and number - previous > 1:
+            parts.append('<span class="b5-pagination__gap" aria-hidden="true">…</span>')
+        parts.append(button(str(number), number, "number"))
+        previous = number
+    parts.append(button("Next", page + 1, "next", page == pages))
+    parts.append(f'<label class="b5-pagination__jump"><span>Jump</span><input class="b5-input" type="number" min="1" '
+                 f'max="{pages}" value="{page}" aria-label="Jump to page" data-b5-page-key="jump"></label>')
+    return f'<span class="b5-pagination__range" role="status">{esc(shown)}</span><div class="b5-pagination__controls">' \
+           f'{"".join(parts)}</div>'
+
+
+def render_evidence_list(edits: Edits, page: dict[str, Any], audited: bool) -> None:
+    items = page.get("items") or []
+
+    def count(n: Any, one: str, many: str) -> str:
+        return f"{fmt_int(n)} {one if num(n) == 1 else many}"
+
+    cards = [] if items else [
+        f'<div class="muted-text">{"No files match." if audited else "No audit has been imported yet."}</div>']
+    for item in items:
+        meta = (f'<div class="evidence-file-meta">{count(item["functions"], "function", "functions")} to review</div>'
+                if item.get("functions") else "")
+        nums = pill("cat-high", count(item.get("weight"), "gap", "gaps"))
+        if item.get("no_body"):
+            nums += pill("tier-HIGH", f"{fmt_int(item['no_body'])} no body")
+        for key, kind, one, many in (("missing_case", "cat-mid", "switch gap", "switch gaps"),
+                                     ("missing_event", "cat-mid", "event", "events"),
+                                     ("missing_callee", "cat-low", "callee", "callees"),
+                                     ("missing_assert", "cat-low", "assert", "asserts")):
+            if item.get(key):
+                nums += pill(kind, count(item[key], one, many))
+        cards.append(
+            '<div class="evidence-file"><div class="evidence-file-head" title="Open every function of this file in the '
+            f'drawer"><div class="evidence-file-left"><div class="evidence-file-path">'
+            f'{esc(item.get("file") or "(functions the ledger files nowhere)")}</div>{meta}</div>'
+            f'<div class="evidence-file-nums">{nums}</div></div></div>'
+        )
+    edits.html("evidenceList", "".join(cards))
+    edits.html("evidencePager", pager(int(num(page.get("total"))), LIST_ROWS, "files"))
+
+
+def render_evidence_top(edits: Edits, items: list[dict]) -> None:
+    """The largest switch gaps: the side list as the audit tab opens."""
+    edits.text("evidenceTopNote", "Functions with the most console case ids that have no arm in our body — whole "
+                                  "behaviours the console dispatches and we never reach.")
+    rows = []
+    for item in items:
+        count = item.get("ids") if item.get("ids") is not None else item.get("count")
+        preview = item.get("preview")
+        where = js_string(item.get("file")) + (f" — {preview}" if preview else "")
+        rows.append(f'<li><span class="top-n">{fmt_int(count)}</span><span class="top-name">{esc(item.get("name"))}'
+                    f'<span class="top-meta">{esc(where)}</span></span></li>')
+    edits.html("evidenceTop", "".join(rows))
+    # a phone shows the first 5 (phone.css [data-fold]); app.js adds the button for the rest
+    edits.attr("evidenceTop", "data-fold", "5")
+
+
+# ---------------------------------------------------------------- the latest build
+
+# app.js draws the download control in this design (its DOWNLOAD_DESIGN), and the page goes
+# out with the same markup, so the hero has its sign from the first paint. The test suite
+# renders the sign with download-designs.js itself and compares.
+DOWNLOAD_DESIGN = "sign-game"
+ICONS = "/static/b5-ui/assets/icons.svg"
+PACKAGES = {
+    "full": {"title": "Full game", "short": "First install", "icon": "folder",
+             "blurb": "Game files, DLLs and assets. For your first install or when the assets change."},
+    "update": {"title": "Update only", "short": "Over your game folder", "icon": "refresh",
+               "blurb": "Executable, DLLs and .cgsmap. Extract over your existing game folder."},
+}
+_LIBRARY_ESCAPES = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}
+ARROW = ('<svg class="b5-sign__arrow" viewBox="0 0 44 62" aria-hidden="true">'
+         '<path d="M17 0h10v38h13L22 62 4 38h13z"/></svg>')
+LANE_ARROW = ('<svg class="dd-lane__arrow" viewBox="0 0 44 62" aria-hidden="true">'
+              '<path d="M17 0h10v38h13L22 62 4 38h13z"/></svg>')
+
+
+def lib_esc(value: Any) -> str:
+    """download-designs.js's esc(): String(value ?? '') with &<>"' as entities."""
+    text = value if isinstance(value, str) else js_string(value)
+    return re.sub(r"""[&<>"']""", lambda match: _LIBRARY_ESCAPES[match.group(0)], text)
+
+
+def download_view(build: dict[str, Any], builds: list[dict], now: datetime) -> dict[str, Any]:
+    """app.js downloadView(): the latest build as the download designs read it."""
+    previous = next((other for other in builds if other.get("id") != build.get("id")), None)
+    update_url, changed = build.get("update_url"), build.get("assets_changed")
+    if not update_url:
+        text = "This build predates the exe-only update; the next published build will offer one."
+    elif changed is False and previous:
+        since = f" ({rel_time(previous['built_at'], now)})" if previous.get("built_at") else ""
+        text = (f"Game assets unchanged since build {previous.get('commit_short') or previous.get('id')}{since}: "
+                "if you already have the game folder, the update is all you need.")
+    elif changed is True:
+        text = "The game assets changed in this build: take the full game unless you know which files moved."
+    else:
+        text = "First published build: take the full game."
+    if update_url and changed is False and previous:
+        note = {"tone": "success", "label": "Assets unchanged", "text": text}
+    elif update_url and changed is True:
+        note = {"tone": "warning", "label": "Assets changed", "text": text}
+    else:
+        note = {"text": text}
+    return {
+        "number": build.get("id") if build.get("id") is not None else "",
+        "commit": build.get("commit_short") or str(build.get("commit_sha") or "")[:12],
+        "age": rel_time(build["built_at"], now) if build.get("built_at") else "",
+        "count": num(build.get("downloads")),
+        "full": {"size": fmt_bytes(build.get("size_bytes")), "href": build.get("download_url") or "/download/latest",
+                 "blurb": "Everything: the exe, its DLLs and every game asset. For a first install, or when the "
+                          "assets changed."},
+        "update": {"size": fmt_bytes(build.get("bundle_size")), "href": update_url,
+                   "blurb": "Burnout_PC.exe, its DLLs and the .cgsmap. Drop them over an existing game folder."}
+        if update_url else None,
+        "note": note,
+    }
+
+
+def download_data(data: dict[str, Any]) -> dict[str, Any]:
+    """download-designs.js downloadData(): the packages filled in from their defaults."""
+    def pack(key: str) -> dict[str, Any] | None:
+        given = data.get(key)
+        return {**PACKAGES[key], "href": "#", "file": "", "size": "", **given, "key": key} if given else None
+
+    full = pack("full") or {**PACKAGES["full"], "href": "#", "file": "", "size": "", "key": "full"}
+    update = pack("update")
+    return {
+        "number": data.get("number") if data.get("number") is not None else "",
+        "commit": js_string(data.get("commit")),
+        "age": js_string(data.get("age")),
+        "count": max(0, math.floor(num(data.get("count")))),
+        "place": data.get("place") if data.get("place") is not None else "Paradise City",
+        "full": full,
+        "update": update,
+        "packages": [item for item in (full, update) if item],
+        "note": data.get("note"),
+    }
+
+
+def sign_game(prefix: str, d: dict[str, Any]) -> str:
+    """download-designs.js's 'sign-game' design (a sign() road sign) for these data."""
+    count = d["count"]
+    word = "Download" if count == 1 else "Downloads"
+
+    def icon(name: str) -> str:
+        return f'<svg class="b5-icon" aria-hidden="true"><use href="{ICONS}#{name}"></use></svg>'
+
+    said = ('<span class="b5-sr-only"> ' + (f"number {lib_esc(d['number'])}, " if d["number"] != "" else "")
+            + (f"commit {lib_esc(d['commit'])}, " if d["commit"] else "")
+            + f'<span data-dl="downloads">{count} download{"" if count == 1 else "s"}</span>, </span>')
+    note = d["note"]
+    note_inner = ""
+    if note:
+        if note.get("label"):
+            tone = f' data-tone="{lib_esc(note["tone"])}"' if note.get("tone") else ""
+            note_inner = f'<span class="b5-status"{tone}>{lib_esc(note["label"])}</span> '
+        note_inner += f"<span>{lib_esc(note.get('text'))}</span>"
+    lanes = "".join(
+        f'<a class="dd-choice dd-choice--{item["key"]} dd-lane" href="{lib_esc(item["href"])}"'
+        + (f' download="{lib_esc(item["file"])}"' if item.get("file") else "")
+        + f'><span class="dd-lane__lamp" aria-hidden="true"></span><span class="dd-lane__text"><span class="dd-lane__name">'
+          f'{lib_esc(item["title"])}</span><span class="dd-lane__size">{lib_esc(item["size"])}</span></span>{LANE_ARROW}'
+          f'<span class="b5-sr-only">, {lib_esc(item["blurb"])}</span></a>'
+        for item in d["packages"]
+    )
+    panel = (f'<div class="dd-chooser dd-lanes" id="{prefix}-menu" role="region" aria-labelledby="{prefix}-menu-title" '
+             f'data-dd-panel inert><span class="b5-sr-only" id="{prefix}-menu-title">Choose your download</span>'
+             f'<span class="dd-lanes__row">{lanes}</span><p class="dd-note dd-lanes__note" data-dl="note"'
+             f'{"" if note else " hidden"}>{note_inner}</p></div>')
+    states = [("hover", "NEW", f"BUILD {js_string(d['number'])}"), ("open", "PICK", "A LANE")]
+    for item in d["packages"]:
+        figure = re.match(r"^\s*([\d.,]+)\s*(\S*)", item["size"] or "")
+        states.append((item["key"], *(figure.groups() if figure else (item["size"], ""))))
+    vms = (f'<span class="b5-vms" aria-hidden="true"><span class="b5-vms__value" data-dl="count">{count}</span>'
+           f'<span class="b5-vms__label" data-dl="downloads-word">{word}</span>'
+           + "".join(f'<span class="dd-vms dd-vms--{state}"><b>{lib_esc(big)}</b><small>{lib_esc(small)}</small></span>'
+                     for state, big, small in states) + "</span>")
+    inside = (f'<span class="b5-sign__legend"><strong>Download<span class="b5-sr-only"> build</span></strong>'
+              f'<small class="b5-sr-only">{said}{lib_esc(d["place"])}, {lib_esc(d["full"]["size"])}</small></span>{ARROW}')
+    extra = (f'<span class="sv-supp" aria-hidden="true">Build {lib_esc(d["number"])} · {lib_esc(d["full"]["size"])} '
+             "<i>▾</i></span>")
+    preview = (f'<button class="b5-download-preview" type="button" data-dl="preview" aria-label="Preview build contents">'
+               f'{icon("eye")}</button>')
+    return (f'<div class="b5-download-group b5-download-group--sign dd-sign sv-game" id="{prefix}-group" data-dd-chooser>\n'
+            '<div class="b5-sign">\n'
+            f'<button class="b5-download" id="{prefix}" type="button" aria-expanded="false" aria-controls="{prefix}-menu" '
+            f'data-dd-trigger><span class="b5-sign__lamps" aria-hidden="true"></span>{inside}</button>\n'
+            f"{panel}\n"
+            f"{vms}{extra}\n"
+            f'<span class="b5-sign__plaque">{preview}<span>commit {lib_esc(d["commit"])} · '
+            f'<span data-dl="age">{lib_esc(d["age"])}</span></span></span>\n'
+            "</div>\n"
+            "</div>")
+
+
+def render_download(edits: Edits, builds: dict[str, Any], now: datetime) -> None:
+    """app.js refreshDownload()'s first draw: the sign in the hero, its chooser closed."""
+    latest = builds.get("latest")
+    if not latest:
+        return  # no build published: the slot stays hidden, as app.js leaves it
+    data = download_data(download_view(latest, builds.get("builds") or [], now))
+    # createDownloadChooser() marks the chooser closed as it wires it
+    markup = sign_game("download", data).replace(" data-dd-chooser>", ' data-dd-chooser data-phase="closed">', 1)
+    edits.attr("downloadSlot", "hidden", None)
+    edits.attr("downloadSlot", "data-download-design", DOWNLOAD_DESIGN)
+    edits.html("downloadSlot", markup)
+
+
+# ---------------------------------------------------------------- the repository
+
+def collation_key(name: str) -> tuple:
+    """Close to localeCompare() in English, which app.js sorts the file tree with: spaces,
+    then punctuation, digits and letters, case only breaking ties (lowercase first)."""
+    punctuation = "_-,;:!?.'\"()[]{}@*/\\&#%`^+<=>|~$"
+    primary = []
+    for char in name:
+        if char.isspace():
+            primary.append((0, 0))
+        elif char in punctuation:
+            primary.append((1, punctuation.index(char)))
+        elif char.isdigit():
+            primary.append((2, ord(char)))
+        elif char.isascii() and char.isalpha():
+            primary.append((3, ord(char.lower())))
+        else:
+            primary.append((4, ord(char.lower())))
+    return tuple(primary), tuple(0 if char.islower() else 1 for char in name)
+
+
+def build_tree(entries: list[dict]) -> dict[str, Any]:
+    """app.js buildTree(): the nested tree from GitHub's flat path list."""
+    root: dict[str, Any] = {"name": "", "children": {}, "type": "tree"}
+    for entry in entries:
+        parts = str(entry.get("path") or "").split("/")
+        node = root
+        for index, part in enumerate(parts):
+            leaf = index == len(parts) - 1
+            child = node["children"].get(part)
+            if child is None:
+                child = node["children"][part] = {
+                    "name": part, "children": {}, "type": entry.get("type") if leaf else "tree",
+                    "size": entry.get("size") if leaf else None, "path": "/".join(parts[: index + 1]),
+                }
+            node = child
+    return root
+
+
+# Rows under the top level the page sends. The tree's box scrolls, and its height never
+# follows its content (the commits' column sets it; a phone caps it at 320px): these fill
+# it, and app.js draws the rest (tests/ alone opens on 818 entries).
+TREE_ROWS = 40
+
+
+def tree_rows(node: dict[str, Any], depth: int, blob_url, budget: list[int]) -> str:
+    """app.js renderTreeNode(), as it first draws: top-level folders open on their children,
+    deeper ones closed. Every top-level entry is sent, and the first `budget` rows under
+    them; a closed folder's contents are drawn by app.js alone."""
+    rows = []
+    for child in sorted(node["children"].values(),
+                        key=lambda entry: (entry["type"] != "tree", collation_key(entry["name"]))):
+        if depth >= 1:
+            if budget[0] <= 0:
+                break
+            budget[0] -= 1
+        folder = child["type"] == "tree"
+        closed = depth >= 1
+        twist = ("▶" if closed else "▼") if folder else ""
+        if folder:
+            name = f'<span class="name">{esc(child["name"])}</span>'
+        else:
+            name = (f'<a class="name file-link" href="{esc(blob_url(child["path"]))}" target="_blank" rel="noopener" '
+                    f'title="{esc("Open " + child["path"] + " on GitHub")}">{esc(child["name"])}</a>')
+        size = f'<span class="size">{fmt_bytes(child["size"])}</span>' if not folder and child.get("size") is not None else ""
+        rows.append(f'<div class="tree-node{" dir" if folder else ""}" style="padding-left: {6 + depth * 16}px;">'
+                    f'<span class="twist">{twist}</span><span class="icon">{"📁" if folder else "📄"}</span>{name}{size}</div>')
+        if folder:
+            inner = "" if closed else tree_rows(child, depth + 1, blob_url, budget)
+            rows.append(f'<div class="tree-children{" collapsed" if closed else ""}">{inner}</div>')
+    return "".join(rows)
+
+
+def commit_message(commit: dict[str, Any]) -> str:
+    message = esc(commit.get("message") or "(no message)")
+    if commit.get("html_url"):
+        return f'<a href="{esc(commit["html_url"])}" target="_blank" rel="noopener">{message}</a>'
+    return message
+
+
+def render_github(edits: Edits, data: dict[str, Any], repo: dict[str, str], now: datetime) -> None:
+    """app.js renderGithub(): the repository panel."""
+    info = data.get("info") or {}
+    edits.text("repoBranch", repo["ref"])
+    edits.text("repoLink", info.get("full_name") or f"{repo['owner']}/{repo['name']}")
+    edits.attr("repoLink", "href", info.get("html_url") or f"https://github.com/{repo['owner']}/{repo['name']}")
+    edits.text("repoDesc", info.get("description") or "No description provided.")
+    rate = data.get("rate_limit") or {}
+    if rate.get("remaining") is not None:
+        edits.text("ghRate", f"API {js_string(rate['remaining'])}/{js_string(rate.get('limit'))} "
+                             f"({'auth' if rate.get('authenticated') else 'anon'})")
+        if num(rate["remaining"]) <= 5:
+            edits.attr("ghRate", "class", "gh-rate warn")
+    stats = [f'<div class="gh-stat">{mark} <strong>{fmt_int(info[key])}</strong> {label}</div>'
+             for mark, key, label in (("★", "stargazers_count", "stars"), ("⑂", "forks_count", "forks"),
+                                      ("◎", "open_issues_count", "issues"), ("⊙", "watchers_count", "watching"))
+             if info.get(key) is not None]
+    if info.get("language"):
+        stats.append(f'<div class="gh-stat"><strong>{esc(info["language"])}</strong></div>')
+    if info.get("pushed_at"):
+        stats.append(f'<div class="gh-stat">pushed {esc(rel_time(info["pushed_at"], now))}</div>')
+    edits.html("ghStats", "".join(stats))
+
+    def byline(commit: dict[str, Any]) -> str:
+        return esc(f"{commit.get('author') or commit.get('login') or 'unknown'} · {rel_time(commit.get('date'), now)}")
+
+    latest = data.get("latest_commit")
+    if latest:
+        avatar = (f'<img class="avatar" src="{esc(latest["avatar_url"] + "&s=36")}" alt="{esc(latest.get("login") or "")}" '
+                  'loading="lazy">' if latest.get("avatar_url") else "")
+        edits.attr("latestCommit", "class", "latest-commit")
+        edits.html("latestCommit", f'<div class="commit-msg">{commit_message(latest)}</div><div class="commit-meta">'
+                                   f'{avatar}<span class="sha">{esc(latest.get("short_sha") or "")}</span>{byline(latest)}</div>')
+    else:
+        edits.attr("latestCommit", "class", "latest-commit empty")
+        edits.text("latestCommit", "No commits found.")
+    earlier = (data.get("commits") or [])[1:]
+    edits.attr("commitList", "class", "commit-list" if earlier else "commit-list empty")
+    edits.html("commitList", "".join(
+        f'<li><span class="sha">{esc(commit.get("short_sha") or "")}</span><div class="body"><div>{commit_message(commit)}'
+        f'</div><div class="commit-meta">{byline(commit)}</div></div></li>' for commit in earlier
+    ) if earlier else "<li>No earlier commits.</li>")
+
+    tree = data.get("tree") or {}
+    if tree.get("tree"):
+        def blob_url(path: str) -> str:
+            return f"https://github.com/{repo['owner']}/{repo['name']}/blob/{repo['ref']}/{path}"
+
+        edits.attr("fileTree", "class", "file-tree")
+        edits.html("fileTree", tree_rows(build_tree(tree["tree"]), 0, blob_url, [TREE_ROWS]))
+        edits.text("treeMeta", f"{fmt_int(tree.get('count'))} entries{' (truncated)' if tree.get('truncated') else ''}")
+    else:
+        edits.attr("fileTree", "class", "file-tree empty")
+        edits.text("fileTree", "File tree unavailable.")
+        edits.text("treeMeta", "")
+    if data.get("errors"):
+        edits.text("treeMeta", data["errors"][0])
+
+
+# ---------------------------------------------------------------- evolution
+
+# app.js EVOLUTION_SERIES and EVOLUTION_DEFAULT_ON. A reader's own choice of series, scale
+# and range is kept in their browser: the page shows the default, every point (All).
+EVOLUTION_SERIES = [
+    ("Translation units", "tu_done", "done", "#6fcf57"),
+    ("Translation units", "tu_compiled", "compiled", "#edbd54"),
+    ("Translation units", "tu_in_progress", "in progress", "#57a8e0"),
+    ("Translation units", "tu_blocked", "blocked", "#e72530"),
+    ("Translation units", "tu_external", "external", "#b294df"),
+    ("Translation units", "tu_todo", "todo", "#8a7f72"),
+    ("Translation units", "tu_total", "tracked", "#d9cfc0"),
+    ("Functions", "funcs_done", "covered", "#f2b53f"),
+    ("Functions", "funcs_external", "external", "#b294df"),
+    ("Functions", "funcs_named_uncovered", "named, uncovered", "#a08e6c"),
+    ("Functions", "funcs_unidentified", "unidentified", "#6a6159"),
+    ("Functions", "funcs_total", "in the binary", "#efe6d2"),
+    ("Executable", "tu_linked", "linked", "#57a8e0"),
+    ("Executable", "tu_available", "available in build", "#d9cfc0"),
+    ("Executable", "tu_source_linked", "linked source", "#57a8e0"),
+    ("Executable", "tu_external_build", "external provider", "#b294df"),
+    ("Byte matching (X360)", "bm_exact", "exact functions", "#6fcf57"),
+    ("Byte matching (X360)", "bm_nonmatching", "compiled, not matching", "#d7742a"),
+    ("Byte matching (X360)", "bm_exact_bytes", "exact code bytes", "#3ec9b0"),
+]
+EVOLUTION_DEFAULT_ON = ("tu_done", "funcs_done", "tu_linked")
+
+
+def render_evolution(edits: Edits, history: list[dict]) -> None:
+    """app.js renderEvolution() without the chart's lines, which it draws to the window."""
+    groups: dict[str, list[str]] = {}
+    for group, key, label, color in EVOLUTION_SERIES:
+        groups.setdefault(group, []).append(
+            f'<button type="button" data-key="{key}" class="evo-chip{" on" if key in EVOLUTION_DEFAULT_ON else ""}">'
+            f'<span class="sw" style="background: {color};"></span>{esc(label)}</button>')
+    edits.html("evolutionPicker", "".join(
+        f'<div class="evo-group"><span class="evo-group-name">{esc(group)}</span>{"".join(chips)}</div>'
+        for group, chips in groups.items()))
+    points = [point for point in history if parse_time(point.get("ts"))]
+    if points:
+        days = js_round((parse_time(points[-1]["ts"]) - parse_time(points[0]["ts"])).total_seconds() / 86400) + 1
+        edits.text("evolutionCount", f"{fmt_int(days)} days · {points[0].get('date')} → {points[-1].get('date')}")
+    if len(points) < 2:
+        edits.html("evolutionChart", '<div class="muted-text vh-empty">' + (
+            "Not enough points in this range yet." if history
+            else "No history yet: the first snapshot is taken at the next workflow import.") + "</div>")
+        return
+    items = []
+    for _group, key, label, color in EVOLUTION_SERIES:
+        if key not in EVOLUTION_DEFAULT_ON:
+            continue
+        column = [num(point[key]) for point in points if point.get(key) is not None]
+        shown = f"{fmt_int(js_round(column[0]))} → {fmt_int(js_round(column[-1]))}" if column else "–"
+        items.append(f'<span class="evo-legend-item"><span class="sw" style="background: {color};"></span>{esc(label)} '
+                     f'<span class="evo-legend-values">{shown}</span></span>')
+    edits.html("evolutionLegend", "".join(items))
+
+
 # ---------------------------------------------------------------- the page
 
 def describe(state: dict[str, Any] | None, summary: dict[str, Any] | None) -> str | None:
@@ -866,13 +1449,39 @@ def describe(state: dict[str, Any] | None, summary: dict[str, Any] | None) -> st
     return f"{STATIC_DESCRIPTION.removesuffix('.')}: {', '.join(figures)}."
 
 
-def fill_page(source: str, state: dict[str, Any] | None, summary: dict[str, Any] | None, now: datetime) -> str:
-    """index.html with the figures of the state and the byte-match summary written in."""
+def repository(github: dict[str, Any] | None) -> dict[str, str]:
+    """The decomp repository the page links into (app.js state.repo)."""
+    repo = (github or {}).get("repo") or {}
+    return {"owner": repo.get("owner") or "BurnoutDecomp", "name": repo.get("name") or "b5-decomp",
+            "ref": repo.get("ref") or "dev"}
+
+
+def fill_page(source: str, data: dict[str, Any], now: datetime) -> str:
+    """index.html with everything in `data` written in: the dashboard state ("state"), the
+    GitHub overview ("github") and the page's reads (read_page). A read that is missing or
+    None leaves its part of the page as index.html has it."""
     edits = Edits(source)
+    state, summary, github = data.get("state"), data.get("bytematch"), data.get("github")
+    repo = repository(github)
+    measured = bool(summary and summary.get("available"))
+    audit = (state or {}).get("audit") or {}
     if state:
         render(edits, state, now)
-    if summary and summary.get("available"):
+        render_evidence_summary(edits, audit, now)
+    if data.get("builds"):
+        render_download(edits, data["builds"], now)
+    if measured:
         render_bytematch(edits, summary, now)
+    if summary is not None and data.get("bytematch_functions") is not None:
+        render_bytematch_list(edits, data["bytematch_functions"], measured, repo, now)
+    if data.get("gap_files") is not None:
+        render_evidence_list(edits, data["gap_files"], bool((audit.get("funcaudit") or {}).get("paired")))
+    if data.get("gap_top") is not None:
+        render_evidence_top(edits, data["gap_top"])
+    if data.get("history") is not None:
+        render_evolution(edits, data["history"])
+    if github:
+        render_github(edits, github, repo, now)
     page = edits.render()
     description = describe(state, summary)
     if description:
@@ -880,11 +1489,74 @@ def fill_page(source: str, state: dict[str, Any] | None, summary: dict[str, Any]
     return page
 
 
-async def dashboard_page(app: Any, source: str) -> str:
-    """The page to send: index.html with the current figures, or as it is if they fail."""
+# app.js reloads these once a minute or less often; the page's copy is kept as long.
+PAGE_READS_TTL = 60.0
+# The GitHub overview is refreshed once it is this old (the commits' own TTL), waited for
+# PAGE_GITHUB_WAIT at most: a slow GitHub leaves the page with the previous overview.
+PAGE_GITHUB_FRESH = 180.0
+PAGE_GITHUB_WAIT = 1.5
+
+
+def read_page(store: Any) -> dict[str, Any]:
+    """What the page shows besides the dashboard state, read as app.js asks for it on load.
+    A read that fails is left out, and its part of the page with it."""
+    from bp_work_server.routes.downloads import list_builds  # the /api/builds reply itself
+
+    reads: dict[str, Any] = {}
+    for name, read in (
+        ("bytematch", store.bytematch_summary),
+        ("builds", lambda: list_builds(store=store).model_dump(mode="json")),
+        ("bytematch_functions", lambda: store.bytematch_functions(sort="size", order="desc", limit=LIST_ROWS, offset=0)),
+        ("gap_files", lambda: store.audit_files(gaps_only=True, sort="weight", order="desc", limit=LIST_ROWS, offset=0)),
+        ("gap_top", lambda: store.audit_top("MISSING_CASE", 12)),
+        ("history", lambda: store.history_points(None)["points"]),
+    ):
+        try:
+            reads[name] = read()
+        except Exception:
+            log.exception("the page's %s read failed", name)
+    return reads
+
+
+async def page_reads(app: Any) -> dict[str, Any]:
+    cache = app.state.page_reads_cache
+    if cache["data"] is not None and time.monotonic() < cache["expires_at"]:
+        return cache["data"]
+    data = await asyncio.to_thread(read_page, app.state.store)
+    cache.update(data=data, expires_at=time.monotonic() + PAGE_READS_TTL)
+    return data
+
+
+def _report_github(done: asyncio.Future) -> None:
+    if not done.cancelled() and done.exception() is not None:
+        log.error("GitHub overview for the page failed", exc_info=done.exception())
+
+
+async def github_for_page(app: Any, wait: float = PAGE_GITHUB_WAIT) -> dict[str, Any] | None:
+    """The GitHub overview the page is sent with: the last overview() (one at startup, then
+    each browser's /github/overview), refreshed once it is PAGE_GITHUB_FRESH old. The page
+    never makes the first GitHub request itself, so GitHub never holds it up."""
+    github = app.state.github
+    last = getattr(github, "last_overview", None)
+    if last is None:
+        return None
+    if time.time() - num(last.get("fetched_at")) < PAGE_GITHUB_FRESH:
+        return last
+    task = getattr(app.state, "page_github_refresh", None)
+    if task is None or task.done():
+        task = app.state.page_github_refresh = asyncio.ensure_future(github.overview())
+        task.add_done_callback(_report_github)
     try:
-        state, summary = await asyncio.gather(dashboard_state_for_page(app), bytematch_summary_for_page(app))
-        return fill_page(source, state, summary, datetime.now(timezone.utc))
+        return await asyncio.wait_for(asyncio.shield(task), wait)
+    except Exception:  # a timeout too: the refresh still lands, for the next reader
+        return last
+
+
+async def dashboard_page(app: Any, source: str) -> str:
+    """The page to send: index.html with everything written in, or as it is if that fails."""
+    try:
+        state, reads, github = await asyncio.gather(dashboard_state_for_page(app), page_reads(app), github_for_page(app))
+        return fill_page(source, {**reads, "state": state, "github": github}, datetime.now(timezone.utc))
     except Exception:
         log.exception("the dashboard page went out without its figures")
         return source

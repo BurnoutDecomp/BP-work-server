@@ -17,7 +17,7 @@ from bp_work_server.dependencies import auth_required
 from bp_work_server.github import GitHubClient
 from bp_work_server.routes import admin, dashboard, downloads, events, github, static, work
 from bp_work_server.routes.static import StaticAssets, static_dir
-from bp_work_server.services.dashboard import warm_dashboard_state
+from bp_work_server.services.dashboard import warm_dashboard_state, warm_github
 from bp_work_server.store import WorkStore
 from bp_work_server.sync import sync_workflow_repo
 
@@ -60,6 +60,8 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
         app.state.dashboard_warm_task = asyncio.create_task(
             warm_dashboard_state(app, app.state.store)
         )
+        # the page the server sends draws its repository panel from the last overview
+        app.state.github_warm_task = asyncio.create_task(warm_github(app.state.github))
         # the Evolution panel gets a point every day whether or not anything was imported
         app.state.history_daily_task = asyncio.create_task(
             history.daily_task(app.state.store, logging.getLogger("bp_work_server.history"))
@@ -67,7 +69,7 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
         try:
             yield
         finally:
-            for name in ("dashboard_warm_task", "attribution_warm_task", "history_daily_task"):
+            for name in ("dashboard_warm_task", "github_warm_task", "attribution_warm_task", "history_daily_task"):
                 warm_task = getattr(app.state, name, None)
                 if warm_task and not warm_task.done():
                     warm_task.cancel()
@@ -90,7 +92,7 @@ def create_app(store: WorkStore | None = None) -> FastAPI:
     app.state.decomp = DecompRepo()
     app.state.dashboard_cache = {"expires_at": 0.0, "data": None}
     app.state.dashboard_cache_lock = threading.Lock()
-    app.state.page_bytematch_cache = {"expires_at": 0.0, "data": None}
+    app.state.page_reads_cache = {"expires_at": 0.0, "data": None}
     app.state.progress_map_cache = {}
     app.state.progress_map_cache_lock = threading.Lock()
     app.state.attribution_warm_lock = asyncio.Lock()

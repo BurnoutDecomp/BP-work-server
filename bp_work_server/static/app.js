@@ -8,7 +8,9 @@ import { renderDownloadDesign } from "./b5-ui/download-designs.js";
 // data, so swapping is this one name. Bars: cluster, dashboard, classic. Road signs: sign,
 // sign-game, sign-exit, sign-route. Licence plates: plate-sunset, plate-paradise,
 // plate-registration, plate-night. Billboards: billboard, billboard-fire, billboard-paint,
-// billboard-pasted. https://decomp.adriwin.fr/webui shows them all.
+// billboard-pasted. https://decomp.adriwin.fr/webui shows them all. The server sends the
+// page with the sign already drawn in this design (services/page.py DOWNLOAD_DESIGN, which
+// a test holds to this one): a new design needs its markup there too.
 const DOWNLOAD_DESIGN = "sign-game";
 
 // The phone layout (phone.css, windows up to 680 px): lists come 10 rows to a page rather
@@ -325,9 +327,11 @@ function detailText(detail) {
 
 /* ---------------- Work dashboard ---------------- */
 
-// The server sends the page with what render() and renderBytematch() draw already in it,
-// for readers that run no script (services/page.py follows these functions by name), and
-// these redraw it in place. A change to their text or markup goes in both.
+// The server sends the page with what this file draws already in it, for readers that run
+// no script: services/page.py follows render(), renderBytematch(), renderEvidenceList(),
+// renderGithub(), renderEvolution() and the others by name, and draws the download sign in
+// DOWNLOAD_DESIGN. These redraw it all in place. A change to their text or markup goes in
+// both; only the maps and the charts' lines are drawn here alone.
 
 async function refresh() {
   if (state.dashboardInFlight) return;

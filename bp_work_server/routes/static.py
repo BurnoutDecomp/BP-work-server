@@ -3,7 +3,7 @@ from __future__ import annotations
 from importlib.resources import files
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
 from starlette.responses import Response
@@ -63,6 +63,21 @@ async def dashboard(request: Request) -> HTMLResponse:
     # The page differs by client: no cache may hand a bot's copy to a browser. Its figures
     # are live: a cached copy is checked again first.
     return HTMLResponse(html, headers={"Vary": "User-Agent", "Cache-Control": "no-cache"})
+
+
+# The page sends the download sign's links in its HTML, where any crawler can follow them.
+# Behind them are the 5 GB build and its update, and every start is counted on the sign.
+ROBOTS_TXT = """\
+# The builds are 5 GB downloads, and every start is counted on the dashboard's sign:
+# they are for people, not crawlers.
+User-agent: *
+Disallow: /download/
+"""
+
+
+@router.get("/robots.txt", response_class=PlainTextResponse)
+def robots() -> PlainTextResponse:
+    return PlainTextResponse(ROBOTS_TXT)
 
 
 @router.get("/health")

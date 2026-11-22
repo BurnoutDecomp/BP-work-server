@@ -126,7 +126,8 @@
             </div>
             <!-- Download build: app.js draws the download control here from the latest build, in the
                  design named by DOWNLOAD_DESIGN (any of the b5-ui download designs; the gallery shows
-                 them all). Its chooser offers the full game or the exe-only update. -->
+                 them all). Its chooser offers the full game or the exe-only update. The server sends
+                 the page with the sign already drawn (services/page.py), so the hero never grows. -->
             <div id="downloadSlot" class="wp-download" hidden></div>
             <span id="subtitle" class="b5-hint">Connecting to work server…</span>
           </div>
@@ -134,9 +135,9 @@
       </section>
 
       <!-- Headline metrics: three donuts, each split into the states that make up its total.
-           The server sends them, like the licence, the ticker, byte matching and the work
-           lists, with the current figures already in (services/page.py), for whoever reads
-           the page without running app.js; app.js redraws them in place. -->
+           The server sends them, like everything on this page but the two maps and the
+           charts' lines, with the current figures already in (services/page.py), for
+           whoever reads the page without running app.js; app.js redraws them in place. -->
       <section class="b5-stat-strip wp-metrics" aria-label="Progress summary">
         <article class="b5-stat wp-metric" title="Completion includes done translation units and external implementations, shown separately in the legend.">
           <div class="b5-ring wp-ring" id="tuRing">

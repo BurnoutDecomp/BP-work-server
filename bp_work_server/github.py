@@ -95,6 +95,9 @@ class GitHubClient:
     _locks: dict[str, asyncio.Lock] = field(default_factory=dict)
     _client: httpx.AsyncClient | None = None
     rate: dict[str, Any] = field(default_factory=dict)
+    # The last overview() put together: the page the server sends draws its repository
+    # panel from it (services/page.py), so the page itself never waits on a first request.
+    last_overview: dict[str, Any] | None = None
 
     @property
     def local_root(self) -> Path:
@@ -401,7 +404,7 @@ class GitHubClient:
             errors.append("github tree unavailable; serving local b5-decomp clone")
         if not repo.data and repo_info:
             errors.append("github repo metadata unavailable; serving local b5-decomp clone")
-        return {
+        self.last_overview = {
             "repo": {"owner": self.owner, "name": self.repo, "ref": self.ref},
             "info": repo_info,
             "commits": local_commits or [],
@@ -411,3 +414,4 @@ class GitHubClient:
             "errors": errors,
             "fetched_at": time.time(),
         }
+        return self.last_overview
