@@ -699,59 +699,23 @@ html:has(.b5-site-header) {
   line-height: 1.45;
 }
 
-/* The shares and counts two to a row, the first share across the top. */
+/* The share bars one under another; the measurement's line under them. */
 .bm-facts {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
 }
 
-.bm-facts > .bm-fact,
-.bm-facts > .bm-fact--count,
-.bm-facts[data-counts] > .bm-fact--count {
-  grid-column: auto;
-  padding: 10px 11px 11px;
+.bm-meter .b5-meter__label {
+  font-size: 13px;
 }
 
-.bm-facts > .bm-fact:first-child {
-  grid-column: 1 / -1;
-}
-
-.bm-fact strong {
-  font-size: 22px;
-}
-
-.bm-fact > span {
-  font-size: 9px;
-}
-
-.bm-fact:not(.bm-fact--count) > span:first-of-type {
-  min-height: 2.6em;
-}
-
-.bm-facts > .bm-fact:first-child > span:first-of-type {
-  min-height: 0;
-}
-
-.bm-fact .b5-meter__bar {
-  margin-top: 8px;
-}
-
-.bm-fact__detail {
-  margin-top: 6px;
+.bm-meter__note {
   font-size: 10.5px;
 }
 
-.bm-facts .bm-fact--count,
-.bm-facts[data-counts] .bm-fact--count {
-  display: block;
-}
-
-.bm-fact--count strong {
-  font-size: 24px;
-}
-
-.bm-fact--count > span {
-  margin-top: 4px;
+.bm-status {
+  margin-top: -4px;
+  font-size: 10.5px;
 }
 
 .bm-side {

@@ -4089,15 +4089,16 @@ function initEvidence() {
 /* ---------------- Byte matching: the native x360 tree against ARTIST ---------------- */
 // Everything below runs from loadBytematch(), which refresh() calls after its first await:
 // the whole script has evaluated by then, so these consts are initialised.
+// The two matching states first: on the ring they make one arc from the top.
 const BM_STATES = [
   { key: "exact", label: "exact", color: "green", pill: "done",
     title: "The same bytes as ARTIST outside the fields the linker fills in, with the same callees and constants. Click: newest first." },
+  { key: "sdk", label: "XDK library", color: "purple", pill: "external",
+    title: "Byte-identical to a function of the XDK's own libraries: linked, never written." },
   { key: "nonmatching", label: "compiled, not matching", color: "amber", pill: "compiled",
     title: "The native tree compiles a body for it, but the instructions differ. Click: closest to matching first." },
   { key: "missing", label: "no compiled body", color: "crimson", pill: "blocked",
     title: "No object of the native tree defines this function yet. Click: smallest first." },
-  { key: "sdk", label: "XDK library", color: "purple", pill: "external",
-    title: "Byte-identical to a function of the XDK's own libraries: linked, never written." },
   { key: "unnamed", label: "not yet named", color: "dim", pill: "todo",
     title: "Functions of the console image without a name; nothing can be paired with them yet." },
 ];
@@ -4194,6 +4195,7 @@ function renderBytematch(s) {
       meter.querySelector("[data-b5-progress-label]").textContent = "not measured yet";
     }
     clearNode(el("bytematchFacts"));
+    clearNode(el("bytematchStatus"));
     if (el("bytematchStamp")) el("bytematchStamp").hidden = true;
     renderBytematchHistory([]);
     renderBytematchRecent([]);
@@ -4202,8 +4204,9 @@ function renderBytematch(s) {
   }
   const counts = s.status_counts || {};
   const whole = (s.totals || {}).all || {};
-  // The ring counts every ARTIST function; its centre is the share that byte-matches
-  // (exact from our source, or linked from the XDK), so the arcs and the number agree.
+  // The ring counts every ARTIST function by state; its centre is the share that
+  // byte-matches (exact from our source, or linked from the XDK): the two matching states
+  // lead, so that share is the arc from the top. The other shares are bars under it.
   setDonut("bytematch", BM_STATES.map((st) => ({
     label: st.label, value: Number((counts[st.key] || {}).functions || 0), color: st.color, title: st.title,
     onClick: () => bmFilter({ status: st.key }),
@@ -4231,55 +4234,75 @@ function renderBytematchFacts(s) {
       stamp.title = `summary built ${fmtTime(meta.generated_at)}${meta.toolchain ? ` · ${meta.toolchain}` : ""}`;
     }
   }
-  // A fact: its figure and label, then (for a share) a car-stat bar, and the counts
-  // behind it in a line; the title keeps the longer explanation.
-  const fact = (value, label, detail, title, kind, share) => {
-    const tile = summaryTile(value, label, kind);
-    tile.classList.add("bm-fact");
-    if (share == null) tile.classList.add("bm-fact--count");
-    else {
-      const bar = span("b5-meter__bar");
-      bar.setAttribute("aria-hidden", "true");
-      bar.style.setProperty("--b5-meter", String(Math.max(0, Math.min(100, share)) / 100));
-      tile.appendChild(bar);
-    }
-    const note = document.createElement("small");
-    note.className = "bm-fact__detail";
-    note.textContent = detail;
-    tile.appendChild(note);
-    if (title) tile.title = title;
-    host.appendChild(tile);
+  // The other shares, as the license card's slim car-stat bars: a plain name, the share,
+  // the bar, and one line saying what it counts (the title keeps the exact figures).
+  const share = (label, value, note, title, tone) => {
+    const meter = div("b5-meter bm-meter");
+    if (tone) meter.dataset.tone = tone;
+    const bar = span("b5-meter__bar", "");
+    bar.setAttribute("aria-hidden", "true");
+    meter.append(span("b5-meter__label", label), span("b5-meter__value", `${value.toFixed(1)}%`), bar);
+    const line = document.createElement("small");
+    line.className = "bm-meter__note";
+    line.textContent = note;
+    meter.appendChild(line);
+    meter.style.setProperty("--b5-meter", String(Math.max(0, Math.min(100, value)) / 100));
+    if (title) meter.title = title;
+    host.appendChild(meter);
   };
   const pct = (k) => Number((s.percent || {})[k] || 0);
-  const pctOf = (k) => `${pct(k).toFixed(2)}%`;
   const all = (s.totals || {}).all || {};
   const game = (s.totals || {}).game || {};
   const sdk = (s.totals || {}).sdk || {};
-  fact(pctOf("image_bytes"), "of the image's code bytes match", `${fmtInt(all.matched_bytes)} of ${fmtInt(all.bytes)} bytes`,
-    `By size instead of count: ${fmtInt(all.matched_bytes)} of ${fmtInt(all.bytes)} bytes of code, ` +
-    "exact functions of ours plus XDK library code.", "done", pct("image_bytes"));
-  fact(pctOf("exact_functions"), "of our functions exact", `${fmtInt(game.exact)} of ${fmtInt(game.functions)} functions · ${pctOf("exact_bytes")} by size`,
-    `${fmtInt(game.exact)} of the ${fmtInt(game.functions)} functions we compile from source (the image minus ` +
-    `${fmtInt(sdk.functions)} XDK library functions and the unnamed ones). By size: ${pctOf("exact_bytes")} of their code.`, "compiled", pct("exact_functions"));
-  fact(pctOf("fuzzy_bytes"), "fuzzy match of our code", "instruction score, weighted by size",
-    "How close our compiled code is overall: each function's fuzzy instruction score weighted by its size (exact = 100%, no body = 0%).", "progress", pct("fuzzy_bytes"));
+  share("Code that matches", pct("image_bytes"),
+    `Like the ring, counted by size: ${fmtBytes(all.matched_bytes)} of the game's ${fmtBytes(all.bytes)} of code.`,
+    `${fmtInt(all.matched_bytes)} of ${fmtInt(all.bytes)} bytes of code: our exact functions plus XDK library code.`, "success");
+  share("Our functions exact", pct("exact_functions"),
+    `${fmtInt(game.exact)} of the ${fmtInt(game.functions)} functions compiled from our source (${pct("exact_bytes").toFixed(1)}% of their code).`,
+    `Our source is the image less the ${fmtInt(sdk.functions)} XDK library functions and the unnamed ones.`);
+  share("Fuzzy match", pct("fuzzy_bytes"),
+    "How alike our instructions are to the original, by size: an exact function counts 100%, one with no body 0%.",
+    "Each function's instruction similarity to ARTIST's, weighted by its size, over all the functions compiled from our source.", "info");
+  renderBytematchStatus(s);
+}
+
+// The measurement's own state in one quiet line under the bars: whether every native
+// source compiles and how fresh the records are. Only a problem takes a colour.
+function renderBytematchStatus(s) {
+  const host = el("bytematchStatus");
+  if (!host) return;
+  clearNode(host);
+  const meta = s.meta || {};
+  const objects = (s.totals || {}).objects || {};
+  const parts = [];
+  const add = (words, title, tone) => {
+    const part = span("", words);
+    if (tone) part.dataset.tone = tone;
+    if (title) part.title = title;
+    parts.push(part);
+  };
   if (objects.sources) {
-    fact(fmtInt(objects.sources - (objects.compiled || 0)), "objects fail to compile", `of ${fmtInt(objects.sources)} native sources measured`,
-      `${fmtInt(objects.sources)} native sources measured; these failed the XDK compile.`, "blocked");
+    const failed = objects.sources - (objects.compiled || 0);
+    add(failed ? `${fmtInt(failed)} of ${fmtInt(objects.sources)} objects fail to compile` : `all ${fmtInt(objects.sources)} native sources compile`,
+      `${fmtInt(objects.sources)} native sources measured with the XDK compiler.`, failed ? "danger" : "");
   }
   if (objects.stale) {
-    fact(fmtInt(objects.stale), "measured before a source change", "their verdicts stand until the next measurement",
-      "Records whose source file changed on the branch since it was measured. Their verdicts stand until the next measurement.", "todo");
+    add(`${fmtInt(objects.stale)} measured before a source change`,
+      "Records whose source file changed on the branch since it was measured. Their verdicts stand until the next measurement.", "warning");
   }
   if (meta.verified_commit) {
-    const behind = meta.behind;
-    fact(behind == null ? "?" : fmtInt(behind), "commits since the last full refresh",
-      `every record proven at x360 ${String(meta.verified_commit).slice(0, 10)}${meta.verified_at ? ` · ${relTime(meta.verified_at)}` : ""}`,
+    // unknown (null) is neither behind nor known to be current
+    const behind = meta.behind == null ? null : Number(meta.behind);
+    const proven = `x360 ${String(meta.verified_commit).slice(0, 7)}${meta.verified_at ? `, ${relTime(meta.verified_at)}` : ""}`;
+    add(behind ? `${fmtInt(behind)} commits since the last full refresh (${proven})`
+      : `${behind === null ? "records last proven" : "every record proven"} at ${proven}`,
       `Every record was last proven current at x360 ${String(meta.verified_commit).slice(0, 10)}${meta.verified_at ? ` (${fmtTime(meta.verified_at)})` : ""}.`,
-      behind ? "todo" : "compiled");
+      behind ? "warning" : "");
   }
-  // two or three counts share the row under the shares
-  host.dataset.counts = String(host.querySelectorAll(".bm-fact--count").length);
+  parts.forEach((part, index) => {
+    if (index) host.appendChild(document.createTextNode(" · "));
+    host.appendChild(part);
+  });
 }
 
 function renderBytematchHistory(history) {
@@ -4478,7 +4501,11 @@ function renderBytematchList() {
     const nums = div("evidence-file-nums");
     const st = pills[item.status] || { pill: "todo", label: item.status };
     nums.appendChild(pill(st.pill, st.label));
-    if (item.status === "nonmatching") nums.appendChild(pill("todo", `${Number(item.score || 0).toFixed(1)}%`));
+    if (item.status === "nonmatching") {
+      const score = pill("todo", `${Number(item.score || 0).toFixed(1)}%`);
+      score.title = "Fuzzy match: how alike its instructions are to the original's";
+      nums.appendChild(score);
+    }
     if (item.stale) {
       const s = pill("live", "source changed");
       s.title = "Its source file changed on the branch after this verdict was measured.";

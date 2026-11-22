@@ -1378,72 +1378,54 @@ main a:not([class]):hover,
   max-width: 420px;
 }
 
-/* The facts under the ring: three shares with their bars, the counts below them. */
+/* The other shares under the ring, as the license card's slim car-stat bars: the code
+   that matches, our own functions exact, the fuzzy match. Each name and share over
+   its bar, and a line under it saying what it counts. */
 .bm-facts {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px 26px;
 }
 
-.bm-fact {
-  grid-column: span 2;
+.bm-meter {
+  grid-template-rows: auto auto 1fr;
+  align-content: start;
   min-width: 0;
-  padding: 14px 16px 15px;
-  color: var(--text);
 }
 
-.bm-fact strong {
-  font-size: 32px;
-  line-height: 1.1;
+.bm-meter .b5-meter__label {
+  font-size: 13.5px;
 }
 
-/* two lines for every label, so the three bars line up */
-.bm-fact:not(.bm-fact--count) > span:first-of-type {
-  min-height: 2.5em;
-}
-
-.bm-fact .b5-meter__bar {
-  --b5-meter-color: var(--b5-tone);
-  margin-top: 13px;
-}
-
-.bm-fact__detail {
-  display: block;
-  margin-top: 9px;
+.bm-meter__note {
+  grid-column: 1 / -1;
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: 11px;
   line-height: 1.4;
 }
 
-/* a count: its figure beside the label and the line behind it */
-.bm-fact--count {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  column-gap: 16px;
-  grid-column: span 3;
+/* the measurement's own state: one quiet line under the bars, a problem in its colour */
+.bm-status {
+  margin: -12px 0 0;
+  color: var(--faint);
+  font-size: 11.5px;
+  line-height: 1.5;
 }
 
-.bm-fact--count strong {
-  grid-row: span 2;
-  min-width: 1.1em;
-  font-size: 36px;
+.bm-status:empty {
+  display: none;
 }
 
-.bm-fact--count > span {
-  margin-top: 0;
+.bm-status::first-letter {
+  text-transform: uppercase;
 }
 
-.bm-fact--count .bm-fact__detail {
-  margin-top: 4px;
+.bm-status [data-tone="danger"] {
+  color: var(--red-bright);
 }
 
-.bm-facts[data-counts="3"] .bm-fact--count {
-  grid-column: span 2;
-}
-
-.bm-facts[data-counts="1"] .bm-fact--count {
-  grid-column: 1 / -1;
+.bm-status [data-tone="warning"] {
+  color: var(--gold);
 }
 
 .vp-legend .legend {
@@ -2992,21 +2974,10 @@ html::-webkit-scrollbar-corner,
   }
 }
 
-/* Phones: each share across the width, the counts two to a row, figure above label. */
+/* Narrow sections: the share bars one under another. */
 @container wp-sections (max-width: 560px) {
   .bm-facts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .bm-fact {
-    grid-column: 1 / -1;
-  }
-  .bm-facts .bm-fact--count,
-  .bm-facts[data-counts] .bm-fact--count {
-    display: block;
-    grid-column: auto;
-  }
-  .bm-fact--count > span {
-    margin-top: 4px;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

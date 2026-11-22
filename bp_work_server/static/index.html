@@ -51,9 +51,9 @@
     <link rel="preload" href="/static/b5-ui/assets/anton-latin.ttf" as="font" type="font/ttf" crossorigin />
     <link rel="stylesheet" href="/static/b5-ui/b5-ui.css?v=0.2.0-2" />
     <link rel="stylesheet" href="/static/b5-ui/download-designs.css?v=0.2.0-2" />
-    <link rel="stylesheet" href="/static/app.css?v=62" />
+    <link rel="stylesheet" href="/static/app.css?v=63" />
     <!-- The same page laid out for a phone: phone.css replaces app.css's rules up to 680 px. -->
-    <link rel="stylesheet" href="/static/phone.css?v=1" media="(max-width: 680px)" />
+    <link rel="stylesheet" href="/static/phone.css?v=2" media="(max-width: 680px)" />
   </head>
   <body class="b5-page">
     <a class="b5-skip-link" href="#progress">Skip to progress</a>
@@ -306,7 +306,9 @@
         </div>
         <div class="wp-body bytematch-panel" id="bytematchCard" aria-label="Byte matching">
           <!-- The measure, its ring and the facts on the left; how it moved and what matched
-               last on the right, from the top. -->
+               last on the right, from the top. The ring is every function by state, the share
+               that matches in its middle; the other shares are bars under it; the
+               measurement's own state is one line. -->
           <div class="bm-overview">
             <div class="bm-main">
               <div class="bm-intro">
@@ -323,10 +325,12 @@
                 </div>
                 <div class="vp-legend">
                   <div class="legend" id="bytematchLegend"></div>
-                  <small class="vp-hint">The ring is every function of ARTIST. A function matches when it is exact (compiled from our source, byte for byte) or comes from an XDK library (linked, byte-identical). The facts below give the same by code size and for our source alone. Click a state to list its functions.</small>
+                  <small class="vp-hint">The ring is every function of ARTIST, by state. A function matches when it is exact (compiled from our source, byte for byte) or comes from an XDK library (linked, byte-identical). Click a state to list its functions.</small>
                 </div>
               </div>
-              <div class="bm-facts" id="bytematchFacts" role="group" aria-label="Byte-match facts"></div>
+              <!-- the other shares as slim car-stat bars, each with a line saying what it counts -->
+              <div class="bm-facts" id="bytematchFacts" role="group" aria-label="Byte-match shares"></div>
+              <p class="bm-status" id="bytematchStatus"></p>
             </div>
             <div class="vp-side bm-side">
               <div class="b5-card b5-card--compact vp-block">
@@ -723,6 +727,6 @@
 
     <script src="/static/d3-hierarchy.min.js?v=3.1.2" defer></script>
     <script src="/static/progress-map.js?v=5" defer></script>
-    <script type="module" src="/static/app.js?v=58"></script>
+    <script type="module" src="/static/app.js?v=59"></script>
   </body>
 </html>
