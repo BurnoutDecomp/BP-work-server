@@ -3473,10 +3473,12 @@ const EVOLUTION_SERIES = [
   { group: "Byte matching (X360)", key: "bm_nonmatching", label: "compiled, not matching", color: "#d7742a", of: "bm_functions" },
   { group: "Byte matching (X360)", key: "bm_exact_bytes", label: "exact code bytes", color: "#3ec9b0", of: "bm_bytes" },
 ];
-const EVOLUTION_DEFAULT_ON = ["tu_done", "funcs_done", "tu_linked"];
-const EVOLUTION_STORE_KEY = "bp.evolution";
+const EVOLUTION_DEFAULT_ON = ["tu_done", "funcs_done", "tu_linked", "bm_exact", "bm_exact_bytes"];
+// Bumped when the default view changes, so that readers' old saved choices (which were only
+// ever the previous default) do not hide the new one. A choice made after that is kept.
+const EVOLUTION_STORE_KEY = "bp.evolution.v2";
 
-state.evolution = { points: [], range: 0, mode: "count", on: new Set(EVOLUTION_DEFAULT_ON), loadedAt: 0, wired: false, hot: null };
+state.evolution = { points: [], range: 0, mode: "share", on: new Set(EVOLUTION_DEFAULT_ON), loadedAt: 0, wired: false, hot: null };
 try {
   const saved = JSON.parse(localStorage.getItem(EVOLUTION_STORE_KEY) || "null");
   if (saved && typeof saved === "object") {
