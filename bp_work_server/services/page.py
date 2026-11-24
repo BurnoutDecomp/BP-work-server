@@ -1394,15 +1394,30 @@ EVOLUTION_SERIES = [
     ("Byte matching (X360)", "bm_nonmatching", "compiled, not matching", "#d7742a"),
     ("Byte matching (X360)", "bm_exact_bytes", "exact code bytes", "#3ec9b0"),
 ]
-EVOLUTION_DEFAULT_ON = ("tu_done", "funcs_done", "tu_linked")
+EVOLUTION_DEFAULT_ON = ("tu_done", "funcs_done", "tu_linked", "bm_exact", "bm_exact_bytes")
+# The page opens on Shares: each series over its own total (the `of` of app.js). The two
+# totals themselves have none, so they are counts only and their chips are disabled.
+EVOLUTION_TOTALS = {
+    "tu_total": None, "funcs_total": None,
+    "bm_exact": "bm_functions", "bm_nonmatching": "bm_functions", "bm_exact_bytes": "bm_bytes",
+}
+
+
+def _evolution_total(key: str) -> str | None:
+    if key in EVOLUTION_TOTALS:
+        return EVOLUTION_TOTALS[key]
+    return "funcs_total" if key.startswith("funcs_") else "tu_total"
 
 
 def render_evolution(edits: Edits, history: list[dict]) -> None:
     """app.js renderEvolution() without the chart's lines, which it draws to the window."""
     groups: dict[str, list[str]] = {}
     for group, key, label, color in EVOLUTION_SERIES:
+        counts_only = _evolution_total(key) is None
+        disabled = ' disabled title="A count with no natural total: shown in Counts only."' if counts_only else ""
+        on = " on" if key in EVOLUTION_DEFAULT_ON and not counts_only else ""
         groups.setdefault(group, []).append(
-            f'<button type="button" data-key="{key}" class="evo-chip{" on" if key in EVOLUTION_DEFAULT_ON else ""}">'
+            f'<button type="button" data-key="{key}" class="evo-chip{on}"{disabled}>'
             f'<span class="sw" style="background: {color};"></span>{esc(label)}</button>')
     edits.html("evolutionPicker", "".join(
         f'<div class="evo-group"><span class="evo-group-name">{esc(group)}</span>{"".join(chips)}</div>'
@@ -1420,8 +1435,15 @@ def render_evolution(edits: Edits, history: list[dict]) -> None:
     for _group, key, label, color in EVOLUTION_SERIES:
         if key not in EVOLUTION_DEFAULT_ON:
             continue
-        column = [num(point[key]) for point in points if point.get(key) is not None]
-        shown = f"{fmt_int(js_round(column[0]))} → {fmt_int(js_round(column[-1]))}" if column else "–"
+        total = _evolution_total(key)
+        column = []
+        for point in points:
+            if point.get(key) is None or total is None:
+                continue
+            whole = num(point.get(total))
+            if whole > 0:   # app.js evolutionValue(): a share of its own total
+                column.append(num(point[key]) / whole * 100)
+        shown = f"{fixed(column[0])}% → {fixed(column[-1])}%" if column else "–"
         items.append(f'<span class="evo-legend-item"><span class="sw" style="background: {color};"></span>{esc(label)} '
                      f'<span class="evo-legend-values">{shown}</span></span>')
     edits.html("evolutionLegend", "".join(items))

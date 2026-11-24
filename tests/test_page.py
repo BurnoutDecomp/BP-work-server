@@ -386,8 +386,10 @@ def test_the_tree_sends_its_top_level_and_the_first_rows_under_it():
 
 def test_the_evolution_panel_is_written_in():
     history = [
-        {"date": "2026-06-11", "ts": "2026-06-11T21:53:05+00:00", "tu_done": 5, "funcs_done": 5, "tu_linked": None},
-        {"date": "2026-11-22", "ts": "2026-11-22T15:43:29+00:00", "tu_done": 4244, "funcs_done": 22628, "tu_linked": 3346},
+        {"date": "2026-06-11", "ts": "2026-06-11T21:53:05+00:00", "tu_total": 5000, "funcs_total": 25000,
+         "tu_done": 5, "funcs_done": 5, "tu_linked": None},
+        {"date": "2026-11-22", "ts": "2026-11-22T15:43:29+00:00", "tu_total": 5000, "funcs_total": 25000,
+         "tu_done": 4250, "funcs_done": 22500, "tu_linked": 3750},
     ]
 
     page = fill_page(template(), {"history": history}, NOW)
@@ -396,8 +398,11 @@ def test_the_evolution_panel_is_written_in():
     assert ('<div class="evo-group"><span class="evo-group-name">Translation units</span><button type="button" '
             'data-key="tu_done" class="evo-chip on"><span class="sw" style="background: #6fcf57;"></span>done</button>'
             '<button type="button" data-key="tu_compiled" class="evo-chip">') in page
-    assert 'done <span class="evo-legend-values">5 → 4,244</span>' in page
-    assert 'linked <span class="evo-legend-values">3,346 → 3,346</span>' in page
+    # the page opens on Shares: each series over its own total, the totals themselves counts only
+    assert 'done <span class="evo-legend-values">0.1% → 85.0%</span>' in page
+    assert 'linked <span class="evo-legend-values">75.0% → 75.0%</span>' in page
+    assert 'data-key="tu_total" class="evo-chip" disabled' in page
+    assert '<button class="b5-filter" type="button" data-mode="share" data-b5-value="share" aria-pressed="true">' in page
     assert "No history yet" in fill_page(template(), {"history": []}, NOW)
 
 
